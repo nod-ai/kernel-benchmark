@@ -37,7 +37,7 @@ jobs:
     runs-on: linux-mi325-8gpu-ossci-nod-ai
 
     container:
-      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      image: rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
       options: >-
         --ipc=host
         --device=/dev/kfd
@@ -64,20 +64,23 @@ jobs:
 
       - name: Setup venv
         run: |
+          cd benchmark
           chmod +x ./setup.sh
           ./setup.sh --no-install-torch
 
       - name: Load Tuning Problems from URL
         run: |
+          cd benchmark
           curl -o problems.json ${{ inputs.problems_url }}
           python -m json.tool problems.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
 
       - name: Tune
         run: |
+          cd benchmark
           python -m kernel_bench.cli.bench --tune --load_problems=problems.json --backend=${{ inputs.backend }} --num_trials=${{ inputs.num_trials }} --machine=mi325x
 
       - name: Upload tuning results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
           name: tuning-results
-          path: ./results/tuning/
+          path: ./benchmark/results/tuning/

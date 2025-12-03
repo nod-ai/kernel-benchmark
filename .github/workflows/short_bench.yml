@@ -55,7 +55,7 @@ jobs:
     runs-on: "linux-${{ inputs.machine }}-1gpu-ossci-nod-ai"
 
     container:
-      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      image: rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
       options: >-
         --ipc=host
         --device=/dev/kfd
@@ -82,27 +82,32 @@ jobs:
 
       - name: Setup venv
         run: |
+          cd benchmark
           chmod +x ./setup.sh
           ./setup.sh --no-install-torch --wave-repo ${{ inputs.pr_repository }} --wave-branch ${{ inputs.pr_branch }}
 
       - name: Load Problems from URL
         run: |
+          cd benchmark
           curl -o problems.json ${{ inputs.problems_url }}
           python -m json.tool problems.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
 
       - name: Load Tuning Configuration from URL
         if: ${{ inputs.tuned_config_url }}
         run: |
+          cd benchmark
           curl -o tuned_config.json ${{ inputs.tuned_config_url }}
           python -m json.tool tuned_config.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
 
       - name: Run Benchmarks
         run: |
+          cd benchmark
           python3 -m kernel_bench.cli.bench --backend=${{ inputs.selected_backend }} --kernel_type=${{ inputs.selected_kernel }} --load_problems=problems.json --use_tuned=tuned_config.json --machine=${{ inputs.machine }}x
 
       - name: Tag result
         if: ${{ inputs.metadata }}
         run: |
+          cd benchmark
           mkdir -p ./results
           cat <<'EOF' > ./results/metadata.txt
           "${{ inputs.metadata }}"
@@ -111,4 +116,4 @@ jobs:
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
           name: benchmark-results
-          path: ./results/json/
+          path: ./benchmark/results/json/

@@ -19,7 +19,7 @@ jobs:
     runs-on: "linux-${{ matrix.machine }}-1gpu-ossci-nod-ai"
 
     container:
-      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      image: rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
       options: >-
         --ipc=host
         --device=/dev/kfd
@@ -45,27 +45,32 @@ jobs:
 
       - name: Setup venv
         run: |
+          cd benchmark
           chmod +x ./setup.sh
           ./setup.sh --no-install-torch
 
       - name: Run GEMM Benchmarks
         run: |
+          cd benchmark
           python3 -m kernel_bench.cli.bench --backend=all --kernel_type=gemm --machine=${{ matrix.machine }}x
 
       - name: Run Attention Benchmarks
         run: |
+          cd benchmark
           python3 -m kernel_bench.cli.bench --backend=all --kernel_type=attention --machine=${{ matrix.machine }}x
 
       - name: Run BSHD Attention Benchmarks
         run: |
+          cd benchmark
           python3 -m kernel_bench.cli.bench --backend=all --kernel_type=bshd_attention --machine=${{ matrix.machine }}x
 
       - name: Run Conv Benchmarks
         run: |
+          cd benchmark
           python3 -m kernel_bench.cli.bench --backend=all --kernel_type=conv --machine=${{ matrix.machine }}x
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
           name: benchmark-results
-          path: ./results/
+          path: ./benchmark/results/
