@@ -1,0 +1,12 @@
+# Visual Studio files
+.env
+.vs/
+.vscode/
+*.sdf
+*.opensdf
+*.VC.opendb
+*.suo
+*.user
+
+# macOS files
+.DS_Store

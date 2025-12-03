@@ -1,0 +1,18 @@
+# CMake artifacts
+build/
+build-*/
+
+# Python
+__pycache__
+_python_build/
+dist/
+wheelhouse
+*.egg-info
+*.whl
+bench_venv*/
+test_venv*/
+*.venv/
+
+# Bench Artifacts
+results/
+dump/
