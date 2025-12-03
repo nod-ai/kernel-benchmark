@@ -1,0 +1,83 @@
+name: Tune Wave Kernels
+
+on:
+  workflow_dispatch:
+    inputs:
+      problems_url:
+        description: "URL to json containing problems to tune"
+        required: true
+      num_trials:
+        description: "Number of trials per kernel for tuning"
+        required: false
+        default: "75"
+      backend:
+        description: "Backend to tune"
+        required: false
+        default: "wave"
+      identifier:
+        description: "Unique identifier to tag tuning run"
+        required: false
+        default: "undefined"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  identifier:
+    name: Tuning Run Identifier
+    runs-on: ubuntu-latest
+    steps:
+      - name: tuningRunId_${{ inputs.identifier }}
+        run: echo run identifier ${{ inputs.identifier }}
+
+  tuning:
+    name: Tune Kernels
+    needs: identifier
+    runs-on: linux-mi325-8gpu-ossci-nod-ai
+
+    container:
+      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      options: >-
+        --ipc=host
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add video
+        --cap-add=SYS_PTRACE
+        --security-opt seccomp=unconfined
+
+    env:
+      WAVE_CACHE_ON: 0
+
+    concurrency:
+      group: tuning
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Setting up Rust"
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Setup venv
+        run: |
+          chmod +x ./setup.sh
+          ./setup.sh --no-install-torch
+
+      - name: Load Tuning Problems from URL
+        run: |
+          curl -o problems.json ${{ inputs.problems_url }}
+          python -m json.tool problems.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
+
+      - name: Tune
+        run: |
+          python -m kernel_bench.cli.bench --tune --load_problems=problems.json --backend=${{ inputs.backend }} --num_trials=${{ inputs.num_trials }} --machine=mi325x
+
+      - name: Upload tuning results
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        with:
+          name: tuning-results
+          path: ./results/tuning/

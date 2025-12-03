@@ -1,0 +1,71 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * *"
+
+concurrency:
+  # A PR number if a pull request and otherwise the commit hash. This cancels
+  # queued and in-progress runs for the same PR (presubmit) or commit
+  # (postsubmit). The workflow name is prepended to avoid conflicts between
+  # different workflows.
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: "E2E Benchmarks :: ${{ matrix.machine }}"
+    runs-on: "linux-${{ matrix.machine }}-1gpu-ossci-nod-ai"
+
+    container:
+      image: rocm/pytorch:rocm7.0.2_ubuntu24.04_py3.12_pytorch_release_2.8.0
+      options: >-
+        --ipc=host
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add video
+        --cap-add=SYS_PTRACE
+        --security-opt seccomp=unconfined
+
+    strategy:
+      matrix:
+        machine: [mi325, mi355]
+
+    concurrency:
+      group: kernel-benchmarking-${{ matrix.machine }}
+      cancel-in-progress: true
+
+    env:
+      WAVE_CACHE_ON: 0
+
+    steps:
+      - name: "Checkout Repo"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup venv
+        run: |
+          chmod +x ./setup.sh
+          ./setup.sh --no-install-torch
+
+      - name: Run GEMM Benchmarks
+        run: |
+          python3 -m kernel_bench.cli.bench --backend=all --kernel_type=gemm --machine=${{ matrix.machine }}x
+
+      - name: Run Attention Benchmarks
+        run: |
+          python3 -m kernel_bench.cli.bench --backend=all --kernel_type=attention --machine=${{ matrix.machine }}x
+
+      - name: Run BSHD Attention Benchmarks
+        run: |
+          python3 -m kernel_bench.cli.bench --backend=all --kernel_type=bshd_attention --machine=${{ matrix.machine }}x
+
+      - name: Run Conv Benchmarks
+        run: |
+          python3 -m kernel_bench.cli.bench --backend=all --kernel_type=conv --machine=${{ matrix.machine }}x
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: benchmark-results
+          path: ./results/
