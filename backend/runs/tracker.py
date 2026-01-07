@@ -93,10 +93,28 @@ class RunTracker:
                 }
                 for step in gh_main_job.steps
             ]
+
+            job_data = {
+                "id": str(gh_main_job.id),
+                "name": gh_main_job.name,
+                "status": gh_main_job.status,
+                "conclusion": gh_main_job.conclusion,
+                "steps": job_steps,
+                "started_at": (
+                    datetime.isoformat(gh_main_job.started_at) if gh_main_job.started_at else None
+                ),
+                "completed_at": (
+                    datetime.isoformat(gh_main_job.completed_at)
+                    if gh_main_job.completed_at
+                    else None
+                )
+            }
+
             db_run_update.update(
                 {
                     "numSteps": len(job_steps),
                     "steps": job_steps,
+                    "jobs": [job_data]
                 }
             )
 

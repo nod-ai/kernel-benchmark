@@ -27,10 +27,23 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
         raise ValueError(f"Workflow {gh_run.name} is unsupported")
 
     steps = []
+    jobs = []
+
     if workflow.main_job:
         for gh_job in gh_run.jobs():
             if gh_job.name == workflow.main_job:
                 steps = gh_job.raw_data["steps"]
+
+                job_data = {
+                    "id": str(gh_job.id),
+                    "name": gh_job.name,
+                    "status": gh_job.status,
+                    "conclusion": gh_job.conclusion,
+                    "steps": steps,
+                    "started_at": gh_job.started_at.isoformat() if gh_job.started_at else None,
+                    "completed_at": gh_job.completed_at.isoformat() if gh_job.completed_at else None
+                }
+                jobs.append(job_data)
                 break
 
     return WorkflowRunState(
@@ -42,6 +55,7 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
         conclusion=gh_run.conclusion,
         numSteps=10,
         steps=steps,
+        jobs=jobs,
         completed=gh_run.completed,
         hasArtifact=False,
         mappingId=None,
@@ -65,6 +79,7 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
         conclusion=run_json["conclusion"] or "unknown",
         numSteps=10,
         steps=[],
+        jobs=[],
         completed=False,
         hasArtifact=False,
         mappingId="undefined",

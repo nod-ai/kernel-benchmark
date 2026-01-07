@@ -76,13 +76,36 @@ class WorkflowListener:
             return
         if not find_workflow(main_job=job_payload["workflow_job"]["name"]):
             return
-
+        
         run_id = str(job_payload["workflow_job"]["run_id"])
+        job_id = str(job_payload["workflow_job"]["id"])
         steps = job_payload["workflow_job"]["steps"]
+
+        job_data = {
+            "id": job_id,
+            "name": job_payload["workflow_job"]["name"],
+            "status": job_payload["workflow_job"]["status"],
+            "conclusion": job_payload["workflow_job"]["conclusion"],
+            "steps": steps,
+            "started_at": job_payload["workflow_job"]["started_at"],
+            "completed_at": job_payload["workflow_job"]["completed_at"],
+        }
 
         logger.info(f"updating job: {json.dumps(steps, indent=4)}")
 
         try:
-            WorkflowRunDb.update_by_id(run_id, {"steps": steps})
+            current_run = WorkflowRunDb.find_by_id(run_id)
+            existing_jobs = current_run.jobs if current_run.jobs else []
+
+            job_index = next(
+                (i for i, job in enumerate(existing_jobs) if job.get("id") == job_id),
+                None
+            )
+            if job_index is not None:
+                existing_jobs[job_index] = job_data
+            else:
+                existing_jobs.append(job_data)
+
+            WorkflowRunDb.update_by_id(run_id, {"steps": steps, "jobs": existing_jobs})
         except Exception as e:
             return

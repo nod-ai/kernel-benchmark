@@ -14,6 +14,7 @@ class WorkflowRunState:
     conclusion: str
     numSteps: int
     steps: list[dict]
+    jobs: list[dict]
     completed: bool = False
     hasArtifact: bool = False
     mappingId: Optional[str] = None
