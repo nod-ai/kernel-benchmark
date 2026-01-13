@@ -6,8 +6,14 @@ import optuna
 from kernel_bench.tuning.core import CandidateConfig, ExecutionResult
 from ..parameters import CategoricalBounds, IntegerBounds
 from .paradigm import TuningParadigm, TuningContext, RichProgressManager
+from .registry import register_paradigm
 
 
+@register_paradigm(
+    "bayesian",
+    "Bayesian optimization using Optuna TPE sampling (sequential)",
+    {"n_startup_trials": None},
+)
 class BayesianTuningParadigm(TuningParadigm):
     """
     Optuna-based Bayesian hyperparameter tuning.

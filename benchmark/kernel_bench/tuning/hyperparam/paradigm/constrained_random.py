@@ -5,9 +5,15 @@ from typing import Iterator, List, Optional, override
 
 from kernel_bench.tuning.core import CandidateConfig
 from .paradigm import TuningParadigm, TuningContext, RichProgressManager
+from .registry import register_paradigm
 from kernel_bench.utils.print_utils import get_logger
 
 
+@register_paradigm(
+    "random",
+    "Random sampling with constraint validation (batch)",
+    {"batch_size": None},
+)
 class ConstrainedRandom(TuningParadigm):
     """
     Constrained random sampling paradigm.

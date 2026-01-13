@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from kernel_bench.tuning.core import CandidateConfig, ExecutionResult
 from ..parameters import CategoricalBounds
 from .paradigm import TuningParadigm, TuningContext, RichProgressManager
+from .registry import register_paradigm
 from kernel_bench.utils.print_utils import get_logger
 
 
@@ -94,6 +95,11 @@ class GridParameter:
                 return [available_values[i] for i in unique_indices]
 
 
+@register_paradigm(
+    "grid",
+    "Exhaustive grid search with constraint pruning (batch)",
+    {},
+)
 class ConstrainedGridSearch(TuningParadigm):
     """
     Multi-pass tree-based hyperparameter tuner.

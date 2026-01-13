@@ -7,6 +7,12 @@ from .hyperparam.paradigm import (
     BayesianTuningParadigm,
     ConstrainedRandom,
     ConstrainedGridSearch,
+    AdaptiveRandom,
+    # Registry functions
+    register_paradigm,
+    get_paradigm,
+    list_paradigms,
+    get_paradigm_help,
 )
 from .hyperparam.parallel_tuning import ParallelTuner
 from .hyperparam.parameters import (
