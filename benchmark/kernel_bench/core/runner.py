@@ -6,10 +6,7 @@ import json
 from os import PathLike
 from typing import List, Optional
 from kernel_bench.config.base import OpConfig
-from kernel_bench.tuning.hyperparam.paradigm.constrained_random import (
-    ConstrainedRandomTuner,
-)
-from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
+from kernel_bench.tuning.hyperparam.paradigm import ConstrainedGridSearch
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning.loaders import load_tuning_configs_from_json
 from kernel_bench.utils.print_utils import get_logger
@@ -164,7 +161,7 @@ class BenchmarkRunner:
             self.path_config.tuning_for(self.kernel_type) / tuning_result_basename
         )
 
-        tuning_paradigm = ConstrainedRandomTuner()
+        tuning_paradigm = ConstrainedGridSearch()
         tuner = ParallelTuner(tuning_paradigm)
         tuner.tune_kernels(
             benches=self._benches,

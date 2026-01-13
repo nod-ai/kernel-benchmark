@@ -84,19 +84,19 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
-            IntegerBounds(min=1, max=min(512, self.config.M), step=8),
+            IntegerBounds(min=16, max=min(512, self.config.M), step=8),
             initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
-            IntegerBounds(min=1, max=min(512, self.config.N), step=8),
+            IntegerBounds(min=16, max=min(512, self.config.N), step=8),
             initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
-            IntegerBounds(min=1, max=min(256, self.config.K), step=8),
+            IntegerBounds(min=16, max=min(256, self.config.K), step=8),
             initial_value=128,
             clamp_value=True,
         )
@@ -162,6 +162,11 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             16,  # self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
+            # input_dtype=input_dtype,
+            # quantized_dtype=quantized_dtype,
+            # tA=config.tA,
+            # tB=config.tB,
+            # num_waves=self.NUM_WAVES.value,
         )
 
         hyperparams.update(get_default_scheduling_params())

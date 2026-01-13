@@ -27,7 +27,7 @@ def get_default_bshd_attention_configs(kernel_type: str, backend_name: str):
 
 __all__ = [
     "TorchBSHDAttentionBenchmark",
-    "TritonBSHDAttentionBenchmark",
+    # "TritonBSHDAttentionBenchmark",
     "WaveBSHDAttentionBenchmark",
     "get_default_bshd_attention_configs",
 ]

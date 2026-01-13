@@ -1,2 +1,18 @@
-from .hyperparam import TuningSpec, TuningParameter
-from .schedule_tuning import tune_kernel_schedule
+"""Tuning infrastructure for kernel benchmarks."""
+
+from .hyperparam.paradigm import (
+    TuningParadigm,
+    TuningContext,
+    TuningResult,
+    BayesianTuningParadigm,
+    ConstrainedRandom,
+    ConstrainedGridSearch,
+)
+from .hyperparam.parallel_tuning import ParallelTuner
+from .hyperparam.parameters import (
+    TuningParameter,
+    TuningSpec,
+    TuningBounds,
+    IntegerBounds,
+    CategoricalBounds,
+)

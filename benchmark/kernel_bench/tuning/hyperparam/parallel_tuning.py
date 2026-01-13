@@ -24,9 +24,9 @@ from kernel_bench.utils.print_utils import (
 )
 from .paradigm import TuningContext, TuningParadigm, TuningResult
 from kernel_bench.utils.parallel_utils.progress_visualizer import (
-    ParallelProgressManager,
+    RichParallelProgressManager,
+    WorkerMessage,
 )
-from kernel_bench.utils.parallel_utils.progress_visualizer import WorkerMessage
 from kernel_bench.utils.parallel_utils.progress_context import ProgressEvent
 
 
@@ -37,8 +37,6 @@ def worker_process(
 
     def progress_callback(event: ProgressEvent):
         message_queue.put(WorkerMessage(type="progress", data=event))
-
-    set_tqdm_handler()
 
     try:
         result = tuning_paradigm.tune(context, progress_callback)
@@ -92,8 +90,8 @@ class ParallelTuner:
         total_configs = len(benches)
         num_workers = min(self.num_gpus, total_configs)
 
-        # Setup progress manager
-        progress_manager = ParallelProgressManager(total_configs, num_workers)
+        # Setup progress manager (Rich-based)
+        progress_manager = RichParallelProgressManager(total_configs, num_workers)
         progress_manager.start_main_progress()
 
         # Create message queue for worker communication
