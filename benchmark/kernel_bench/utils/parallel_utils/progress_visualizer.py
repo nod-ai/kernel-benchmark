@@ -13,8 +13,6 @@ from rich.progress import (
 )
 from rich.live import Live
 from rich.console import Group, Console
-from rich.panel import Panel
-from rich.table import Table
 
 from .progress_context import ProgressEvent
 
@@ -30,7 +28,7 @@ class WorkerMessage:
 class RichParallelProgressManager:
     """
     Rich-based parallel progress manager for multi-GPU tuning.
-    
+
     Displays a hierarchical view with:
     - Overall progress across all configurations
     - Per-worker progress bars showing current task
@@ -60,12 +58,13 @@ class RichParallelProgressManager:
             self.shared_state[f"worker_{i}_total"] = 0
             self.shared_state[f"worker_{i}_current"] = "Idle"
             self.shared_state[f"worker_{i}_active"] = False
-            self.shared_state[f"worker_{i}_color"] = "blue"
+            self.shared_state[f"worker_{i}_color"] = "purple"
+            self.shared_state[f"worker_{i}_extra_info"] = ""
             self.shared_state[f"worker_{i}_sub_progress"] = self.manager.dict()
 
         self.num_workers = num_workers
         self.total_configs = total_configs
-        
+
         # Rich components
         self.console = Console()
         self.live: Optional[Live] = None
@@ -73,7 +72,9 @@ class RichParallelProgressManager:
         self.worker_progresses: Dict[int, Progress] = {}
         self.main_task: Optional[TaskID] = None
         self.worker_tasks: Dict[int, TaskID] = {}
-        self.sub_tasks: Dict[str, tuple[Progress, TaskID]] = {}  # {worker_id}_{sub_id}: (progress, task)
+        self.sub_tasks: Dict[str, tuple[Progress, TaskID]] = (
+            {}
+        )  # {worker_id}_{sub_id}: (progress, task)
 
     def start_main_progress(self):
         """Start the main progress display."""
@@ -87,10 +88,9 @@ class RichParallelProgressManager:
             TextColumn("{task.completed}/{task.total} configs"),
             TimeRemainingColumn(),
         )
-        
+
         self.main_task = self.main_progress.add_task(
-            "Overall Progress",
-            total=self.total_configs
+            "Overall Progress", total=self.total_configs
         )
 
         # Create progress bars for each worker
@@ -98,14 +98,14 @@ class RichParallelProgressManager:
             worker_progress = Progress(
                 TextColumn(f"  [bold cyan]GPU {i}:"),
                 TextColumn("[dim]{task.description}"),
-                BarColumn(complete_style="blue", finished_style="green"),
+                BarColumn(),  # Will set style dynamically
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                 TextColumn("({task.completed}/{task.total})"),
+                TextColumn("[dim]{task.fields[extra_info]}"),  # Extra info field
             )
             self.worker_progresses[i] = worker_progress
             self.worker_tasks[i] = worker_progress.add_task(
-                "Idle",
-                total=100
+                "Idle", total=100, extra_info=""
             )
 
         # Create live display with all progress bars
@@ -115,13 +115,13 @@ class RichParallelProgressManager:
         """Update the live display with current progress state."""
         if self.live is not None:
             return  # Already started
-        
+
         # Build progress group
         progress_group = [self.main_progress]
-        
+
         for i in range(self.num_workers):
             progress_group.append(self.worker_progresses[i])
-            
+
             # Add sub-progress bars for this worker
             worker_sub_progress = self.shared_state.get(f"worker_{i}_sub_progress", {})
             for sub_id, sub_data in worker_sub_progress.items():
@@ -150,7 +150,12 @@ class RichParallelProgressManager:
                 self.shared_state[f"worker_{worker_id}_total"] = data["total"]
                 self.shared_state[f"worker_{worker_id}_current"] = data["current"]
                 self.shared_state[f"worker_{worker_id}_active"] = data["active"]
-                self.shared_state[f"worker_{worker_id}_color"] = data["color"]
+                self.shared_state[f"worker_{worker_id}_color"] = data.get(
+                    "color", "purple"
+                )
+                self.shared_state[f"worker_{worker_id}_extra_info"] = data.get(
+                    "extra_info", ""
+                )
 
                 # Check if this is a final update
                 if not data["active"] and data["completed"] >= data["total"]:
@@ -186,10 +191,7 @@ class RichParallelProgressManager:
                         BarColumn(complete_style=data["color"]),
                         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                     )
-                    sub_task = sub_progress.add_task(
-                        data["name"],
-                        total=data["total"]
-                    )
+                    sub_task = sub_progress.add_task(data["name"], total=data["total"])
                     self.sub_tasks[sub_key] = (sub_progress, sub_task)
 
             elif event.event_type == "sub_update":
@@ -266,18 +268,38 @@ class RichParallelProgressManager:
                     total = self.shared_state.get(f"worker_{i}_total", 100)
                     current = self.shared_state.get(f"worker_{i}_current", "Idle")
                     active = self.shared_state.get(f"worker_{i}_active", False)
+                    color = self.shared_state.get(f"worker_{i}_color", "purple")
+                    extra_info = self.shared_state.get(f"worker_{i}_extra_info", "")
 
                     # Update task
                     if total == 0:
                         total = 100
-                    
+
                     description = current[:50] if active else "Idle"
-                    
-                    self.worker_progresses[i].update(
-                        self.worker_tasks[i],
+
+                    # Update progress bar with dynamic color
+                    progress = self.worker_progresses[i]
+                    task_id = self.worker_tasks[i]
+
+                    # Update bar column style based on color
+                    for column in progress.columns:
+                        if isinstance(column, BarColumn):
+                            if color == "green":
+                                column.complete_style = "green"
+                                column.finished_style = "green"
+                            elif color == "purple":
+                                column.complete_style = "magenta"
+                                column.finished_style = "magenta"
+                            else:
+                                column.complete_style = color
+                                column.finished_style = color
+
+                    progress.update(
+                        task_id,
                         completed=completed,
                         total=total,
-                        description=description
+                        description=description,
+                        extra_info=extra_info,
                     )
 
                     # Update sub-progress bars for this worker
@@ -288,20 +310,20 @@ class RichParallelProgressManager:
                         sub_key = f"{i}_{sub_id}"
                         if sub_key in self.sub_tasks:
                             sub_progress, sub_task = self.sub_tasks[sub_key]
-                            
+
                             status = "✓" if not sub_data.get("active", True) else "⋯"
                             sub_progress.update(
                                 sub_task,
                                 completed=sub_data.get("completed", 0),
                                 total=sub_data.get("total", 100),
-                                description=f"{sub_data.get('name', 'Unknown')} {status}"
+                                description=f"{sub_data.get('name', 'Unknown')} {status}",
                             )
 
             # Rebuild display group with current sub-tasks
             progress_group = [self.main_progress]
             for i in range(self.num_workers):
                 progress_group.append(self.worker_progresses[i])
-                
+
                 # Add sub-progress bars for this worker
                 worker_sub_progress = dict(
                     self.shared_state.get(f"worker_{i}_sub_progress", {})
@@ -319,11 +341,13 @@ class RichParallelProgressManager:
         """Close all progress bars and stop live display."""
         if self.live:
             self.live.stop()
-        
+
         # Print final summary
         with self.lock:
             completed = self.shared_state.get("total_completed", 0)
-            self.console.print(f"\n[bold green]✓[/bold green] Completed {completed}/{self.total_configs} configurations")
+            self.console.print(
+                f"\n[bold green]✓[/bold green] Completed {completed}/{self.total_configs} configurations"
+            )
 
     def get_shared_state(self):
         """Get the shared state dictionary for passing to workers."""
@@ -332,4 +356,3 @@ class RichParallelProgressManager:
     def get_lock(self):
         """Get the lock for synchronization."""
         return self.lock
-

@@ -22,3 +22,7 @@ from .hyperparam.parameters import (
     IntegerBounds,
     CategoricalBounds,
 )
+from .visualization import (
+    display_hyperparameters_table,
+    display_tuning_summary,
+)

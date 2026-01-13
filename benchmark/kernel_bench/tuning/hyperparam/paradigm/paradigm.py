@@ -77,6 +77,8 @@ class TuningParadigm(ABC):
         self.history: Optional[TuningHistory] = None
         self.evaluator: Optional[ResultEvaluator] = None
         self.baseline: Optional[ExecutionResult] = None
+        self.best_candidate_idx: Optional[int] = None
+        self.found_improvement: bool = False
 
     def setup(self, context: TuningContext, progress: RichProgressManager):
         """
@@ -122,11 +124,11 @@ class TuningParadigm(ABC):
         # Setup infrastructure
         self.setup(context, progress)
 
-        # Configure main progress
+        # Configure main progress (start with purple - searching)
         progress.configure(
             total=context.num_trials,
             description=context.bench.config.get_name(),
-            color="blue",
+            color="purple",
         )
 
         # Benchmark baseline
@@ -267,7 +269,10 @@ class TuningParadigm(ABC):
             # Sequential execution
             result = self.executor.compile_and_benchmark(candidates[0])
             self.history.record(candidates[0], result)
-            self.progress.step()
+
+            # Check if this is an improvement and update progress
+            self._update_progress_for_result(result, 0)
+
             return [result]
         else:
             # Batch execution with sub-progress bars
@@ -285,13 +290,38 @@ class TuningParadigm(ABC):
                     verbose=self.context.debug,
                 )
 
-            # Update main progress
-            for candidate, result in zip(candidates, results):
+            # Update main progress and check for improvements
+            for idx, (candidate, result) in enumerate(zip(candidates, results)):
                 self.history.record(candidate, result)
                 if result.ok:
-                    self.progress.step()
+                    self._update_progress_for_result(result, idx)
 
             return results
+
+    def _update_progress_for_result(self, result: ExecutionResult, candidate_idx: int):
+        """
+        Update progress bar based on result.
+
+        Changes color to green when improvement is found and displays candidate index.
+        """
+        # Check if this is an improvement
+        if result.ok and self.evaluator.is_improvement(result):
+            if not self.found_improvement:
+                # First improvement found - change to green
+                self.found_improvement = True
+
+            # Update with green color and candidate index
+            self.best_candidate_idx = candidate_idx
+            extra_info = f"best: #{candidate_idx}"
+            self.progress.step(color="green", extra_info=extra_info)
+        else:
+            # No improvement yet - keep purple or maintain current color
+            if self.found_improvement:
+                # Keep showing the best candidate found so far
+                extra_info = f"best: #{self.best_candidate_idx}"
+                self.progress.step(extra_info=extra_info)
+            else:
+                self.progress.step()
 
     def update_strategy(self, results: List[ExecutionResult]):
         """

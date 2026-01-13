@@ -45,30 +45,30 @@ class MyCustomParadigm(TuningParadigm):
         super().__init__()
         self.custom_param = custom_param
         self.evaluated_count = 0
-    
+
     def get_name(self) -> str:
         """Return paradigm name."""
         return "My Custom Tuning Paradigm"
-    
+
     def generate_candidates(self) -> Iterator[CandidateConfig]:
         """
         Generate candidates to evaluate.
-        
+
         Can yield:
         - Single CandidateConfig for sequential evaluation
         - List[CandidateConfig] for batch evaluation
         """
         params = self.context.bench.tuning_spec.params()
-        
+
         while self.evaluated_count < self.context.num_trials:
             # Your candidate generation logic here
             param_values = {...}  # Generate parameter values
-            
+
             candidate = CandidateConfig(param_values=param_values)
             self.evaluated_count += 1
-            
+
             yield candidate  # or yield [candidate1, candidate2, ...]
-    
+
     def should_stop(self) -> bool:
         """Determine if tuning should stop."""
         return self.evaluated_count >= self.context.num_trials
@@ -123,6 +123,7 @@ results = tuner.tune_kernels(
 ### Sequential vs Batch Execution
 
 **Sequential (Bayesian):**
+
 ```python
 def generate_candidates(self) -> Iterator[CandidateConfig]:
     while not self.should_stop():
@@ -131,6 +132,7 @@ def generate_candidates(self) -> Iterator[CandidateConfig]:
 ```
 
 **Batch (Random, Tree):**
+
 ```python
 def generate_candidates(self) -> Iterator[List[CandidateConfig]]:
     while not self.should_stop():
@@ -151,7 +153,7 @@ def execute_candidates(self, candidates: List[CandidateConfig]) -> List[Executio
             if self._should_keep(candidate):
                 pruned.append(candidate)
             pruning.step()
-    
+
     # Use default execution for remaining
     return super().execute_candidates(pruned)
 ```
@@ -162,10 +164,10 @@ def execute_candidates(self, candidates: List[CandidateConfig]) -> List[Executio
 def update_strategy(self, results: List[ExecutionResult]):
     # Get best result so far
     best = self.history.get_best()
-    
+
     # Get all improvements
     improvements = self.history.get_improvements()
-    
+
     # Check if current result is improvement
     for result in results:
         if self.evaluator.is_improvement(result):
@@ -176,37 +178,42 @@ def update_strategy(self, results: List[ExecutionResult]):
 ## Design Principles
 
 ### 1. Separation of Concerns
+
 - **Execution** (ExecutionEngine) is separate from **strategy** (Paradigm)
 - **Progress tracking** is decoupled from business logic
 - **History management** is centralized
 
 ### 2. Reusability
+
 - Common components (executor, progress, history) shared across paradigms
 - No duplicated code for compilation, benchmarking, or logging
 
 ### 3. Flexibility
+
 - Sequential paradigms yield single candidates
 - Batch paradigms yield lists
 - Custom execution patterns via `execute_candidates()` override
 
 ### 4. Progress Tracking
+
 - Rich-based with better UI than tqdm
 - Hierarchical (main task + subtasks)
 - Event-based for multiprocessing compatibility
 - Automatic cleanup via context managers
 
 ### 5. Extensibility
+
 - New paradigms only implement core logic
 - All infrastructure provided automatically
 - Optional hooks for customization
 
 ## Paradigm Comparison
 
-| Paradigm | Execution Mode | Best For | Customization |
-|----------|---------------|----------|---------------|
-| Bayesian | Sequential | Small search spaces, expensive evaluations | Optuna configuration |
-| Random | Batch | Baseline, uniform exploration | Batch size |
-| Tree | Batch | Structured refinement, multi-pass | Passes, candidates per pass |
+| Paradigm | Execution Mode | Best For                                   | Customization               |
+| -------- | -------------- | ------------------------------------------ | --------------------------- |
+| Bayesian | Sequential     | Small search spaces, expensive evaluations | Optuna configuration        |
+| Random   | Batch          | Baseline, uniform exploration              | Batch size                  |
+| Tree     | Batch          | Structured refinement, multi-pass          | Passes, candidates per pass |
 
 ## File Structure
 
@@ -231,34 +238,3 @@ tuning/
 │       └── tree.py           # MultiPassTreeTuner
 └── README.md                 # This file
 ```
-
-## Migration Guide
-
-If you have existing code using the old paradigm interface, here's what changed:
-
-### Old Interface
-```python
-class MyParadigm(TuningParadigm):
-    def _tune(self, context, progress) -> BenchmarkResult:
-        # Manual benchmark management
-        bench = context.bench
-        result = bench.run_bench(...)
-        return result
-```
-
-### New Interface
-```python
-class MyParadigm(TuningParadigm):
-    def generate_candidates(self) -> Iterator[CandidateConfig]:
-        # Just generate candidates
-        yield CandidateConfig(param_values={...})
-    
-    def should_stop(self) -> bool:
-        return self.evaluated_count >= self.context.num_trials
-    
-    def get_name(self) -> str:
-        return "My Paradigm"
-```
-
-The new interface handles execution, progress tracking, and history automatically!
-
