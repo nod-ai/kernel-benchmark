@@ -63,7 +63,6 @@ class BenchmarkArtifactParser(RunArtifactParser):
 def parse_bench_kernels_from_path(artifact_path: Path) -> List[Dict]:
     results = []
 
-    artifact_path = artifact_path / "benchmark-results"
     logger.debug(f"Artifact path: {artifact_path}")
 
     for result_json in get_nested_files(artifact_path, "json"):
