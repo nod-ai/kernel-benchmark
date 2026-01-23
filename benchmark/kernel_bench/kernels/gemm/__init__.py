@@ -1,4 +1,5 @@
 from typing import List, Tuple
+import warnings
 
 # Import config from new location
 from kernel_bench.config.types.gemm import GemmConfig
@@ -11,33 +12,38 @@ def _get_backend_classes():
     try:
         from .backends.wave_gemm import WaveGemmBenchmark
         backends['wave'] = WaveGemmBenchmark
-    except ImportError:
-        pass
+    except Exception as e:
+        warnings.warn(f"Wave GEMM backend not available: {e}")
+        WaveGemmBenchmark = None
     
     try:
         from .backends.iree_gemm import IREEGemmBenchmark
         backends['iree'] = IREEGemmBenchmark
-    except ImportError:
-        pass
-    
+    except Exception as e:
+        warnings.warn(f"IREE GEMM backend not available: {e}")
+        IREEGemmBenchmark = None
+
     try:
         from .backends.torch_gemm import TorchGemmBenchmark
         backends['torch'] = TorchGemmBenchmark
-    except ImportError:
-        pass
-    
+    except Exception as e:
+        warnings.warn(f"Torch GEMM backend not available: {e}")
+        TorchGemmBenchmark = None
+        
     try:
         from .backends.triton_gemm import TritonGemmBenchmark
         backends['triton'] = TritonGemmBenchmark
-    except ImportError:
-        pass
-    
+    except Exception as e:
+        warnings.warn(f"Triton GEMM backend not available: {e}")
+        TritonGemmBenchmark = None
+        
     try:
         from .backends.hipblaslt_gemm import HipBLASLtGemmBenchmark
         backends['hipblaslt'] = HipBLASLtGemmBenchmark
-    except ImportError:
-        pass
-    
+    except Exception as e:
+        warnings.warn(f"hipBLASLt GEMM backend not available: {e}")
+        HipBLASLtGemmBenchmark = None
+        
     return backends
 
 from .problems import (
@@ -56,11 +62,11 @@ def get_default_gemm_configs(kernel_type: str, backend_name: str):
     configs = []
     # configs += get_meta_gemms()
     # configs += get_gemm_configs("f16")
-    # configs += get_gemm_configs("bf16")
+    configs += get_gemm_configs("bf16")
     # configs += get_trial_configs()
     # configs += get_gemm_configs("f8")
     # configs += get_paper_gemms()
-    configs += get_80k_gemm_configs(20_000)
+    # configs += get_80k_gemm_configs(100)
     return configs
 
 

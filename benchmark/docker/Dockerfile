@@ -1,7 +1,7 @@
 # Syntax allowing for build arguments before FROM
 ARG BASE_IMAGE=rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
-ARG WAVE_REPO
-ARG WAVE_BRANCH
+ARG WAVE_REPO=iree-org/wave
+ARG WAVE_BRANCH=main
 ARG BACKENDS=all
 ARG GPU_ARCH
 
@@ -39,6 +39,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# Install rocprof-trace-decoder for ROCm profiling (extract to /root to match bench_utils.py path)
+RUN ROCPROF_VERSION="0.1.6" && \
+    ROCPROF_DEB="rocprof-trace-decoder-ubuntu-22.04-${ROCPROF_VERSION}-Linux.deb" && \
+    ROCPROF_EXTRACT_DIR="rocprof-trace-decoder-ubuntu-22.04-${ROCPROF_VERSION}-Linux" && \
+    ROCPROF_URL="https://github.com/ROCm/rocprof-trace-decoder/releases/download/${ROCPROF_VERSION}/${ROCPROF_DEB}" && \
+    echo "Downloading rocprof-trace-decoder ${ROCPROF_VERSION}..." && \
+    wget -q "$ROCPROF_URL" -O "/tmp/${ROCPROF_DEB}" && \
+    echo "Extracting to /root/${ROCPROF_EXTRACT_DIR}/..." && \
+    mkdir -p "/root/${ROCPROF_EXTRACT_DIR}" && \
+    dpkg -x "/tmp/${ROCPROF_DEB}" "/root/${ROCPROF_EXTRACT_DIR}" && \
+    rm -f "/tmp/${ROCPROF_DEB}" && \
+    echo "Successfully extracted rocprof-trace-decoder ${ROCPROF_VERSION}" && \
+    ls -la "/root/${ROCPROF_EXTRACT_DIR}/opt/rocm/lib/" 2>/dev/null || echo "Warning: rocprof library not found"
 
 # ============================================================================
 # Stage 2: Setup iree-kernel-benchmark with Backend Selection
@@ -86,7 +100,8 @@ RUN SETUP_CMD="bash setup_backends.sh"; \
     if [ -n "$BACKENDS" ]; then \
         SETUP_CMD="$SETUP_CMD --backends=$BACKENDS"; \
     fi; \
-    if [ -n "$WAVE_REPO" ] && [ -n "$WAVE_BRANCH" ]; then \
+    # Always include Wave repo/branch if Wave backend is selected (using defaults if not overridden)
+    if echo "$BACKENDS" | grep -qE '(^|,)(all|wave)(,|$)'; then \
         SETUP_CMD="$SETUP_CMD --wave-repo $WAVE_REPO --wave-branch $WAVE_BRANCH"; \
     fi; \
     if [ -n "$GPU_ARCH" ]; then \

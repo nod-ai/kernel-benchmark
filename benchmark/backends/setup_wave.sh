@@ -38,7 +38,6 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
 
     echo "Installing wave dependencies..."
     pip install -r requirements-iree-pinned.txt
-    pip install -r requirements.txt
     pip install -e .
     cd ..
 else

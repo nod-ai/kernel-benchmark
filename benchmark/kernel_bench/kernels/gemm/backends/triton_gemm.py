@@ -8,7 +8,7 @@ try:
     from aiter.ops.triton.gemm_a8w8 import gemm_a8w8
     from kernel_bench.utils.torch_utils import benchmark_function_torch
     TRITON_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     import warnings
     warnings.warn(f"Triton backend dependencies not available: {e}")
 
