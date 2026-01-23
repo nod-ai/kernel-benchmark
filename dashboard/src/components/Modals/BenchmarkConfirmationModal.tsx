@@ -6,6 +6,7 @@ import {
   AVAILABLE_MACHINES,
   type BenchmarkRuntimeConfig,
   type KernelConfig,
+  type KernelSelection,
   type RepoPullRequest,
 } from "../../types";
 import {
@@ -16,7 +17,7 @@ import {
   Check,
   Loader2,
 } from "lucide-react";
-import KernelSelector, { type KernelSelection } from "../KernelSelector";
+import KernelSelector from "../KernelSelector";
 
 interface BenchmarkConfirmationModalProps {
   isOpen: boolean;

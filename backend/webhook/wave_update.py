@@ -52,27 +52,27 @@ class WaveUpdateListener:
         if not has_changed or is_merge:
             return
 
-        logger.info(
-            f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
-        )
-        head_repo_name = pr_obj["head"]["repo"]["full_name"]
-        head_branch = pr_obj["head"]["ref"]
-        head_sha = pr_obj["head"]["sha"]
-        
-        # Use unified trigger service
-        trigger_id = trigger_run(TriggerType.PR_UPDATE, {
-            "prId": str(pr_obj["id"]),
-            "repoName": head_repo_name,
-            "branchName": head_branch,
-            "headSha": head_sha,
-            "commits": pr_obj["commits"]
-        })
-        
-        if trigger_id:
-            logger.info(
-                f'Successfully triggered workflow for Pull Request {pr_obj["html_url"]} (trigger_id: {trigger_id})'
-            )
-        else:
-            logger.error(
-                f'Failed to trigger workflow for Pull Request {pr_obj["html_url"]}'
-            )
+        # logger.info(
+        #     f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
+        # )
+        # head_repo_name = pr_obj["head"]["repo"]["full_name"]
+        # head_branch = pr_obj["head"]["ref"]
+        # head_sha = pr_obj["head"]["sha"]
+
+        # # Use unified trigger service
+        # trigger_id = trigger_run(TriggerType.PR_UPDATE, {
+        #     "prId": str(pr_obj["id"]),
+        #     "repoName": head_repo_name,
+        #     "branchName": head_branch,
+        #     "headSha": head_sha,
+        #     "commits": pr_obj["commits"]
+        # })
+
+        # if trigger_id:
+        #     logger.info(
+        #         f'Successfully triggered workflow for Pull Request {pr_obj["html_url"]} (trigger_id: {trigger_id})'
+        #     )
+        # else:
+        #     logger.error(
+        #         f'Failed to trigger workflow for Pull Request {pr_obj["html_url"]}'
+        #     )

@@ -178,10 +178,12 @@ export interface BenchmarkWorkflowProps {
   maxKernels?: number;
 }
 
+export interface KernelSelection {
+  type: "all-quick" | "specific-tags";
+  tags?: string[];
+}
+
 export interface BenchmarkRuntimeConfig {
   machine: string;
-  kernelSelection: {
-    type: "all-quick" | "specific-tags";
-    tags?: string[];
-  };
+  kernelSelection: KernelSelection;
 }

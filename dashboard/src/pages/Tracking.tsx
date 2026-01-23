@@ -82,7 +82,7 @@ export default function Tracking() {
       const trackerData: TrackerData = {
         name: config.name,
         blobName: config.blobName,
-        tags: config.tags,
+        tags: config.kernelSelection.tags || [],
         backends: config.backends,
         machine: config.machine,
         schedule: config.schedule,
@@ -149,7 +149,10 @@ export default function Tracking() {
       _id: tracker.id,
       name: tracker.name,
       blobName: tracker.blobName,
-      tags: tracker.tags,
+      kernelSelection: {
+        type: "specific-tags",
+        tags: tracker.tags,
+      },
       backends: tracker.backends,
       machine: tracker.machine,
       schedule: scheduleForEdit,

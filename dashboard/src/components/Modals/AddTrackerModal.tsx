@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Modal from "../Modal/Modal";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal/ModalComponents";
-import { AVAILABLE_MACHINES, SUPPORTED_BACKENDS, type KernelConfig } from "../../types";
+import { AVAILABLE_MACHINES, SUPPORTED_BACKENDS, type KernelConfig, type KernelSelection } from "../../types";
 import { fetchKernels } from "../../utils/github";
 import KernelSelector from "../KernelSelector";
 import ScheduleSelector, { type Schedule } from "../ScheduleSelector";
@@ -20,7 +20,7 @@ import { simplifyNameForUrl, toMMDDYYYY, toYYYYMMDD } from "../../utils/utils";
 export interface TrackerConfig {
   name: string;
   blobName: string;
-  tags: string[]; // Array of tags
+  kernelSelection: KernelSelection;
   backends: string[]; // Array of backends
   machine: string;
   schedule: Schedule;
@@ -45,7 +45,10 @@ export default function AddTrackerModal({
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [machine, setMachine] = useState(AVAILABLE_MACHINES[0]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [kernelSelection, setKernelSelection] = useState<KernelSelection>({
+    type: "specific-tags",
+    tags: [],
+  });
   const [selectedBackends, setSelectedBackends] = useState<string[]>([]);
   const [schedule, setSchedule] = useState<Schedule>({
     isInterval: false,
@@ -73,7 +76,7 @@ export default function AddTrackerModal({
     if (isOpen && editingTracker) {
       setName(editingTracker.name);
       setMachine(editingTracker.machine);
-      setSelectedTags(editingTracker.tags);
+      setKernelSelection(editingTracker.kernelSelection);
       setSelectedBackends(editingTracker.backends);
       // Convert dates from MM-DD-YYYY to YYYY-MM-DD for HTML inputs
       const scheduleForForm: Schedule = {
@@ -110,7 +113,10 @@ export default function AddTrackerModal({
   const resetForm = () => {
     setName("");
     setMachine(AVAILABLE_MACHINES[0]);
-    setSelectedTags([]);
+    setKernelSelection({
+      type: "specific-tags",
+      tags: [],
+    });
     setSelectedBackends([]);
     setSchedule({
       isInterval: false,
@@ -133,7 +139,7 @@ export default function AddTrackerModal({
       const config: TrackerConfig = {
         name: name.trim(),
         blobName: simplifiedName,
-        tags: selectedTags,
+        kernelSelection,
         backends: selectedBackends,
         machine,
         schedule: scheduleForBackend,
@@ -157,7 +163,7 @@ export default function AddTrackerModal({
   const isFormValid = () => {
     if (!name.trim()) return false;
     if (!machine) return false;
-    if (selectedTags.length === 0) return false;
+    if (!kernelSelection.tags || kernelSelection.tags.length === 0) return false;
     if (selectedBackends.length === 0) return false;
     if (!schedule.startDate) return false;
     if (!schedule.timeOfDay) return false;
@@ -340,13 +346,8 @@ export default function AddTrackerModal({
 
               {/* Kernel Tags Selection */}
               <KernelSelector
-                selection={selectedTags}
-                onChange={(newSelection) => {
-                  // When tagsOnly=true, selection is always string[]
-                  if (Array.isArray(newSelection)) {
-                    setSelectedTags(newSelection);
-                  }
-                }}
+                selection={kernelSelection}
+                onChange={setKernelSelection}
                 kernels={kernels}
                 availableTags={availableTags}
                 disabled={isSubmitting}

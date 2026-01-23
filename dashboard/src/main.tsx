@@ -24,7 +24,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/history" element={<History />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/new" element={<AddKernels />} />
-          <Route path="/tune" element={<Tuning />} />
+          <Route path="/kernels" element={<Tuning />} />
           <Route path="/tracking" element={<Tracking />} />
           <Route
             path="*"

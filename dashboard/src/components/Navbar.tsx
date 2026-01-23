@@ -6,7 +6,7 @@ import { twMerge } from "tailwind-merge";
 import { useAuth } from "../contexts/AuthContext";
 import PasswordModal from "./PasswordModal";
 
-export type PageName = "dashboard" | "history" | "runs" | "new" | "tune" | "tracking";
+export type PageName = "dashboard" | "history" | "runs" | "new" | "kernels" | "tracking";
 
 interface NavbarProps {
   activePage: PageName;
@@ -27,6 +27,12 @@ const navItems: NavItemProps[] = [
     icon: <Home className="w-4 h-4" />,
   },
   {
+    name: "kernels",
+    label: "Kernels",
+    requireAuth: true,
+    icon: <Zap className="w-4 h-4" />,
+  },
+  {
     name: "runs",
     label: "Runs",
     requireAuth: false,
@@ -39,12 +45,6 @@ const navItems: NavItemProps[] = [
     icon: <CalendarDays className="w-4 h-4" />,
   },
   {
-    name: "tune",
-    label: "Tuning",
-    requireAuth: true,
-    icon: <Zap className="w-4 h-4" />,
-  },
-  {
     name: "history",
     label: "History",
     requireAuth: true,
@@ -52,7 +52,7 @@ const navItems: NavItemProps[] = [
   },
   {
     name: "new",
-    label: "Add Kernels",
+    label: "New",
     requireAuth: true,
     icon: <Plus className="w-4 h-4" />,
   },

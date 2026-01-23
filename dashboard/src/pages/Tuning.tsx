@@ -171,7 +171,7 @@ export default function Tuning() {
   };
 
   return (
-    <PageContainer activePage="tune" isLoading={kernels.length === 0}>
+    <PageContainer activePage="kernels" isLoading={kernels.length === 0}>
       <div className="flex flex-col gap-6">
         {/* Header Section */}
         {tuningKernels.size > 0 && runs.length === 0 && (

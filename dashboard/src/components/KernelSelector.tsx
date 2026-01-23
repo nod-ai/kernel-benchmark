@@ -1,13 +1,5 @@
 import { Tag, AlertTriangle, Target, Database, Filter } from "lucide-react";
-import type { KernelConfig } from "../types";
-
-// For backward compatibility with BenchmarkConfirmationModal
-export interface KernelSelectionWithType {
-  type: "all-quick" | "specific-tags";
-  tags?: string[];
-}
-
-export type KernelSelection = string[] | KernelSelectionWithType;
+import type { KernelConfig, KernelSelection } from "../types";
 
 interface KernelSelectorProps {
   selection: KernelSelection;
@@ -26,42 +18,26 @@ export default function KernelSelector({
   disabled = false,
   tagsOnly = false,
 }: KernelSelectorProps) {
-  // Determine if we're using the simple array format or the object format
-  const isArrayFormat = Array.isArray(selection);
-  const selectedTags = isArrayFormat
-    ? selection
-    : selection.type === "specific-tags"
-      ? selection.tags || []
-      : [];
-  const selectionType = isArrayFormat
-    ? "specific-tags"
-    : selection.type;
+  const selectedTags = selection.tags || [];
+  const selectionType = tagsOnly ? "specific-tags" : selection.type;
 
   const handleTagToggle = (tag: string) => {
-    if (isArrayFormat) {
-      const newTags = selection.includes(tag)
-        ? selection.filter((t) => t !== tag)
-        : [...selection, tag];
-      onChange(newTags);
-    } else {
-      const currentTags = selection.tags || [];
-      const newTags = currentTags.includes(tag)
-        ? currentTags.filter((t) => t !== tag)
-        : [...currentTags, tag];
-      onChange({
-        ...selection,
-        tags: newTags,
-      });
-    }
+    const currentTags = selection.tags || [];
+    const newTags = currentTags.includes(tag)
+      ? currentTags.filter((t) => t !== tag)
+      : [...currentTags, tag];
+    onChange({
+      ...selection,
+      type: tagsOnly ? "specific-tags" : selection.type,
+      tags: newTags,
+    });
   };
 
   const handleTypeChange = (newType: "all-quick" | "specific-tags") => {
-    if (!isArrayFormat) {
-      onChange({
-        type: newType,
-        tags: newType === "specific-tags" ? [] : undefined,
-      });
-    }
+    onChange({
+      type: newType,
+      tags: newType === "specific-tags" ? [] : undefined,
+    });
   };
 
   // Calculate kernel counts
