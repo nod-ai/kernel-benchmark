@@ -101,7 +101,7 @@ export default function Tracking() {
       setEditingTracker(undefined);
     } catch (error) {
       console.error("Failed to save tracker:", error);
-      alert("Failed to save tracker. Please try again.");
+      alert(`Failed to save tracker:\n\n${error}\n\nPlease try again.`);
       throw error;
     }
   };
@@ -115,7 +115,7 @@ export default function Tracking() {
       await loadTrackers();
     } catch (error) {
       console.error("Failed to toggle tracker status:", error);
-      alert("Failed to update tracker status. Please try again.");
+      alert(`Failed to update tracker status: \n\n${error} \n\nPlease try again.`);
     }
   };
 

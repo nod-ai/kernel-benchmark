@@ -282,10 +282,9 @@ JWT-based authentication with:
 
 ### Supported Workflows
 
-Three workflow types (defined in `.github/workflows/`):
-1. **Short Benchmark** (`short_bench.yml`) - Quick validation runs
+Two workflow types (defined in `.github/workflows/`):
+1. **Short Benchmark** (`short_bench.yml`) - Benchmark runs with configurable kernel selection
 2. **Tune Wave Kernels** (`tune_kernels.yml`) - Hyperparameter tuning
-3. **Performance** (`run_bench.yml`) - Full E2E benchmarks
 
 ## API Endpoints Reference
 

@@ -11,7 +11,7 @@ All workflow dispatches flow through trigger_run(), which handles:
 
 This consolidates logic that was previously scattered across:
 - runs/workflows.py
-- webhook/wave_update.py  
+- webhook/wave_update.py
 - server.py endpoints
 """
 
@@ -50,17 +50,17 @@ __all__ = ["trigger_run", "link_trigger_to_run", "TriggerType"]
 def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional[str]:
     """
     Unified function to trigger any workflow run.
-    
+
     This is the ONLY place where workflow runs should be triggered from.
     All trigger logic is consolidated here for simplicity and maintainability.
-    
+
     Args:
         trigger_type: Type of trigger (PR_UPDATE, MANUAL_BENCHMARK, etc.)
         metadata: Type-specific metadata dictionary
-        
+
     Returns:
         Trigger ID if successful, None if failed
-        
+
     Example usage:
         # Wave PR update
         trigger_run(TriggerType.PR_UPDATE, {
@@ -70,7 +70,7 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
             "headSha": "abc123",
             "commits": 5
         })
-        
+
         # Manual benchmark
         trigger_run(TriggerType.MANUAL_BENCHMARK, {
             "tags": ["validation"],
@@ -78,7 +78,7 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
         })
     """
     trigger_id = str(uuid4())
-    
+
     try:
         # 1. Create trigger in database with status=PENDING
         trigger = RunTrigger(
@@ -86,57 +86,66 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
             type=trigger_type.value,
             status=TriggerStatus.PENDING.value,
             timestamp=datetime.now(timezone.utc),
-            metadata=metadata
+            metadata=metadata,
         )
         RunTriggerDb.upsert(trigger)
         logger.info(f"Created trigger {trigger_id} of type {trigger_type.value}")
-        
+
         # 2. Determine workflow and build inputs
         workflow_file = _determine_workflow(trigger_type, metadata)
         if not workflow_file:
-            raise ValueError(f"Could not determine workflow for trigger type {trigger_type}")
-        
+            raise ValueError(
+                f"Could not determine workflow for trigger type {trigger_type}"
+            )
+
         inputs = _build_workflow_inputs(trigger_type, metadata, trigger_id)
-        
+
         # 3. Dispatch to GitHub
         success = _dispatch_workflow(workflow_file, inputs)
-        
+
         # 4. Update trigger status
         if success:
-            RunTriggerDb.update_by_id(trigger_id, {
-                "status": TriggerStatus.DISPATCHED.value,
-                "dispatchedAt": datetime.now(timezone.utc)
-            })
+            RunTriggerDb.update_by_id(
+                trigger_id,
+                {
+                    "status": TriggerStatus.DISPATCHED.value,
+                    "dispatchedAt": datetime.now(timezone.utc),
+                },
+            )
             logger.info(f"Successfully dispatched trigger {trigger_id}")
             return trigger_id
         else:
-            RunTriggerDb.update_by_id(trigger_id, {
-                "status": TriggerStatus.FAILED.value,
-                "error": "Workflow dispatch failed"
-            })
+            RunTriggerDb.update_by_id(
+                trigger_id,
+                {
+                    "status": TriggerStatus.FAILED.value,
+                    "error": "Workflow dispatch failed",
+                },
+            )
             logger.error(f"Failed to dispatch trigger {trigger_id}")
             return None
-            
+
     except Exception as e:
         logger.error(f"Error in trigger_run: {e}")
         try:
-            RunTriggerDb.update_by_id(trigger_id, {
-                "status": TriggerStatus.FAILED.value,
-                "error": str(e)
-            })
+            RunTriggerDb.update_by_id(
+                trigger_id, {"status": TriggerStatus.FAILED.value, "error": str(e)}
+            )
         except:
             pass
         return None
 
 
-def _determine_workflow(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional[str]:
+def _determine_workflow(
+    trigger_type: TriggerType, metadata: dict[str, Any]
+) -> Optional[str]:
     """
     Maps a trigger type to the appropriate workflow file.
-    
+
     Args:
         trigger_type: The type of trigger
         metadata: Trigger metadata (may influence workflow selection)
-        
+
     Returns:
         Workflow filename (e.g., "short_bench.yml") or None
     """
@@ -147,7 +156,7 @@ def _determine_workflow(trigger_type: TriggerType, metadata: dict[str, Any]) -> 
     elif trigger_type == TriggerType.MANUAL_TUNING:
         return "tune_kernels.yml"
     elif trigger_type == TriggerType.SCHEDULED:
-        return "run_bench.yml"
+        return "short_bench.yml"
     elif trigger_type == TriggerType.REBASE:
         # For historical runs, typically short bench
         return "short_bench.yml"
@@ -157,45 +166,43 @@ def _determine_workflow(trigger_type: TriggerType, metadata: dict[str, Any]) -> 
 
 
 def _build_workflow_inputs(
-    trigger_type: TriggerType,
-    metadata: dict[str, Any],
-    trigger_id: str
+    trigger_type: TriggerType, metadata: dict[str, Any], trigger_id: str
 ) -> dict[str, Any]:
     """
     Builds workflow inputs from trigger metadata.
-    
+
     Different trigger types require different workflow inputs.
     This function handles all the complexity of:
     - Creating gists for kernels/configs
     - Formatting metadata into workflow input format
     - Adding the trigger_id for linking
-    
+
     Args:
         trigger_type: The type of trigger
         metadata: Trigger-specific metadata
         trigger_id: The unique trigger ID to pass to workflow
-        
+
     Returns:
         Dictionary of workflow inputs ready for GitHub Actions
     """
     inputs = {"trigger_id": trigger_id}
-    
+
     if trigger_type == TriggerType.PR_UPDATE:
         # PR update: short benchmark with Wave branch info
         inputs.update(_build_pr_update_inputs(metadata))
-        
+
     elif trigger_type == TriggerType.MANUAL_BENCHMARK:
         # Manual benchmark: load kernels by tags or IDs
         inputs.update(_build_manual_benchmark_inputs(metadata))
-        
+
     elif trigger_type == TriggerType.MANUAL_TUNING:
         # Tuning: create gist with kernels to tune
         inputs.update(_build_tuning_inputs(metadata))
-        
+
     elif trigger_type == TriggerType.SCHEDULED:
-        # Scheduled runs typically don't need extra inputs
-        inputs.update({"machine": metadata.get("machine", "mi325")})
-        
+        # Scheduled tracker run
+        inputs.update(_build_scheduled_tracker_inputs(metadata))
+
     return inputs
 
 
@@ -204,17 +211,17 @@ def _build_pr_update_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
     # Load all kernels configured for workflow runs
     problems = KernelConfigDb.find_all({"workflow": "all"})
     logger.info(f"Loaded {len(problems)} kernels for PR benchmark")
-    
+
     # Create gist with problems
     problems_json = [asdict(p) for p in problems]
     problems_gist = create_gist(problems_json)
-    
+
     # Find latest tuning configs
     tuned_configs = _find_latest_tuned_configs(problems)
     logger.info(f"Loaded {len(tuned_configs)} tuning configs for PR benchmark")
     tuned_configs_json = [asdict(c) for c in tuned_configs]
     tuned_configs_gist = create_gist(tuned_configs_json)
-    
+
     return {
         "machine": metadata.get("machine", "mi325"),
         "problems_url": problems_gist.raw_url,
@@ -241,24 +248,24 @@ def _build_manual_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
     else:
         # No selection - use all workflow kernels
         problems = KernelConfigDb.find_all({"workflow": "all"})
-    
+
     logger.info(f"Loaded {len(problems)} kernels for manual benchmark")
-    
+
     # Create gist with problems
     problems_json = [asdict(p) for p in problems]
     problems_gist = create_gist(problems_json)
-    
+
     # Find latest tuning configs
     tuned_configs = _find_latest_tuned_configs(problems)
     tuned_configs_json = [asdict(c) for c in tuned_configs]
     tuned_configs_gist = create_gist(tuned_configs_json)
-    
+
     inputs = {
         "machine": metadata.get("machine", "mi325"),
         "problems_url": problems_gist.raw_url,
         "tuned_config_url": tuned_configs_gist.raw_url,
     }
-    
+
     # Optional PR info for manual runs
     if "repoName" in metadata:
         inputs["pr_repository"] = metadata["repoName"]
@@ -266,7 +273,7 @@ def _build_manual_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         inputs["pr_branch"] = metadata["branchName"]
     if "headSha" in metadata:
         inputs["pr_headsha"] = metadata["headSha"]
-    
+
     return inputs
 
 
@@ -276,13 +283,13 @@ def _build_tuning_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
     kernel_ids = metadata.get("kernelIds", [])
     kernels = [KernelConfigDb.find_by_id(kid) for kid in kernel_ids]
     kernels = [k for k in kernels if k is not None]
-    
+
     logger.info(f"Creating tuning request for {len(kernels)} kernels")
-    
+
     # Create gist with kernels
     kernels_json = [asdict(k) for k in kernels]
     gist = create_gist(kernels_json)
-    
+
     return {
         "problems_url": gist.raw_url,
         "num_trials": str(metadata.get("numTrials", 75)),
@@ -290,37 +297,72 @@ def _build_tuning_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_scheduled_tracker_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build inputs for scheduled tracker triggers.
+
+    Uses short_bench.yml to allow granular control over which kernels run
+    based on the tracker's configured tags.
+    """
+    tags = metadata.get("tags", [])
+
+    # Query kernels by tags
+    if tags:
+        query = " or ".join([f"tag eq '{tag}'" for tag in tags])
+        problems = KernelConfigDb.query(query)
+    else:
+        # No tags specified - use all kernels
+        problems = KernelConfigDb.find_all({"workflow": "all"})
+
+    logger.info(f"Loaded {len(problems)} kernels for scheduled tracker run")
+
+    # Create gist with problems
+    problems_json = [asdict(p) for p in problems]
+    problems_gist = create_gist(problems_json)
+
+    # Find latest tuning configs
+    tuned_configs = _find_latest_tuned_configs(problems)
+    tuned_configs_json = [asdict(c) for c in tuned_configs]
+    tuned_configs_gist = create_gist(tuned_configs_json)
+
+    return {
+        "machine": metadata.get("machine", "mi325"),
+        "problems_url": problems_gist.raw_url,
+        "tuned_config_url": tuned_configs_gist.raw_url,
+    }
+
+
 def _find_latest_tuned_configs(problems: list[KernelConfig]) -> list[TuningConfig]:
     """
     Find the latest tuning configuration for each problem.
-    
+
     This was previously in workflows.py, moved here for consolidation.
     """
     problem_configs = {p.name: None for p in problems}
-    
+
     all_configs = TuningConfigDb.find_all()
     for config in all_configs:
         name = config.kernel_name
         if name not in problem_configs:
             continue
-        
+
         if (
             problem_configs[name] is None
             or config.timestamp > problem_configs[name].timestamp
         ):
             problem_configs[name] = config
-    
+
     return [config for config in problem_configs.values() if config]
 
 
 def _dispatch_workflow(workflow_file: str, inputs: dict[str, Any]) -> bool:
     """
     Dispatches a workflow to GitHub Actions.
-    
+
     Args:
         workflow_file: Workflow filename (e.g., "short_bench.yml")
         inputs: Workflow inputs dictionary
-        
+
     Returns:
         True if dispatch succeeded, False otherwise
     """
@@ -329,7 +371,7 @@ def _dispatch_workflow(workflow_file: str, inputs: dict[str, Any]) -> bool:
             repo_id="bench",
             branch_name=BENCH_REPO_BRANCH,
             workflow_id=workflow_file,
-            inputs=inputs
+            inputs=inputs,
         )
     except Exception as e:
         logger.error(f"Error dispatching workflow {workflow_file}: {e}")

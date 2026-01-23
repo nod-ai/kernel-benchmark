@@ -40,12 +40,6 @@ SUPPORTED_WORKFLOWS = [
         main_job="Tune Kernels",
         identifier="tuningRunId",
     ),
-    WorkflowRunInfo(
-        run_type=RunType.E2E,
-        name="Performance",
-        filename="run_bench.yml",
-        main_job="E2E Benchmarks",
-    ),
 ]
 
 

@@ -6,6 +6,7 @@ from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import find_incomplete_runs, get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
 from backend.runs.trigger_service import trigger_run, TriggerType
+from backend.runs.scheduling import validate_tracker_no_overlap
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
 from backend.storage.utils import test_logger
@@ -258,12 +259,12 @@ def trigger_workflow():
     pr_data = response_data["pr"]
     config_data = response_data["config"]
     kernel_selection = config_data["kernelSelection"]
-    
+
     # Build metadata for trigger
     metadata = {
         "machine": config_data.get("machine", "mi325"),
     }
-    
+
     # Optional PR info for manual runs
     if pr_data.get("repoName"):
         metadata["repoName"] = pr_data["repoName"]
@@ -271,7 +272,7 @@ def trigger_workflow():
         metadata["branchName"] = pr_data["branchName"]
     if pr_data.get("mappingId"):  # Legacy field name (actually headSha)
         metadata["headSha"] = pr_data["mappingId"]
-    
+
     # Handle kernel selection
     if kernel_selection["type"] == "specific-tags":
         tags = kernel_selection["tags"]
@@ -287,10 +288,10 @@ def trigger_workflow():
         metadata["tags"] = tags
     elif kernel_selection["type"] == "specific-ids" and "ids" in kernel_selection:
         metadata["kernelIds"] = kernel_selection["ids"]
-    
+
     # Use unified trigger service
     trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, metadata)
-    
+
     if trigger_id:
         return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
     else:
@@ -327,17 +328,17 @@ def rebase_prs():
 def tune_kernels():
     payload = request.get_json()
     kernel_ids = [str(id) for id in payload["kernel_ids"]]
-    
+
     # Build metadata for tuning trigger
     metadata = {
         "kernelIds": kernel_ids,
         "numTrials": payload.get("numTrials", 75),
-        "backend": payload.get("backend", "wave")
+        "backend": payload.get("backend", "wave"),
     }
-    
+
     # Use unified trigger service
     trigger_id = trigger_run(TriggerType.MANUAL_TUNING, metadata)
-    
+
     if trigger_id:
         return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
     else:
@@ -360,6 +361,7 @@ def get_tuning_runs():
         if run.triggerId:
             try:
                 from backend.storage.triggers import RunTriggerDb
+
                 trigger = RunTriggerDb.find_by_id(run.triggerId)
                 if trigger and "kernelIds" in trigger.metadata:
                     # Get kernels by IDs
@@ -667,7 +669,14 @@ def create_tracker():
             return jsonify({"error": "Request body is required"}), 400
 
         # Validate required fields
-        required_fields = ["name", "blobName", "tags", "backends", "machine", "schedule"]
+        required_fields = [
+            "name",
+            "blobName",
+            "tags",
+            "backends",
+            "machine",
+            "schedule",
+        ]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
@@ -696,6 +705,12 @@ def create_tracker():
         }
 
         tracker = fromdict(Tracker, tracker_data)
+
+        # Validate no overlap with existing trackers
+        is_valid, error_msg = validate_tracker_no_overlap(tracker)
+        if not is_valid:
+            return jsonify({"error": error_msg}), 409
+
         TrackerDb.upsert(tracker)
 
         return jsonify(asdict(tracker)), 201
@@ -740,6 +755,18 @@ def update_tracker(tracker_id):
         }
 
         updated_tracker = fromdict(Tracker, tracker_data)
+
+        # Validate no overlap with existing trackers
+        # Important: Only validate if tracker is being activated or is already active
+        # This allows deactivating conflicting trackers, but prevents activating
+        # a tracker that would conflict
+        if updated_tracker.isActive:
+            is_valid, error_msg = validate_tracker_no_overlap(
+                updated_tracker, tracker_id=tracker_id
+            )
+            if not is_valid:
+                return jsonify({"error": error_msg}), 409
+
         success = TrackerDb.upsert(updated_tracker)
 
         if success:
@@ -781,12 +808,12 @@ def get_triggers():
     """Get all triggers with optional filtering."""
     try:
         from backend.storage.triggers import RunTriggerDb
-        
+
         # Get query parameters for filtering
         trigger_type = request.args.get("type")
         status = request.args.get("status")
         limit = request.args.get("limit", type=int)
-        
+
         # Build query
         if trigger_type and status:
             query = f"type eq '{trigger_type}' and status eq '{status}'"
@@ -796,22 +823,22 @@ def get_triggers():
             query = f"status eq '{status}'"
         else:
             query = None
-        
+
         # Get triggers
         if query:
             triggers = RunTriggerDb.query(query)
         else:
             triggers = RunTriggerDb.find_all()
-        
+
         # Sort by timestamp (most recent first)
         triggers.sort(key=lambda t: t.timestamp, reverse=True)
-        
+
         # Apply limit if specified
         if limit:
             triggers = triggers[:limit]
-        
+
         return jsonify([asdict(t) for t in triggers])
-        
+
     except Exception as e:
         logger.error(f"Error getting triggers: {e}")
         logger.error(traceback.format_exc())
@@ -823,14 +850,14 @@ def get_trigger(trigger_id):
     """Get a specific trigger with its linked run info."""
     try:
         from backend.storage.triggers import RunTriggerDb
-        
+
         trigger = RunTriggerDb.find_by_id(trigger_id)
-        
+
         if not trigger:
             return jsonify({"error": "Trigger not found"}), 404
-        
+
         trigger_data = asdict(trigger)
-        
+
         # If trigger is linked to a run, include run info
         if trigger.runId:
             try:
@@ -839,9 +866,9 @@ def get_trigger(trigger_id):
                     trigger_data["run"] = asdict(run)
             except:
                 pass
-        
+
         return jsonify(trigger_data)
-        
+
     except Exception as e:
         logger.error(f"Error getting trigger {trigger_id}: {e}")
         logger.error(traceback.format_exc())
@@ -853,13 +880,13 @@ def get_run_trigger(run_id):
     """Get the trigger that caused a specific run."""
     try:
         from backend.storage.triggers import RunTriggerDb
-        
+
         # Get the run
         run = WorkflowRunDb.find_by_id(run_id)
-        
+
         if not run:
             return jsonify({"error": "Run not found"}), 404
-        
+
         # Get trigger by triggerId or by querying runId
         if run.triggerId:
             trigger = RunTriggerDb.find_by_id(run.triggerId)
@@ -867,12 +894,12 @@ def get_run_trigger(run_id):
             # Fallback: search by runId
             triggers = RunTriggerDb.query(f"runId eq '{run_id}'")
             trigger = triggers[0] if triggers else None
-        
+
         if not trigger:
             return jsonify({"error": "No trigger found for this run"}), 404
-        
+
         return jsonify(asdict(trigger))
-        
+
     except Exception as e:
         logger.error(f"Error getting trigger for run {run_id}: {e}")
         logger.error(traceback.format_exc())
