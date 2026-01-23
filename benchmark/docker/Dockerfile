@@ -53,7 +53,7 @@ ARG GPU_ARCH
 
 # Copy the repository files
 COPY . /workspace
-WORKDIR /workspace/benchmark
+WORKDIR /workspace
 
 # Install Rust for wave compilation (if needed and wave backend is requested)
 RUN if echo "$BACKENDS" | grep -qE '(^|,)(all|wave)(,|$)'; then \

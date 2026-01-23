@@ -1383,3 +1383,45 @@ def get_meta_gemms() -> list[tuple[str, GemmConfig]]:
     configs += [("meta-cat-4", GemmConfig(*shape)) for shape in category_4_shapes]
     configs += [("meta-4-shapes", GemmConfig(*shape)) for shape in sample_shapes]
     return configs
+
+def get_harsh_gemms() -> list[tuple[str, GemmConfig]]:
+    """
+    GEMM shapes from various challenging models:
+    - Whisper Large v3 (batch=1, seq=256)
+    - DeepSeek-R1-Distill-Qwen-7B (batch=1, seq=512)
+    - Qwen3-8B (batch=1, seq=512)
+    """
+    
+    # Whisper Large v3 shapes (batch=1, seq=256)
+    whisper_shapes = [
+        (256, 1280, 1280, "N", "T", "bf16"),  # Q/K/V projection
+        (256, 1280, 1280, "N", "T", "bf16"),  # Attention output
+        (256, 5120, 1280, "N", "T", "bf16"),  # FFN up
+        (256, 1280, 5120, "N", "T", "bf16"),  # FFN down
+        (256, 256, 64, "N", "T", "bf16"),     # Attention scores per-head
+    ]
+    
+    # DeepSeek-R1-Distill-Qwen-7B shapes (batch=1, seq=512)
+    deepseek_shapes = [
+        (512, 3584, 3584, "N", "T", "bf16"),  # Q projection
+        (512, 512, 3584, "N", "T", "bf16"),   # K/V projection (GQA, 4 KV heads × 128)
+        (512, 3584, 3584, "N", "T", "bf16"),  # Attention output
+        (512, 18944, 3584, "N", "T", "bf16"), # FFN gate/up (SwiGLU)
+        (512, 3584, 18944, "N", "T", "bf16"), # FFN down
+    ]
+    
+    # Qwen3-8B shapes (batch=1, seq=512)
+    qwen3_shapes = [
+        (512, 4096, 4096, "N", "T", "bf16"),  # Q projection
+        (512, 1024, 4096, "N", "T", "bf16"),  # K/V projection (GQA, 8 KV heads × 128)
+        (512, 4096, 4096, "N", "T", "bf16"),  # Attention output
+        (512, 12288, 4096, "N", "T", "bf16"), # FFN gate/up (SwiGLU)
+        (512, 4096, 12288, "N", "T", "bf16"), # FFN down
+    ]
+    
+    configs = []
+    configs += [("whisper-v3", GemmConfig(*shape)) for shape in whisper_shapes]
+    configs += [("deepseek-r1-7b", GemmConfig(*shape)) for shape in deepseek_shapes]
+    configs += [("qwen3-8b", GemmConfig(*shape)) for shape in qwen3_shapes]
+    
+    return configs

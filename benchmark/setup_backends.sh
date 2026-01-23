@@ -88,6 +88,8 @@ fi
 echo "Setting up iree-kernel-benchmark environment..."
 echo ""
 
+
+
 if [[ "$USE_VENV" == "true" ]]; then
     echo "Virtual environment path: $VENV_PATH"
 else
@@ -152,6 +154,16 @@ pip install --no-cache-dir --upgrade pip setuptools wheel pyyaml
 # Install core project requirements (backend-agnostic dependencies)
 echo "Installing core project requirements..."
 pip install -r requirements.txt
+
+if [[ -d "aiter" ]]; then
+    echo "Removing existing aiter directory..."
+    rm -rf aiter
+fi
+
+git clone --recursive https://github.com/ROCm/aiter.git
+cd aiter
+python setup.py develop
+cd ..
 
 echo ""
 echo "================================"
