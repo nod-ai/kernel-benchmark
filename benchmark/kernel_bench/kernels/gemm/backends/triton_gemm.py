@@ -1,19 +1,28 @@
-import torch
-from kernel_bench.core.template import KernelBenchmark
-
 from typing import Optional
 
-from aiter.ops.triton.gemm_a16w16 import gemm_a16w16
-from aiter.ops.triton.gemm_a8w8 import gemm_a8w8
+# Import guards for backend-specific dependencies
+TRITON_AVAILABLE = False
+try:
+    import torch
+    from aiter.ops.triton.gemm_a16w16 import gemm_a16w16
+    from aiter.ops.triton.gemm_a8w8 import gemm_a8w8
+    from kernel_bench.utils.torch_utils import benchmark_function_torch
+    TRITON_AVAILABLE = True
+except ImportError as e:
+    import warnings
+    warnings.warn(f"Triton backend dependencies not available: {e}")
 
+from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.kernels.gemm.gemm_utils import GemmConfig
-from kernel_bench.utils.torch_utils import benchmark_function_torch
 
 
 class TritonGemmBenchmark(KernelBenchmark):
     config: GemmConfig
 
     def validate_config(self):
+        if not TRITON_AVAILABLE:
+            return False
+            
         input_dtype = self.config.dtype
         if input_dtype not in ["f16", "bf16"]:
             return False

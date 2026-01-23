@@ -1,15 +1,45 @@
 from typing import List, Tuple
-from wave_lang.kernel.wave.constraints import MMAType
 
 # Import config from new location
 from kernel_bench.config.types.gemm import GemmConfig
 
-from kernel_bench.kernels.gemm.backends.triton_gemm import TritonGemmBenchmark
+# Lazy imports with guards for backends
+def _get_backend_classes():
+    """Lazily import backend classes only when needed"""
+    backends = {}
+    
+    try:
+        from .backends.wave_gemm import WaveGemmBenchmark
+        backends['wave'] = WaveGemmBenchmark
+    except ImportError:
+        pass
+    
+    try:
+        from .backends.iree_gemm import IREEGemmBenchmark
+        backends['iree'] = IREEGemmBenchmark
+    except ImportError:
+        pass
+    
+    try:
+        from .backends.torch_gemm import TorchGemmBenchmark
+        backends['torch'] = TorchGemmBenchmark
+    except ImportError:
+        pass
+    
+    try:
+        from .backends.triton_gemm import TritonGemmBenchmark
+        backends['triton'] = TritonGemmBenchmark
+    except ImportError:
+        pass
+    
+    try:
+        from .backends.hipblaslt_gemm import HipBLASLtGemmBenchmark
+        backends['hipblaslt'] = HipBLASLtGemmBenchmark
+    except ImportError:
+        pass
+    
+    return backends
 
-from .backends.iree_gemm import IREEGemmBenchmark
-from .backends.wave_gemm import WaveGemmBenchmark
-from .backends.torch_gemm import TorchGemmBenchmark
-from .backends.hipblaslt_gemm import HipBLASLtGemmBenchmark
 from .problems import (
     get_80k_gemm_configs,
     get_gemm_comparison,
@@ -34,12 +64,5 @@ def get_default_gemm_configs(kernel_type: str, backend_name: str):
     return configs
 
 
-GEMM_BENCH = {
-    "gemm": {
-        "wave": WaveGemmBenchmark,
-        "iree": IREEGemmBenchmark,
-        "torch": TorchGemmBenchmark,
-        "triton": TritonGemmBenchmark,
-        "hipblaslt": HipBLASLtGemmBenchmark,
-    }
-}
+# Dynamically build the GEMM_BENCH dictionary with available backends     
+GEMM_BENCH = {"gemm": _get_backend_classes()}

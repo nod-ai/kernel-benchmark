@@ -7,7 +7,28 @@ A comprehensive benchmarking and tuning system for GPU kernels across multiple A
 ### Docker Setup
 
 ```shell
-docker build --network=host -t kernel-bench:v1 -f docker/Dockerfile .
+# Build with all backends (default - GPU_ARCH required)
+docker build --network=host \
+  --build-arg GPU_ARCH=gfx950 \
+  -t kernel-bench:v1 \
+  -f docker/Dockerfile .
+
+# Build with specific backends only
+docker build --network=host \
+  --build-arg BACKENDS=torch,wave \
+  --build-arg GPU_ARCH=gfx950 \
+  -t kernel-bench:minimal \
+  -f docker/Dockerfile .
+
+# Build with custom Wave source
+docker build --network=host \
+  --build-arg BACKENDS=wave,torch \
+  --build-arg WAVE_REPO=iree-org/wave \
+  --build-arg WAVE_BRANCH=main \
+  -t kernel-bench:wave-custom \
+  -f docker/Dockerfile .
+
+# Run the container
 docker run -it --device=/dev/kfd --device=/dev/dri kernel-bench:v1 /bin/bash
 ```
 
@@ -18,13 +39,13 @@ docker run -it --device=/dev/kfd --device=/dev/dri kernel-bench:v1 /bin/bash
 python -m kernel_bench.cli.bench \
     --kernel_type gemm \
     --backend wave \
-    --machine mi325x \
+    --machine mi325x
 
 # Benchmark attention kernels with IREE backend
 python -m kernel_bench.cli.bench \
     --kernel_type attention \
     --backend iree \
-    --machine mi325x \
+    --machine mi325x
 
 # Tune GEMM kernels for optimal performance
 python -m kernel_bench.cli.bench \
@@ -94,6 +115,8 @@ The benchmarking infrastructure is built around several key components that work
 
 #### **hipBLASLt** - High-Performance BLAS Library
 - **Implementation**: `hipblaslt-bench` using latest rocm-libraries hipblaslt build
+- **Setup**: `./setup_backends.sh --backends=hipblaslt --gpu-arch gfx950`
+- **Note**: Requires GPU architecture specification for compilation
 
 ### Kernel Types
 

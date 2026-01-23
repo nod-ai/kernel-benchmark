@@ -2,24 +2,32 @@ from dataclasses import replace
 from math import ceil
 import traceback
 from typing import override
-import torch
-from torch.testing import assert_close
+
+# Import guards for backend-specific dependencies
+WAVE_AVAILABLE = False
+try:
+    import torch
+    from torch.testing import assert_close
+    from wave_lang.kernel.wave.constraints import MMAType
+    from wave_lang.kernel.lang.global_symbols import *
+    from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
+    from wave_lang.kernel.wave.utils.general_utils import (
+        get_default_scheduling_params,
+    )
+    from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+    from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
+    from wave_lang.kernel.wave.utils.torch_utils import (
+        device_randn,
+        device_zeros,
+    )
+    from wave_lang.kernel.wave.iree_utils import generate_iree_ref
+    WAVE_AVAILABLE = True
+except ImportError as e:
+    import warnings
+    warnings.warn(f"Wave backend dependencies not available: {e}")
+
 from kernel_bench.utils.dtypes.device_context import get_shared_memory_limit
 from kernel_bench.utils.iree_utils import shape_to_iree
-from wave_lang.kernel.wave.constraints import MMAType
-from wave_lang.kernel.lang.global_symbols import *
-from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
-from wave_lang.kernel.wave.utils.general_utils import (
-    get_default_scheduling_params,
-)
-from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
-from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
-from wave_lang.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-)
-from wave_lang.kernel.wave.iree_utils import generate_iree_ref
-
 from kernel_bench.tuning.hyperparam import (
     CategoricalBounds,
     IntegerBounds,
@@ -32,6 +40,9 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
 
     def validate_config(self):
+        if not WAVE_AVAILABLE:
+            return False
+            
         config = self.config
 
         if config.M < 4 or config.N < 4 or config.K < 4:
