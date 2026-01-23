@@ -9,10 +9,10 @@ echo "Installing hipBLASLt backend dependencies..."
 ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/ROCm/rocm-libraries.git}"
 ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-develop}"
 
-# GPU_ARCH must be provided by setup_backends.sh
+# GPU_ARCH must be provided by setup.sh
 if [[ -z "$GPU_ARCH" ]]; then
     echo "Error: GPU_ARCH environment variable not set"
-    echo "This script should be called from setup_backends.sh with --gpu-arch specified"
+    echo "This script should be called from setup.sh with --gpu-arch specified"
     exit 1
 fi
 

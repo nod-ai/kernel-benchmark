@@ -96,7 +96,7 @@ RUN BACKENDS_VAR="${BACKENDS:-all}"; \
 
 # Run backend-aware setup script with conditional arguments based on build args
 # Build the setup command dynamically based on provided arguments
-RUN SETUP_CMD="bash setup_backends.sh"; \
+RUN SETUP_CMD="bash setup.sh"; \
     if [ -n "$BACKENDS" ]; then \
         SETUP_CMD="$SETUP_CMD --backends=$BACKENDS"; \
     fi; \
