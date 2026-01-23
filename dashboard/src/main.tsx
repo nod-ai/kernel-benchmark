@@ -12,6 +12,8 @@ import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import AddKernels from "./pages/AddKernels";
 import Tuning from "./pages/Tuning";
+import Runs from "./pages/Runs";
+import Tracking from "./pages/Tracking";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -20,8 +22,10 @@ createRoot(document.getElementById("root")!).render(
         <Routes>
           <Route path="/dashboard/:runId" element={<Dashboard />} />
           <Route path="/history" element={<History />} />
+          <Route path="/runs" element={<Runs />} />
           <Route path="/new" element={<AddKernels />} />
           <Route path="/tune" element={<Tuning />} />
+          <Route path="/tracking" element={<Tracking />} />
           <Route
             path="*"
             element={<Navigate to="/dashboard/baseline" replace />}

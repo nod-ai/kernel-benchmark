@@ -11,15 +11,12 @@ import {
 import {
   Settings,
   Monitor,
-  Target,
   AlertTriangle,
   X,
   Check,
   Loader2,
-  Database,
-  Tag,
-  Filter,
 } from "lucide-react";
+import KernelSelector, { type KernelSelection } from "../KernelSelector";
 
 interface BenchmarkConfirmationModalProps {
   isOpen: boolean;
@@ -100,15 +97,10 @@ export default function BenchmarkConfirmationModal({
     }
   };
 
-  const handleTagToggle = (tag: string) => {
+  const handleKernelSelectionChange = (selection: KernelSelection) => {
     setConfig((prev) => ({
       ...prev,
-      kernelSelection: {
-        ...prev.kernelSelection,
-        tags: prev.kernelSelection.tags?.includes(tag)
-          ? prev.kernelSelection.tags.filter((t) => t !== tag)
-          : [...(prev.kernelSelection.tags || []), tag],
-      },
+      kernelSelection: selection,
     }));
   };
 
@@ -203,161 +195,13 @@ export default function BenchmarkConfirmationModal({
               </div>
 
               {/* Kernel Selection */}
-              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex items-center justify-center w-8 h-8 bg-purple-100 rounded-lg">
-                    <Target className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">
-                      Kernel Selection *
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      Choose which kernels to benchmark
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Option 1: All Quick Kernels */}
-                  <div
-                    className={`border border-gray-200 rounded-lg p-4 ${
-                      config.kernelSelection.type === "all-quick"
-                        ? "bg-blue-50 border-blue-200"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-3 mb-3">
-                      <input
-                        type="radio"
-                        name="kernelSelection"
-                        checked={config.kernelSelection.type === "all-quick"}
-                        onChange={() =>
-                          setConfig((prev) => ({
-                            ...prev,
-                            kernelSelection: { type: "all-quick" },
-                          }))
-                        }
-                        disabled={isSubmitting}
-                        className="mt-0.5 border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Database className="w-4 h-4 text-blue-600" />
-                          <h5 className="font-medium text-gray-900">
-                            Use all quick benchmark kernels
-                          </h5>
-                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
-                            {quickKernelCount} kernels
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Benchmark all kernels configured for quick workflow
-                          execution
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Option 2: Specific Tags */}
-                  <div
-                    className={`border border-gray-200 rounded-lg p-4 ${
-                      config.kernelSelection.type === "specific-tags"
-                        ? "bg-purple-50 border-purple-200"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-3 mb-3">
-                      <input
-                        type="radio"
-                        name="kernelSelection"
-                        checked={
-                          config.kernelSelection.type === "specific-tags"
-                        }
-                        onChange={() =>
-                          setConfig((prev) => ({
-                            ...prev,
-                            kernelSelection: {
-                              type: "specific-tags",
-                              tags: [],
-                            },
-                          }))
-                        }
-                        disabled={isSubmitting}
-                        className="mt-0.5 border-gray-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Filter className="w-4 h-4 text-purple-600" />
-                          <h5 className="font-medium text-gray-900">
-                            Only benchmark specific tags
-                          </h5>
-                          {config.kernelSelection.type === "specific-tags" && (
-                            <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded">
-                              {selectedTagsKernelCount} kernels
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-3">
-                          Select specific kernel tags to benchmark
-                        </p>
-
-                        {config.kernelSelection.type === "specific-tags" && (
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                              {availableTags.map((tag) => {
-                                const isSelected =
-                                  config.kernelSelection.tags?.includes(tag) ||
-                                  false;
-                                const tagKernelCount = kernels.filter(
-                                  (k) => k.tag === tag
-                                ).length;
-
-                                return (
-                                  <button
-                                    key={tag}
-                                    type="button"
-                                    onClick={() => handleTagToggle(tag)}
-                                    disabled={isSubmitting}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-                                      isSelected
-                                        ? "bg-purple-600 text-white border-purple-700"
-                                        : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
-                                    }`}
-                                  >
-                                    <Tag className="w-3 h-3" />
-                                    <span className="font-medium">{tag}</span>
-                                    <span
-                                      className={`text-xs px-1.5 py-0.5 rounded ${
-                                        isSelected
-                                          ? "bg-purple-700 text-purple-100"
-                                          : "bg-gray-200 text-gray-600"
-                                      }`}
-                                    >
-                                      {tagKernelCount}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {config.kernelSelection.tags?.length === 0 && (
-                              <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                <div className="flex items-center gap-2">
-                                  <AlertTriangle className="w-4 h-4" />
-                                  <span>
-                                    Please select at least one tag to continue
-                                  </span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <KernelSelector
+                selection={config.kernelSelection}
+                onChange={handleKernelSelectionChange}
+                kernels={kernels}
+                availableTags={availableTags}
+                disabled={isSubmitting}
+              />
 
               {/* Summary */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

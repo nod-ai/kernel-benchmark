@@ -395,3 +395,197 @@ export async function deleteKernels(kernelIds: string[]): Promise<void> {
     throw new Error(`Failed to delete kernels: ${error}`);
   }
 }
+
+// Run Management Functions
+
+export interface FetchRunsParams {
+  page?: number;
+  page_size?: number;
+  type?: string;
+  has_artifact?: boolean;
+  completed_only?: boolean;
+}
+
+export interface FetchRunsResponse {
+  runs: BenchmarkRun[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  ongoing_count: number;
+  completed_count: number;
+}
+
+export async function fetchAllRuns(
+  params: FetchRunsParams = {}
+): Promise<FetchRunsResponse> {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", params.page.toString());
+    if (params.page_size)
+      queryParams.append("page_size", params.page_size.toString());
+    if (params.type) queryParams.append("type", params.type);
+    if (params.has_artifact !== undefined)
+      queryParams.append("has_artifact", params.has_artifact.toString());
+    if (params.completed_only !== undefined)
+      queryParams.append("completed_only", params.completed_only.toString());
+
+    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs${
+      queryParams.toString() ? `?${queryParams.toString()}` : ""
+    }`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data: FetchRunsResponse = await response.json();
+
+    // Convert timestamp strings to Date objects
+    data.runs = data.runs.map((run) => ({
+      ...run,
+      timestamp: new Date(run.timestamp),
+    }));
+
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to fetch runs: ${error}`);
+  }
+}
+
+export async function deleteRun(runId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs/${runId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to delete run: ${error}`);
+  }
+}
+
+// Tracker types
+export interface ScheduleData {
+  isInterval: boolean;
+  startDate: string; // MM-DD-YYYY
+  timeOfDay: string; // HH:MM in UTC
+  daysOfWeek?: string[]; // For weekly schedules
+  intervalValue?: number; // For interval schedules
+  intervalUnit?: "weeks" | "months"; // For interval schedules
+  endDate?: string; // MM-DD-YYYY
+}
+
+export interface TrackerData {
+  _id?: string;
+  name: string;
+  blobName: string;
+  tags: string[];
+  backends: string[];
+  machine: string;
+  schedule: ScheduleData;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+export async function fetchTrackers(): Promise<TrackerData[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers`
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data: TrackerData[] = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to fetch trackers: ${error}`);
+  }
+}
+
+export async function createTracker(tracker: TrackerData): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(tracker),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+
+    const data: TrackerData = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to create tracker: ${error}`);
+  }
+}
+
+export async function updateTracker(
+  trackerId: string,
+  tracker: Partial<TrackerData>
+): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(tracker),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+
+    const data: TrackerData = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to update tracker: ${error}`);
+  }
+}
+
+export async function deleteTracker(trackerId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to delete tracker: ${error}`);
+  }
+}

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional, Any
 from .repository import create_repository
 
@@ -89,6 +89,30 @@ class RepoPullRequest:
     isMerged: bool = False
 
 
+@dataclass
+class Schedule:
+    isInterval: bool
+    startDate: str  # MM-DD-YYYY format
+    timeOfDay: str  # HH:MM in UTC
+    daysOfWeek: Optional[list[str]] = None  # For weekly schedules
+    intervalValue: Optional[int] = None  # For interval schedules
+    intervalUnit: Optional[Literal["weeks", "months"]] = None  # For interval schedules
+    endDate: Optional[str] = None  # MM-DD-YYYY format
+
+
+@dataclass
+class Tracker:
+    _id: str
+    name: str
+    blobName: str  # Simplified name for dashboard URL
+    tags: list[str]
+    backends: list[str]
+    machine: str
+    schedule: Schedule
+    isActive: bool = True
+    createdAt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")
 """Repository for kernel types and their respective attributes"""
 
@@ -105,3 +129,6 @@ KernelConfigDb = create_repository(KernelConfig, "kernelconfigs")
 
 RepoPullRequestDb = create_repository(RepoPullRequest, "repopullrequests")
 """Repository for repository pull request data with full type safety."""
+
+TrackerDb = create_repository(Tracker, "trackers2")
+"""Repository for kernel benchmark trackers with full type safety."""

@@ -5,6 +5,9 @@ export type WorkflowType = "none" | "e2e" | "all";
 // Available machines for kernel execution
 export const AVAILABLE_MACHINES = ["mi325", "mi355"];
 
+// Available backends for kernel execution
+export const SUPPORTED_BACKENDS = ["iree", "wave", "triton", "torch", "hipblaslt"];
+
 // Runtime configuration for kernels
 export interface KernelRuntimeConfig {
   workflow: WorkflowType;

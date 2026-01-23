@@ -131,6 +131,117 @@ def get_all_perfs():
     return jsonify([asdict(perf) for perf in perfs])
 
 
+@app.route("/api/runs", methods=["GET"])
+def get_runs():
+    """Get all workflow runs with optional pagination and type filtering."""
+    try:
+        # Get query parameters
+        page = request.args.get("page", default=1, type=int)
+        page_size = request.args.get("page_size", default=50, type=int)
+        run_type = request.args.get("type", default=None, type=str)
+        has_artifact = request.args.get("has_artifact", default=None, type=str)
+        completed_only = request.args.get("completed_only", default=None, type=str)
+
+        # Validate pagination parameters
+        if page < 1:
+            return jsonify({"error": "Page must be >= 1"}), 400
+        if page_size < 1 or page_size > 1000:
+            return jsonify({"error": "Page size must be between 1 and 1000"}), 400
+
+        # Query database with optional type filter
+        query = {"type": run_type} if run_type else None
+        all_runs = WorkflowRunDb.find_all(query)
+
+        # Apply artifact filter if specified
+        if has_artifact is not None:
+            has_artifact_bool = has_artifact.lower() == "true"
+            all_runs = [run for run in all_runs if run.hasArtifact == has_artifact_bool]
+
+        # Apply completed filter if specified
+        if completed_only is not None:
+            completed_only_bool = completed_only.lower() == "true"
+            if completed_only_bool:
+                all_runs = [run for run in all_runs if run.completed]
+            else:
+                all_runs = [run for run in all_runs if not run.completed]
+
+        # Sort by timestamp (most recent first)
+        all_runs.sort(key=lambda r: r.timestamp, reverse=True)
+
+        # Calculate counts (from unfiltered query for totals)
+        query_for_counts = {"type": run_type} if run_type else None
+        all_runs_for_counts = WorkflowRunDb.find_all(query_for_counts)
+        if has_artifact is not None:
+            has_artifact_bool = has_artifact.lower() == "true"
+            all_runs_for_counts = [
+                run
+                for run in all_runs_for_counts
+                if run.hasArtifact == has_artifact_bool
+            ]
+
+        total = len(all_runs)
+        ongoing_count = sum(1 for run in all_runs_for_counts if not run.completed)
+        completed_count = sum(1 for run in all_runs_for_counts if run.completed)
+
+        # Calculate pagination
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+
+        # Get paginated results
+        runs_page = all_runs[start_idx:end_idx]
+
+        return jsonify(
+            {
+                "runs": [asdict(run) for run in runs_page],
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size,
+                "ongoing_count": ongoing_count,
+                "completed_count": completed_count,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting runs: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get runs: {str(e)}"}), 500
+
+
+@app.route("/api/runs/<run_id>", methods=["DELETE"])
+# @token_required
+def delete_run(run_id):
+    """Delete a workflow run and its associated blob artifact."""
+    try:
+        # Find the run
+        run = WorkflowRunDb.find_by_id(run_id)
+
+        if not run:
+            return jsonify({"error": "Run not found"}), 404
+
+        # Delete blob artifact if it exists
+        if run.hasArtifact and run.blobName:
+            try:
+                directory_client.rm(run.blobName, recursive=True)
+                logger.info(f"Deleted blob artifact: {run.blobName}")
+            except Exception as blob_error:
+                logger.warning(f"Failed to delete blob {run.blobName}: {blob_error}")
+                # Continue with database deletion even if blob deletion fails
+
+        # Delete from database
+        success = WorkflowRunDb.delete_by_id(run_id)
+
+        if success:
+            return jsonify({"message": "Run deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete run from database"}), 500
+
+    except Exception as e:
+        logger.error(f"Error deleting run {run_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to delete run: {str(e)}"}), 500
+
+
 @app.route("/artifact/<blob_name>")
 def get_artifact_by_run_id(blob_name):
     new_kernels = get_artifact_parser(RunType.BENCHMARK).load_data(blob_name)
@@ -523,6 +634,138 @@ def remove_kernels():
     except Exception as e:
         logger.error(traceback.format_exc())
         return f"Error deleting kernel configurations: {str(e)}", 500
+
+
+@app.route("/api/trackers", methods=["GET"])
+def get_trackers():
+    """Get all trackers."""
+    try:
+        trackers = TrackerDb.find_all()
+        return jsonify([asdict(tracker) for tracker in trackers])
+    except Exception as e:
+        logger.error(f"Error getting trackers: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get trackers: {str(e)}"}), 500
+
+
+@app.route("/api/trackers", methods=["POST"])
+# @token_required
+def create_tracker():
+    """Create a new tracker."""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Validate required fields
+        required_fields = ["name", "blobName", "tags", "backends", "machine", "schedule"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        # Validate schedule
+        schedule_data = data["schedule"]
+        schedule_required = ["isInterval", "startDate", "timeOfDay"]
+        for field in schedule_required:
+            if field not in schedule_data:
+                return (
+                    jsonify({"error": f"Missing required schedule field: {field}"}),
+                    400,
+                )
+
+        # Create tracker with generated ID
+        tracker_data = {
+            "_id": str(uuid4()),
+            "name": data["name"],
+            "blobName": data["blobName"],
+            "tags": data["tags"],
+            "backends": data["backends"],
+            "machine": data["machine"],
+            "schedule": schedule_data,
+            "isActive": data.get("isActive", True),
+            "createdAt": datetime.now(timezone.utc),
+        }
+
+        tracker = fromdict(Tracker, tracker_data)
+        TrackerDb.upsert(tracker)
+
+        return jsonify(asdict(tracker)), 201
+
+    except Exception as e:
+        logger.error(f"Error creating tracker: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to create tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>", methods=["PUT"])
+# @token_required
+def update_tracker(tracker_id):
+    """Update an existing tracker."""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Find existing tracker
+        existing_tracker = TrackerDb.find_by_id(tracker_id)
+        if not existing_tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        # Update schedule if provided
+        schedule_data = asdict(existing_tracker.schedule)
+        if "schedule" in data:
+            schedule_data = data["schedule"]
+
+        # Update tracker fields
+        tracker_data = {
+            "_id": tracker_id,
+            "name": data.get("name", existing_tracker.name),
+            "blobName": data.get("blobName", existing_tracker.blobName),
+            "tags": data.get("tags", existing_tracker.tags),
+            "backends": data.get("backends", existing_tracker.backends),
+            "machine": data.get("machine", existing_tracker.machine),
+            "schedule": schedule_data,
+            "isActive": data.get("isActive", existing_tracker.isActive),
+            "createdAt": existing_tracker.createdAt,
+        }
+
+        updated_tracker = fromdict(Tracker, tracker_data)
+        success = TrackerDb.upsert(updated_tracker)
+
+        if success:
+            return jsonify(asdict(updated_tracker)), 200
+        else:
+            return jsonify({"error": "Failed to update tracker"}), 500
+
+    except Exception as e:
+        logger.error(f"Error updating tracker {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to update tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>", methods=["DELETE"])
+# @token_required
+def delete_tracker(tracker_id):
+    """Delete a tracker."""
+    try:
+        tracker = TrackerDb.find_by_id(tracker_id)
+
+        if not tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        success = TrackerDb.delete_by_id(tracker_id)
+
+        if success:
+            return jsonify({"message": "Tracker deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete tracker"}), 500
+
+    except Exception as e:
+        logger.error(f"Error deleting tracker {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to delete tracker: {str(e)}"}), 500
 
 
 def serve_backend(port=3000):
