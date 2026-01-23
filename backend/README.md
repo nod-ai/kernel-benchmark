@@ -1,61 +1,77 @@
 # Backend Services
 
-The backend is a Python-based server infrastructure that coordinates the entire microkernel benchmarking system. It provides a REST API for the dashboard, manages benchmark workflows, processes GitHub webhooks, and handles data persistence.
+The backend is a Python-based server infrastructure that coordinates the entire microkernel benchmarking system. It provides a REST API for the dashboard, manages benchmark workflows via a trigger-first architecture, and processes GitHub webhooks for automated run tracking.
 
 ## Architecture Overview
 
-The backend consists of three main services that work together to orchestrate the benchmarking infrastructure:
+The backend consists of three main services that work together:
 
 ### 1. **API Server** (`server.py`)
-Flask-based REST API that serves the dashboard and manages kernel configurations.
+Flask-based REST API (port 3000) that serves the dashboard, manages kernel configurations, and triggers workflow runs.
 
 ### 2. **Event Loop** (`event_loop.py`)
-Background service that monitors ongoing benchmark runs and processes artifacts.
+Background service that monitors ongoing benchmark runs, provides webhook redundancy, and downloads artifacts.
 
 ### 3. **Webhook Listener** (`listener.py`)
-Pyramid-based service that receives GitHub webhook events for automated workflows.
+Pyramid-based service (port 2500) that receives GitHub webhook events for real-time run tracking and PR monitoring.
+
+## Trigger-First Architecture
+
+**Every workflow run flows through a unified trigger system:**
+
+```
+User Action → trigger_run() → GitHub Workflow → Webhook/Poll → Run Linked → Artifacts
+```
+
+This provides:
+- ✅ Single entry point for all workflow dispatches
+- ✅ Complete audit trail (every run linked to its trigger)
+- ✅ Robust redundancy (webhook + polling backup)
+- ✅ Clean state management (no "undefined" states)
+
+**Learn more:** See [Run Management README](runs/README.md) for detailed architecture.
 
 ## Directory Structure
 
 ```
 backend/
-├── server.py              # Main Flask API server
-├── event_loop.py          # Background task processor
-├── listener.py            # GitHub webhook handler
-├── globals.py             # Global constants and configuration
+├── server.py              # Flask API server (port 3000)
+├── event_loop.py          # Background run monitoring
+├── listener.py            # Webhook handler (port 2500)
+├── globals.py             # Global constants
 ├── requirements.txt       # Python dependencies
-├── runs/                  # Run management and tracking
-│   ├── manager.py        # Orchestrates run lifecycle
+│
+├── runs/                  # 🔄 Run management system
+│   ├── README.md         # → Detailed documentation
+│   ├── trigger_service.py # Unified trigger system
+│   ├── manager.py        # Run orchestration + redundancy
 │   ├── tracker.py        # Individual run tracking
-│   ├── workflows.py      # GitHub Actions integration
-│   ├── run_utils.py      # Run utility functions
-│   └── parsing/          # Result artifact parsing
-│       ├── bench_parser.py
-│       ├── tuning_parser.py
-│       └── artifact_parsing.py
-├── storage/              # Data persistence layer
-│   ├── repository.py     # Generic database repository
-│   ├── types.py          # Data models and type definitions
-│   ├── auth.py           # Azure Storage authentication
-│   ├── artifacts.py      # Artifact storage management
-│   ├── directory.py      # File system operations
-│   ├── conversion.py     # Data format conversions
-│   ├── rebase.py         # PR rebasing logic
-│   └── utils.py          # Storage utilities
-├── webhook/              # GitHub webhook handlers
-│   ├── workflow.py       # Workflow event processing
-│   └── wave_update.py    # Wave-specific PR updates
+│   ├── workflows.py      # Workflow metadata
+│   └── parsing/          # Artifact parsers
+│
+├── storage/              # 💾 Data persistence layer
+│   ├── README.md         # → Detailed documentation
+│   ├── triggers.py       # Trigger system models
+│   ├── types.py          # Data models
+│   ├── repository.py     # Repository pattern
+│   ├── artifacts.py      # Blob storage
+│   └── rebase.py         # Historical sync
+│
+├── webhook/              # 🎣 GitHub event handlers
+│   ├── README.md         # → Detailed documentation
+│   ├── workflow.py       # Run tracking webhooks
+│   └── wave_update.py    # PR monitoring webhooks
+│
 ├── github_utils/         # GitHub API integration
-│   ├── actions.py        # GitHub Actions API
-│   ├── auth.py           # GitHub authentication
-│   └── gist.py           # Gist management
 ├── perf/                 # Performance analysis
-│   └── comparisons.py    # Cross-run comparisons
-└── tools/                # Administrative utilities
-    ├── clear_db.py       # Database cleanup
-    ├── upload_results_to_dashboard.py
-    └── convert_hipblaslt_to_json.py
+└── tools/                # Admin utilities
+    └── migrate_to_triggers.py  # Migration script
 ```
+
+**📖 See subsystem READMEs for detailed documentation:**
+- [runs/README.md](runs/README.md) - Run management & trigger system
+- [storage/README.md](storage/README.md) - Data models & persistence
+- [webhook/README.md](webhook/README.md) - Webhook event handling
 
 ## Core Features
 
@@ -101,84 +117,82 @@ The API server provides comprehensive endpoints for dashboard operations:
 
 ### 🔄 Run Management System
 
-The run management system tracks the entire lifecycle of benchmark and tuning runs:
+All workflow runs are triggered and tracked through a unified system:
+
+```python
+from backend.runs.trigger_service import trigger_run, TriggerType
+
+# Trigger any run with one function call
+trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, {
+    "tags": ["validation"],
+    "machine": "mi325x"
+})
+```
 
 **Run Lifecycle:**
-1. **Requested** → Run is created via API or webhook
-2. **In Progress** → Event loop monitors status and steps
-3. **Completed** → Artifacts are downloaded and parsed
-4. **Archived** → Data is persisted to database
+1. **Trigger Created** → `trigger_run()` creates RunTrigger in database
+2. **Workflow Dispatched** → GitHub Actions workflow starts with trigger_id
+3. **Run Linked** → Webhook or event loop links run to trigger
+4. **Monitoring** → Event loop tracks status and downloads artifacts
+5. **Completed** → Artifacts parsed and stored
 
 **Key Components:**
-- **RunManager** (`runs/manager.py`): Orchestrates all active runs
-- **RunTracker** (`runs/tracker.py`): Tracks individual run progress
-- **ArtifactParser** (`runs/parsing/`): Extracts performance data
+- **trigger_service.py**: Single entry point for all dispatches
+- **manager.py**: Orchestrates runs + trigger reconciliation
+- **tracker.py**: Monitors individual runs
 
-The event loop updates runs every 10 seconds, checking for completion and downloading artifacts when available.
+**📖 Learn more:** [Run Management README](runs/README.md)
 
-### 📊 Database Layer
+### 💾 Storage Layer
 
-Built on **Azure Table Storage** with a type-safe repository pattern:
+Built on **Azure Table Storage** with a type-safe repository pattern and trigger system:
 
-**Data Models:**
-- `KernelConfig` - Kernel configurations for benchmarking
-- `KernelTypeDefinition` - Kernel type schemas with attributes
-- `WorkflowRunState` - Benchmark/tuning run tracking
-- `TuningConfig` - Tuning results and configurations
+**Core Models:**
+- `RunTrigger` - Tracks all workflow run initiations (new!)
+- `WorkflowRunState` - Run execution state (linked to triggers)
+- `KernelConfig` - Kernel benchmark configurations
+- `TuningConfig` - Tuning results
 - `RepoPullRequest` - GitHub PR tracking
-- `BenchChangeStats` - Performance comparison statistics
 
-**Repository Features:**
-- Generic type-safe CRUD operations
-- Batch operations (upsert, update, delete)
-- OData query support
-- Automatic serialization/deserialization
-- Transaction support (up to 100 ops per batch)
+**Repository Pattern:**
+```python
+from backend.storage.types import KernelConfigDb
 
-### 🪝 GitHub Integration
+# Type-safe database operations
+kernels = KernelConfigDb.find_all()
+kernel = KernelConfigDb.find_by_id("some-id")
+KernelConfigDb.upsert(kernel)
+KernelConfigDb.upsert_many([k1, k2, k3])  # Batch ops
+```
 
-**Webhook Events:**
-- `workflow_run` - Track benchmark/tuning workflow status
-- `workflow_job` - Monitor individual job steps
-- `pull_request` - Track Wave repository updates
-- `push` - Monitor repository changes
+**📖 Learn more:** [Storage README](storage/README.md)
 
-**GitHub Actions Integration:**
-- Dispatch benchmark workflows with custom configurations
-- Trigger tuning workflows with kernel parameters
-- Cancel running workflows programmatically
-- Download and process workflow artifacts
+### 🪝 Webhook System
 
-**Gist Management:**
-- Upload tuning configurations as gists
-- Store kernel problem definitions
-- Share configurations across workflows
+Receives GitHub webhook events for real-time tracking:
 
-## Getting Started
+**Workflow Events (kernel-benchmark repo):**
+- `workflow_run` - Track workflow lifecycle
+- `workflow_job` - **Extract trigger ID and link run** (fast path)
+
+**PR Events (Wave repo):**
+- `pull_request` - Auto-trigger benchmarks on PR updates
+
+**Redundancy:**
+- Webhook listener provides instant linking (< 1 second)
+- Event loop provides backup polling (every 10 seconds)
+- Both use the same `link_trigger_to_run()` function
+
+**📖 Learn more:** [Webhook README](webhook/README.md)
+
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.12+
-- Azure Storage account
-- GitHub App credentials
-- Access to the benchmark repository
-
-### Environment Setup
-
-Create a `.env` file with required credentials:
-
-```bash
-# Azure Storage
-AZURE_STORAGE_CONNECTION_STRING=<your-connection-string>
-
-# GitHub
-PEM_FILE=<github-app-private-key>
-APP_ID=<github-app-id>
-INSTALLATION_ID=<installation-id>
-
-# Authentication
-PASSWORD_HASH=<bcrypt-hashed-password>
-```
+- Azure Storage account (Table Storage + Blob Storage)
+- GitHub App credentials with workflow dispatch permissions
+- Access to kernel-benchmark and Wave repositories
 
 ### Installation
 
@@ -186,271 +200,292 @@ PASSWORD_HASH=<bcrypt-hashed-password>
 # Install dependencies
 pip install -r requirements.txt
 
-# Initialize database tables (first-time setup)
-python -c "from backend.storage.types import *; print('Database initialized')"
+# Set up environment variables
+cp .env.example .env  # Then edit with your credentials
+
+# Initialize database (creates Azure Table Storage tables)
+python -c "from backend.storage.types import *; print('Tables ready')"
+```
+
+### Environment Variables
+
+Create `.env` file:
+
+```bash
+# Azure Storage
+AZURE_STORAGE_CONNECTION_STRING=<connection-string>
+
+# GitHub App
+PEM_FILE=<private-key-file>
+APP_ID=<app-id>
+INSTALLATION_ID=<installation-id>
+
+# Authentication
+PASSWORD_HASH=<bcrypt-hash>
 ```
 
 ### Running the Services
 
-The backend requires all three services to run concurrently:
+All three services must run concurrently:
 
-**Terminal 1 - API Server:**
 ```bash
+# Terminal 1: API Server (port 3000)
 python -m backend.server
-# Runs on port 3000 by default
-```
 
-**Terminal 2 - Event Loop:**
-```bash
+# Terminal 2: Event Loop (10s polling)
 python -m backend.event_loop
-# Polls every 10 seconds for run updates
-```
 
-**Terminal 3 - Webhook Listener:**
-```bash
+# Terminal 3: Webhook Listener (port 2500)
 python -m backend.listener
-# Runs on port 2500 by default
 ```
 
-For production deployment, use a process manager like `supervisor` or `systemd` to manage all three services.
+**Production**: Use `supervisor` or `systemd`:
 
-### Docker Deployment
+```ini
+# /etc/supervisor/conf.d/backend.conf
+[program:backend-api]
+command=python -m backend.server
+directory=/path/to/backend
+autostart=true
+autorestart=true
 
-```dockerfile
-# Example Dockerfile
-FROM python:3.12-slim
+[program:backend-eventloop]
+command=python -m backend.event_loop
+directory=/path/to/backend
+autostart=true
+autorestart=true
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY backend/ ./backend/
-
-# Run with supervisor or similar
-CMD ["python", "-m", "backend.server"]
+[program:backend-webhook]
+command=python -m backend.listener
+directory=/path/to/backend
+autostart=true
+autorestart=true
 ```
 
 ## Configuration
 
-### Server Configuration
+### Ports
 
-Default ports and settings in `server.py` and `listener.py`:
+- API Server: `3000` (configurable in `server.py`)
+- Webhook Listener: `2500` (configurable in `listener.py`)
 
-```python
-# API Server
-API_PORT = 3000
+### Polling Interval
 
-# Webhook Listener  
-WEBHOOK_PORT = 2500
-
-# Event Loop
-UPDATE_RUNS_INTERVAL = 10  # seconds
-```
-
-### GitHub Workflow Configuration
-
-Workflows are defined in `runs/workflows.py`:
-
-- **Short Benchmark**: Quick validation runs for specific kernels
-- **Tune Wave Kernels**: Hyperparameter optimization workflows
+Event loop polls every `10 seconds` (configured in `event_loop.py`)
 
 ### Authentication
 
-The backend uses JWT-based authentication:
-- Tokens expire after 30 minutes
-- Password is hashed with bcrypt
-- Sessions are managed via HTTP-only cookies
+JWT-based authentication with:
+- 30-minute token expiration
+- Bcrypt password hashing
+- HTTP-only secure cookies
 
-## Database Schema
+### Supported Workflows
 
-### Kernel Configuration
+Three workflow types (defined in `.github/workflows/`):
+1. **Short Benchmark** (`short_bench.yml`) - Quick validation runs
+2. **Tune Wave Kernels** (`tune_kernels.yml`) - Hyperparameter tuning
+3. **Performance** (`run_bench.yml`) - Full E2E benchmarks
 
-```python
-@dataclass
-class KernelConfig:
-    _id: str              # Unique identifier
-    name: str             # Kernel name
-    kernelType: str       # Type (gemm, attention, etc.)
-    tag: str              # Grouping tag for batch operations
-    machines: list[str]   # Target machines (mi325x, etc.)
-    workflow: str         # Workflow type (none, e2e, all)
-    problem: dict         # Kernel-specific parameters
-```
+## API Endpoints Reference
 
-### Kernel Type Definition
+### Triggers (New!)
+- `GET /api/triggers` - List all triggers (supports `?type=...&status=...&limit=...`)
+- `GET /api/triggers/<trigger_id>` - Get trigger with linked run info
+- `GET /api/runs/<run_id>/trigger` - Get trigger that caused a specific run
 
-```python
-@dataclass
-class KernelTypeDefinition:
-    _id: str                  # Unique identifier
-    name: str                 # Internal name
-    displayName: str          # Display name for UI
-    attributes: list[dict]    # Schema defining kernel parameters
-    description: str          # Optional description
-```
+### Workflows
+- `POST /workflow/trigger` - Trigger benchmark run (returns `triggerId`)
+- `POST /workflow/cancel` - Cancel running workflow
+- `POST /tune` - Trigger tuning run (returns `triggerId`)
 
-### Workflow Run State
+### Runs
+- `GET /runs` - List benchmark runs
+- `GET /performances` - List E2E performance runs
+- `GET /api/runs` - Paginated runs (supports filters)
+- `DELETE /api/runs/<run_id>` - Delete run and artifacts
 
-```python
-@dataclass
-class WorkflowRunState:
-    _id: str              # GitHub run ID
-    type: str             # BENCHMARK or TUNING
-    blobName: str         # Artifact storage location
-    timestamp: datetime   # Run creation time
-    status: str           # queued, in_progress, completed
-    conclusion: str       # success, failure, cancelled
-    numSteps: int         # Total workflow steps
-    steps: list[dict]     # Individual step details
-    completed: bool       # Completion flag
-    hasArtifact: bool     # Artifact availability
-    mappingId: str        # Links to PR or config
-```
+### Kernels
+- `GET /kernels` - List all kernel configs
+- `POST /kernels` - Add kernel(s)
+- `PUT /kernels/<id>` - Update kernel
+- `PUT /kernels/batch` - Batch update
+- `DELETE /kernels` - Delete kernels by IDs
+
+### Analysis
+- `GET /change_stats` - Performance comparison stats
+- `GET /pull_requests` - Tracked PRs
+- `POST /rebase` - Sync historical data
 
 ## API Usage Examples
 
-### Adding Kernels
+### Trigger a Benchmark Run
 
 ```python
 import requests
 
-# Single kernel
-response = requests.post('http://localhost:3000/kernels', json={
-    "name": "gemm_1024_1024_1024_f16",
-    "kernelType": "gemm",
-    "tag": "validation",
-    "machines": ["mi325x"],
-    "workflow": "e2e",
-    "problem": {
-        "M": 1024,
-        "N": 1024,
-        "K": 1024,
-        "dtype": "f16"
-    }
-})
-
-# Batch add
-kernels = [kernel1, kernel2, kernel3]
-response = requests.post('http://localhost:3000/kernels', json=kernels)
-```
-
-### Triggering Benchmarks
-
-```python
-# Trigger benchmark for specific tags
 response = requests.post('http://localhost:3000/workflow/trigger', json={
     "pr": {
-        "repoName": "nod-ai/SHARK-Platform",
-        "branchName": "main",
-        "mappingId": "pr-123"
+        "repoName": "iree-org/wave",
+        "branchName": "feature/opt",
+        "mappingId": "abc123"  # head SHA
     },
     "config": {
         "machine": "mi325x",
         "kernelSelection": {
             "type": "specific-tags",
-            "tags": ["validation", "regression"]
+            "tags": ["validation"]
         }
     }
 })
+
+# Response: {"triggerId": "abc-123-def", "message": "Success"}
 ```
 
-### Triggering Tuning
+### Trigger Tuning
 
 ```python
-# Tune specific kernels
 response = requests.post('http://localhost:3000/tune', json={
-    "kernel_ids": ["kernel-uuid-1", "kernel-uuid-2", "kernel-uuid-3"]
+    "kernel_ids": ["id1", "id2"],
+    "numTrials": 75
 })
+
+# Response: {"triggerId": "xyz-789-abc", "message": "Success"}
 ```
 
-## Performance Monitoring
-
-The backend tracks performance metrics across runs:
-
-### Change Statistics
-
-Compares performance between runs to detect regressions:
+### Query Triggers
 
 ```python
-@dataclass
-class BenchChangeStats:
-    _id: str
-    runId: str
-    machine: str
-    old: dict  # Previous run metrics
-    new: dict  # Current run metrics
+# Get all triggers
+triggers = requests.get('http://localhost:3000/api/triggers')
+
+# Get specific trigger with linked run
+trigger = requests.get('http://localhost:3000/api/triggers/abc-123-def')
+
+# Get trigger that caused a run
+trigger = requests.get('http://localhost:3000/api/runs/456789/trigger')
 ```
 
-Calculated metrics:
-- **Speedup/Slowdown** per kernel
-- **Aggregate performance changes**
-- **Backend comparisons** (Wave vs IREE vs PyTorch)
+### Manage Kernels
 
-### Artifact Parsing
+```python
+# Add kernels (single or batch)
+response = requests.post('http://localhost:3000/kernels', json={
+    "name": "gemm_1024x1024x1024_f16",
+    "kernelType": "gemm",
+    "tag": "validation",
+    "machines": ["mi325x"],
+    "workflow": "all",
+    "problem": {"M": 1024, "N": 1024, "K": 1024, "dtype": "f16"}
+})
 
-The backend automatically parses benchmark artifacts:
+# Query runs
+runs = requests.get('http://localhost:3000/runs')
+```
 
-**Supported Formats:**
-- CSV benchmark results
-- JSON tuning configurations
-- HipBLASLt output files
+## Monitoring & Debugging
 
-**Parsed Metrics:**
-- Runtime (μs)
-- TFLOPs
-- Occupancy
-- Memory bandwidth
-- Tuning parameters
+### Check Trigger Status
+
+```bash
+# Run migration verification
+python -m backend.tools.migrate_to_triggers --verify
+
+# Check for failed dispatches
+curl http://localhost:3000/api/triggers?status=failed
+
+# Check for unlinked triggers (webhook issues)
+curl http://localhost:3000/api/triggers?status=dispatched
+```
+
+### View Run Progress
+
+```bash
+# Get all runs
+curl http://localhost:3000/runs
+
+# Get runs with pagination
+curl "http://localhost:3000/api/runs?page=1&page_size=20"
+
+# Get trigger for specific run
+curl http://localhost:3000/api/runs/123456/trigger
+```
+
+### Performance Analysis
+
+The backend automatically calculates performance changes:
+- Speedup/slowdown per kernel
+- Aggregate performance shifts
+- Cross-backend comparisons (Wave vs IREE vs PyTorch)
+
+Access via:
+- `GET /change_stats` - All statistics
+- `GET /change_stats/<run_id>` - Run-specific stats
 
 ## Troubleshooting
 
-### Common Issues
+### Trigger Not Linking to Run
 
-**Database Connection Errors:**
+**Symptoms**: Trigger stuck in DISPATCHED status
+
+**Causes**:
+- Webhook missed (network issue)
+- Identifier job failed
+- Step name format incorrect
+
+**Solution**:
+- Event loop automatically reconciles within 10-20 seconds
+- Check GitHub workflow logs for identifier job
+- Verify workflow YML uses `triggerId_${{ inputs.trigger_id }}`
+
+### Webhook Not Received
+
+**Check**:
+1. GitHub webhook delivery status (repo settings → Webhooks)
+2. Webhook listener is running on port 2500
+3. Firewall allows incoming connections
+
+**Backup**: Event loop provides redundancy - triggers will link automatically
+
+### Database Connection Issues
+
 ```bash
-# Verify Azure connection string
+# Test Azure Storage connection
 python -c "from backend.storage.auth import get_blob_client; get_blob_client()"
-```
 
-**GitHub Authentication:**
-```bash
 # Test GitHub API access
 python -c "from backend.github_utils import get_repo; print(get_repo('bench'))"
 ```
 
-**Run Not Updating:**
-- Check event loop is running
-- Verify workflow is dispatched correctly
-- Check GitHub Actions logs
+### Artifact Download Failed
 
-**Artifact Not Found:**
-- Ensure workflow completed successfully
-- Check artifact name matches expected pattern
-- Verify Azure Storage permissions
+- Verify workflow completed successfully (status=completed, conclusion=success)
+- Check Azure Storage permissions
+- Ensure artifact exists in GitHub Actions run
 
-## Development
+## Development Guide
 
-### Adding New Endpoints
+### Adding New Trigger Types
 
 ```python
-@app.route("/your-endpoint", methods=["GET"])
-def your_endpoint():
-    """Your endpoint description."""
-    data = YourDataDb.find_all()
-    return jsonify([asdict(item) for item in data])
+# 1. Add to TriggerType enum in storage/triggers.py
+class TriggerType(Enum):
+    YOUR_TYPE = "your_type"
+
+# 2. Add handling in trigger_service.py
+def _determine_workflow(trigger_type, metadata):
+    if trigger_type == TriggerType.YOUR_TYPE:
+        return "your_workflow.yml"
+
+def _build_workflow_inputs(trigger_type, metadata, trigger_id):
+    if trigger_type == TriggerType.YOUR_TYPE:
+        return {"your_input": metadata["your_field"]}
 ```
 
-### Creating New Run Types
-
-1. Add to `RunType` enum in `runs/__init__.py`
-2. Create workflow definition in `runs/workflows.py`
-3. Implement artifact parser in `runs/parsing/`
-4. Register in workflow listener
-
-### Adding Database Models
+### Adding New Database Models
 
 ```python
-# 1. Define model in storage/types.py
+# 1. Define in storage/types.py
 @dataclass
 class YourModel:
     _id: str
@@ -460,47 +495,82 @@ class YourModel:
 # 2. Create repository
 YourModelDb = create_repository(YourModel, "tablename")
 
-# 3. Use in endpoints
-@app.route("/your-models")
-def get_your_models():
-    models = YourModelDb.find_all()
-    return jsonify([asdict(m) for m in models])
+# 3. Use in code
+items = YourModelDb.find_all()
+YourModelDb.upsert(item)
 ```
 
-## Performance Considerations
+### Adding API Endpoints
 
-- Event loop polls every 10 seconds - adjust `UPDATE_RUNS_INTERVAL` if needed
-- Batch operations support up to 100 entities per transaction
-- Database queries are filtered at the server to minimize data transfer
-- Artifact parsing is done asynchronously by event loop
-- Webhook listener uses Pyramid for better performance under load
+```python
+@app.route("/your-endpoint", methods=["GET"])
+def your_endpoint():
+    data = YourModelDb.find_all()
+    return jsonify([asdict(item) for item in data])
+```
 
-## Security
+## Architecture Benefits
 
-- **Authentication**: JWT tokens with 30-minute expiration
-- **Authorization**: Token-based endpoint protection (commented out in development)
-- **Webhook Validation**: GitHub webhook signatures should be verified (TODO)
-- **CORS**: Configured for dashboard domain
-- **Environment Variables**: Sensitive credentials stored in `.env`
+### Simplicity
+- **One function** for all workflow dispatches: `trigger_run()`
+- **Clear data flow**: Trigger → Dispatch → Link → Artifact
+- **Single source of truth**: Every run has a trigger
 
-## Contributing
+### Reliability
+- **Dual-path tracking**: Webhook (fast) + Polling (backup)
+- **Automatic reconciliation**: Missed webhooks handled within 10-20s
+- **Idempotent linking**: Safe to link multiple times
 
-When adding new features:
+### Auditability
+- **Complete history**: Every trigger stored permanently
+- **Type-safe metadata**: Structured data for each trigger type
+- **Query anywhere**: "What triggered run X?" → Check `run.triggerId`
 
-1. Follow existing patterns for consistency
-2. Add type hints for all functions
-3. Use dataclasses for structured data
-4. Leverage repository pattern for database operations
-5. Add appropriate error handling and logging
+### Flexibility
+- **Easy to extend**: Add new trigger types without touching core logic
+- **Type-specific metadata**: Each trigger type stores what it needs
+- **Future-proof**: Can add trigger retries, scheduling, batching, etc.
+
+## Migration History
+
+The backend was refactored in **January 2026** from a messy, fragmented architecture to this clean trigger-first design:
+
+**Before**:
+- Dispatch logic scattered across 4+ files
+- `mappingId` held arbitrary identifiers with no schema
+- Webhook loss = permanent data loss
+- Difficult to debug "why did this run start?"
+
+**After**:
+- All dispatch logic in `trigger_service.py`
+- Structured `RunTrigger` with typed metadata
+- Webhook loss handled automatically by event loop
+- Complete audit trail: trigger → run relationship
+
+**Migration tool**: `tools/migrate_to_triggers.py` created synthetic triggers for all historical runs.
 
 ## Related Documentation
 
-- [Main Project README](../README.md)
-- [Benchmark Infrastructure](../benchmark/README.md)
-- [Dashboard README](../dashboard/README.md)
+- **Subsystems**:
+  - [Run Management](runs/README.md) - Detailed trigger system docs
+  - [Storage Layer](storage/README.md) - Data models & persistence
+  - [Webhook System](webhook/README.md) - Event handling
+- **Project**:
+  - [Main README](../README.md) - Full project overview
+  - [Benchmark Infrastructure](../benchmark/README.md)
+  - [Dashboard](../dashboard/README.md)
 
-## Support
+## Contributing
 
-For questions or issues:
-- Open an issue on GitHub
+Follow these patterns:
+1. Use `trigger_run()` for all workflow dispatches
+2. Add type hints to all functions
+3. Use dataclasses for structured data
+4. Leverage repository pattern for database
+5. Document trigger metadata schemas
+
+## Contact
+
+Questions or issues:
+- Open GitHub issue
 - Contact: Surya Jasper
