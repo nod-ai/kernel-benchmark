@@ -115,7 +115,6 @@ The benchmarking infrastructure is built around several key components that work
 
 #### **hipBLASLt** - High-Performance BLAS Library
 - **Implementation**: `hipblaslt-bench` using latest rocm-libraries hipblaslt build
-- **Setup**: `./setup_backends.sh --backends=hipblaslt --gpu-arch gfx950`
 - **Note**: Requires GPU architecture specification for compilation
 
 ### Kernel Types
