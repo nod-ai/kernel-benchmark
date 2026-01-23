@@ -155,16 +155,6 @@ pip install --no-cache-dir --upgrade pip setuptools wheel pyyaml
 echo "Installing core project requirements..."
 pip install -r requirements.txt
 
-if [[ -d "aiter" ]]; then
-    echo "Removing existing aiter directory..."
-    rm -rf aiter
-fi
-
-git clone --recursive https://github.com/ROCm/aiter.git
-cd aiter
-python setup.py develop
-cd ..
-
 echo ""
 echo "================================"
 echo "Installing Backend Dependencies"
