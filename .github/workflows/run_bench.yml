@@ -2,6 +2,11 @@ name: Performance
 
 on:
   workflow_dispatch:
+    inputs:
+      trigger_id:
+        description: "Backend trigger ID for linking"
+        required: false
+        default: "undefined"
   schedule:
     - cron: "0 7 * * *"
 
@@ -14,7 +19,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  identifier:
+    name: E2E Run Identifier
+    runs-on: ubuntu-latest
+    steps:
+      - name: triggerId_${{ inputs.trigger_id || 'undefined' }}
+        run: echo "Trigger ID: ${{ inputs.trigger_id || 'undefined' }}"
+
   benchmark:
+    needs: identifier
     name: "E2E Benchmarks :: ${{ matrix.machine }}"
     runs-on: "linux-${{ matrix.machine }}-1gpu-ossci-nod-ai"
 

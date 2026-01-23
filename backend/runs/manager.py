@@ -6,6 +6,7 @@ from backend.runs import RunType
 from backend.runs.run_utils import find_incomplete_runs
 from backend.runs.tracker import get_run_tracker
 from backend.storage.auth import get_blob_client
+from backend.storage.triggers import RunTriggerDb, TriggerStatus, link_trigger_to_run
 from backend.storage.types import WorkflowRunState
 
 logger = logging.getLogger(__name__)
@@ -52,3 +53,80 @@ class RunManager:
 
         for completed_run_id in completed_runs:
             self.remove_run(completed_run_id)
+        
+        # Reconcile unlinked triggers (backup path when webhooks are missed)
+        self.reconcile_unlinked_triggers()
+    
+    def reconcile_unlinked_triggers(self):
+        """
+        Find dispatched triggers that haven't been linked to runs yet.
+        
+        This is the backup mechanism for when webhook events are missed.
+        It queries GitHub for recent runs and tries to match them to unlinked triggers.
+        """
+        try:
+            # Find triggers that have been dispatched but not linked
+            unlinked_query = f"status eq '{TriggerStatus.DISPATCHED.value}'"
+            unlinked_triggers = RunTriggerDb.query(unlinked_query)
+            
+            if not unlinked_triggers:
+                return
+            
+            logger.info(f"Found {len(unlinked_triggers)} unlinked triggers, attempting reconciliation")
+            
+            # Get recent workflow runs from GitHub (last 100)
+            repo = get_repo("bench")
+            recent_runs = list(repo.get_workflow_runs()[:100])
+            
+            linked_count = 0
+            for trigger in unlinked_triggers:
+                trigger_id = trigger._id
+                
+                # Try to find a matching run
+                for gh_run in recent_runs:
+                    # Extract trigger ID from run's identifier job
+                    run_trigger_id = self._extract_trigger_id_from_run(gh_run)
+                    
+                    if run_trigger_id == trigger_id:
+                        logger.info(f"Found matching run {gh_run.id} for trigger {trigger_id}")
+                        run_id = str(gh_run.id)
+                        
+                        # Link trigger to run
+                        if link_trigger_to_run(trigger_id, run_id):
+                            # Also update the WorkflowRunState if it exists
+                            try:
+                                from backend.storage.types import WorkflowRunDb
+                                WorkflowRunDb.update_by_id(run_id, {"triggerId": trigger_id})
+                            except:
+                                pass
+                            
+                            linked_count += 1
+                            break
+            
+            if linked_count > 0:
+                logger.info(f"Successfully linked {linked_count} triggers via reconciliation")
+                
+        except Exception as e:
+            logger.error(f"Error during trigger reconciliation: {e}")
+    
+    def _extract_trigger_id_from_run(self, gh_run) -> Optional[str]:
+        """
+        Extract trigger ID from a GitHub workflow run's identifier job.
+        
+        Returns:
+            Trigger ID if found, None otherwise
+        """
+        try:
+            # Look through jobs to find the identifier job
+            for job in gh_run.jobs():
+                if "identifier" in job.name.lower():
+                    # Look through steps for triggerId
+                    for step in job.steps:
+                        if step.name.startswith("triggerId_"):
+                            trigger_id = step.name.split("triggerId_", 1)[1]
+                            if trigger_id != "undefined":
+                                return trigger_id
+        except Exception as e:
+            logger.debug(f"Failed to extract trigger ID from run {gh_run.id}: {e}")
+        
+        return None

@@ -16,7 +16,7 @@ class WorkflowRunState:
     steps: list[dict]
     completed: bool = False
     hasArtifact: bool = False
-    mappingId: Optional[str] = None
+    triggerId: Optional[str] = None  # Foreign key to RunTrigger
 
 
 @dataclass

@@ -4,6 +4,7 @@ from backend.globals import BENCH_REPO_NAME
 from backend.runs.run_utils import parse_run_from_json
 from backend.runs.workflows import WorkflowRunInfo, find_workflow
 from backend.storage.auth import get_blob_client
+from backend.storage.triggers import link_trigger_to_run
 from backend.storage.types import *
 from dataclass_wizard import asdict
 import json
@@ -74,15 +75,54 @@ class WorkflowListener:
     def handle_workflow_job_payload(self, job_payload: dict):
         if job_payload["repository"]["full_name"] != BENCH_REPO_NAME:
             return
-        if not find_workflow(main_job=job_payload["workflow_job"]["name"]):
-            return
-
+        
+        job_name = job_payload["workflow_job"]["name"]
+        workflow_info = find_workflow(main_job=job_name)
+        
+        # Check if this is an identifier job
+        is_identifier_job = "identifier" in job_name.lower()
+        
         run_id = str(job_payload["workflow_job"]["run_id"])
         steps = job_payload["workflow_job"]["steps"]
 
         logger.info(f"updating job: {json.dumps(steps, indent=4)}")
 
-        try:
-            WorkflowRunDb.update_by_id(run_id, {"steps": steps})
-        except Exception as e:
-            return
+        # Extract trigger ID from identifier job and link
+        if is_identifier_job:
+            trigger_id = self._extract_trigger_id_from_steps(steps)
+            if trigger_id and trigger_id != "undefined":
+                logger.info(f"Linking trigger {trigger_id} to run {run_id}")
+                link_success = link_trigger_to_run(trigger_id, run_id)
+                if link_success:
+                    # Update run with trigger ID
+                    try:
+                        WorkflowRunDb.update_by_id(run_id, {
+                            "triggerId": trigger_id,
+                            "steps": steps
+                        })
+                    except Exception as e:
+                        logger.error(f"Failed to update run {run_id} with triggerId: {e}")
+                else:
+                    logger.warning(f"Failed to link trigger {trigger_id} to run {run_id}")
+            else:
+                logger.debug(f"No valid trigger ID found in identifier job for run {run_id}")
+        
+        # Update steps for all jobs
+        if workflow_info:
+            try:
+                WorkflowRunDb.update_by_id(run_id, {"steps": steps})
+            except Exception as e:
+                logger.error(f"Failed to update run {run_id} steps: {e}")
+    
+    def _extract_trigger_id_from_steps(self, steps: list[dict]) -> Optional[str]:
+        """
+        Extract trigger ID from identifier job steps.
+        
+        Looks for step names like "triggerId_abc-123-def" and extracts the ID.
+        """
+        for step in steps:
+            step_name = step.get("name", "")
+            if step_name.startswith("triggerId_"):
+                trigger_id = step_name.split("triggerId_", 1)[1]
+                return trigger_id
+        return None

@@ -44,7 +44,7 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
         steps=steps,
         completed=gh_run.completed,
         hasArtifact=False,
-        mappingId=None,
+        triggerId=None,  # Will be linked when trigger is found
     )
 
 
@@ -67,7 +67,7 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
         steps=[],
         completed=False,
         hasArtifact=False,
-        mappingId="undefined",
+        triggerId=None,  # Will be set by webhook listener when identifier job runs
     )
 
 
