@@ -3,13 +3,12 @@ import Modal from "../Modal/Modal";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal/ModalComponents";
 import { fetchKernels } from "../../utils/github";
 import {
-  type BenchmarkRuntimeConfig,
   type KernelConfig,
   type KernelSelection,
-  type RepoPullRequest,
 } from "../../types";
 import {
   Settings,
+  Type,
   AlertTriangle,
   X,
   Check,
@@ -17,35 +16,51 @@ import {
 } from "lucide-react";
 import KernelSelector from "./blocks/KernelSelector";
 import MachineSelector from "./blocks/MachineSelector";
+import BackendSelector from "./blocks/BackendSelector";
 
-interface BenchmarkConfirmationModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: (config: BenchmarkRuntimeConfig) => void;
-  pullRequest: RepoPullRequest;
+export interface ManualBenchmarkConfig {
+  name: string;
+  machine: string;
+  backends: string[];
+  kernelSelection: KernelSelection;
 }
 
-export default function BenchmarkConfirmationModal({
+interface ManualBenchmarkModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (config: ManualBenchmarkConfig) => void;
+}
+
+export default function ManualBenchmarkModal({
   isOpen,
   onClose,
   onConfirm,
-  pullRequest,
-}: BenchmarkConfirmationModalProps) {
+}: ManualBenchmarkModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingKernels, setIsLoadingKernels] = useState(false);
   const [kernels, setKernels] = useState<KernelConfig[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [config, setConfig] = useState<BenchmarkRuntimeConfig>({
-    machine: "mi325",
-    kernelSelection: {
-      type: "all-quick",
-    },
+  const [name, setName] = useState("");
+  const [machine, setMachine] = useState("mi325");
+  const [selectedBackends, setSelectedBackends] = useState<string[]>([]);
+  const [kernelSelection, setKernelSelection] = useState<KernelSelection>({
+    type: "all-quick",
   });
 
   // Load kernels data when modal opens
   useEffect(() => {
     if (isOpen && kernels.length === 0) {
       loadKernels();
+    }
+  }, [isOpen]);
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setName("");
+      setMachine("mi325");
+      setSelectedBackends([]);
+      setKernelSelection({ type: "all-quick" });
     }
   }, [isOpen]);
 
@@ -70,15 +85,14 @@ export default function BenchmarkConfirmationModal({
   const handleConfirm = async () => {
     setIsSubmitting(true);
     try {
+      const config: ManualBenchmarkConfig = {
+        name: name.trim(),
+        machine,
+        backends: selectedBackends,
+        kernelSelection,
+      };
       await onConfirm(config);
       onClose();
-      // Reset config on successful submission
-      setConfig({
-        machine: "mi325",
-        kernelSelection: {
-          type: "all-quick",
-        },
-      });
     } finally {
       setIsSubmitting(false);
     }
@@ -86,39 +100,26 @@ export default function BenchmarkConfirmationModal({
 
   const handleClose = () => {
     if (!isSubmitting) {
-      // Reset config on cancel
-      setConfig({
-        machine: "mi325",
-        kernelSelection: {
-          type: "all-quick",
-        },
-      });
       onClose();
     }
-  };
-
-  const handleKernelSelectionChange = (selection: KernelSelection) => {
-    setConfig((prev) => ({
-      ...prev,
-      kernelSelection: selection,
-    }));
   };
 
   // Calculate kernel counts
   const quickKernelCount = kernels.filter((k) => k.workflow === "all").length;
   const selectedTagsKernelCount =
-    config.kernelSelection.type === "specific-tags" &&
-    config.kernelSelection.tags
-      ? kernels.filter((k) => config.kernelSelection.tags!.includes(k.tag))
-          .length
+    kernelSelection.type === "specific-tags" && kernelSelection.tags
+      ? kernels.filter((k) => kernelSelection.tags!.includes(k.tag)).length
       : 0;
 
   const totalSelectedKernels =
-    config.kernelSelection.type === "all-quick"
+    kernelSelection.type === "all-quick"
       ? quickKernelCount
       : selectedTagsKernelCount;
 
-  const isFormValid = totalSelectedKernels > 0;
+  const isFormValid =
+    name.trim() !== "" &&
+    selectedBackends.length > 0 &&
+    totalSelectedKernels > 0;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
@@ -129,10 +130,10 @@ export default function BenchmarkConfirmationModal({
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              Configure Benchmark Run
+              Run Manual Benchmark
             </h2>
             <p className="text-sm text-gray-600">
-              Set up benchmark parameters for PR: {pullRequest.title}
+              Configure and trigger a new benchmark run
             </p>
           </div>
         </div>
@@ -151,19 +152,47 @@ export default function BenchmarkConfirmationModal({
 
           {!isLoadingKernels && (
             <>
+              {/* Run Name */}
+              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                    <Type className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900">Run Name *</h4>
+                    <p className="text-sm text-gray-600">
+                      Give your benchmark run a descriptive name
+                    </p>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Manual Benchmark - Jan 2026"
+                  disabled={isSubmitting}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
               {/* Machine Selection */}
               <MachineSelector
-                machine={config.machine}
-                onChange={(machine) =>
-                  setConfig((prev) => ({ ...prev, machine }))
-                }
+                machine={machine}
+                onChange={setMachine}
+                disabled={isSubmitting}
+              />
+
+              {/* Backend Selection */}
+              <BackendSelector
+                selectedBackends={selectedBackends}
+                onChange={setSelectedBackends}
                 disabled={isSubmitting}
               />
 
               {/* Kernel Selection */}
               <KernelSelector
-                selection={config.kernelSelection}
-                onChange={handleKernelSelectionChange}
+                selection={kernelSelection}
+                onChange={setKernelSelection}
                 kernels={kernels}
                 availableTags={availableTags}
                 disabled={isSubmitting}
@@ -181,13 +210,21 @@ export default function BenchmarkConfirmationModal({
                     </h5>
                     <p className="text-sm text-blue-800">
                       {totalSelectedKernels} kernels will be benchmarked on{" "}
-                      {config.machine}
+                      {machine}
+                      {selectedBackends.length > 0 && (
+                        <span className="ml-1">
+                          using {selectedBackends.join(", ")}
+                          {selectedBackends.length > 1 && " backends"}
+                          {selectedBackends.length === 1 && " backend"}
+                        </span>
+                      )}
                       {totalSelectedKernels > 0 && (
                         <span className="ml-1">
-                          using{" "}
-                          {config.kernelSelection.type === "all-quick"
+                          (
+                          {kernelSelection.type === "all-quick"
                             ? "all quick kernels"
                             : "selected tags"}
+                          )
                         </span>
                       )}
                     </p>

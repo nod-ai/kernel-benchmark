@@ -3,18 +3,18 @@ import {
   Check,
   X,
   Loader2,
-  Monitor,
   CalendarDays,
   Type,
   Link as LinkIcon,
-  Cpu,
 } from "lucide-react";
 import Modal from "../Modal/Modal";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal/ModalComponents";
-import { AVAILABLE_MACHINES, SUPPORTED_BACKENDS, type KernelConfig, type KernelSelection } from "../../types";
+import { type KernelConfig, type KernelSelection } from "../../types";
 import { fetchKernels } from "../../utils/github";
-import KernelSelector from "../KernelSelector";
-import ScheduleSelector, { type Schedule } from "../ScheduleSelector";
+import KernelSelector from "./blocks/KernelSelector";
+import ScheduleSelector, { type Schedule } from "./blocks/ScheduleSelector";
+import MachineSelector from "./blocks/MachineSelector";
+import BackendSelector from "./blocks/BackendSelector";
 import { simplifyNameForUrl, toMMDDYYYY, toYYYYMMDD } from "../../utils/utils";
 
 export interface TrackerConfig {
@@ -44,7 +44,7 @@ export default function AddTrackerModal({
   const [kernels, setKernels] = useState<KernelConfig[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [name, setName] = useState("");
-  const [machine, setMachine] = useState(AVAILABLE_MACHINES[0]);
+  const [machine, setMachine] = useState("mi325");
   const [kernelSelection, setKernelSelection] = useState<KernelSelection>({
     type: "specific-tags",
     tags: [],
@@ -112,7 +112,7 @@ export default function AddTrackerModal({
 
   const resetForm = () => {
     setName("");
-    setMachine(AVAILABLE_MACHINES[0]);
+    setMachine("mi325");
     setKernelSelection({
       type: "specific-tags",
       tags: [],
@@ -257,92 +257,18 @@ export default function AddTrackerModal({
               </div>
 
               {/* Backend Selection */}
-              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex items-center justify-center w-8 h-8 bg-orange-100 rounded-lg">
-                    <Cpu className="w-4 h-4 text-orange-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">
-                      Backends *
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      Select which backends to benchmark
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {SUPPORTED_BACKENDS.map((backend) => {
-                    const isSelected = selectedBackends.includes(backend);
-                    return (
-                      <button
-                        key={backend}
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            setSelectedBackends(
-                              selectedBackends.filter((b) => b !== backend)
-                            );
-                          } else {
-                            setSelectedBackends([...selectedBackends, backend]);
-                          }
-                        }}
-                        disabled={isSubmitting}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          isSelected
-                            ? "bg-orange-600 text-white border-2 border-orange-700"
-                            : "bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-gray-200"
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        {backend}
-                      </button>
-                    );
-                  })}
-                </div>
-                {selectedBackends.length === 0 && (
-                  <p className="text-sm text-amber-600 mt-3">
-                    Please select at least one backend
-                  </p>
-                )}
-              </div>
+              <BackendSelector
+                selectedBackends={selectedBackends}
+                onChange={setSelectedBackends}
+                disabled={isSubmitting}
+              />
 
               {/* Machine Selection */}
-              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-lg">
-                    <Monitor className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">
-                      Target Machine *
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      Select the machine to run benchmarks on
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-row gap-3">
-                  {AVAILABLE_MACHINES.map((availableMachine) => (
-                    <label
-                      key={availableMachine}
-                      className="flex grow items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="machine"
-                        value={availableMachine}
-                        checked={machine === availableMachine}
-                        onChange={(e) => setMachine(e.target.value)}
-                        disabled={isSubmitting}
-                        className="border-gray-300 text-green-600 focus:ring-green-500"
-                      />
-                      <span className="text-sm font-medium text-gray-900">
-                        {availableMachine}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              <MachineSelector
+                machine={machine}
+                onChange={setMachine}
+                disabled={isSubmitting}
+              />
 
               {/* Kernel Tags Selection */}
               <KernelSelector

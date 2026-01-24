@@ -35,7 +35,7 @@ const navItems: NavItemProps[] = [
   {
     name: "runs",
     label: "Runs",
-    requireAuth: false,
+    requireAuth: true,
     icon: <ListChecks className="w-4 h-4" />,
   },
   {

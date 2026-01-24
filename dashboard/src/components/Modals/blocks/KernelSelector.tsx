@@ -1,5 +1,5 @@
 import { Tag, AlertTriangle, Target, Database, Filter } from "lucide-react";
-import type { KernelConfig, KernelSelection } from "../types";
+import type { KernelConfig, KernelSelection } from "../../../types";
 
 interface KernelSelectorProps {
   selection: KernelSelection;

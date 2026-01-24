@@ -252,8 +252,9 @@ def get_artifact_by_run_id(blob_name):
         return "Failed to gather artifact data", 500
 
 
-@app.route("/workflow/trigger", methods=["POST"])
-def trigger_workflow():
+@app.route("/workflow/pr/trigger", methods=["POST"])
+def trigger_pr_workflow():
+    """Trigger a benchmark workflow for a pull request."""
     response_data = request.get_json()
 
     pr_data = response_data["pr"]
@@ -290,12 +291,81 @@ def trigger_workflow():
         metadata["kernelIds"] = kernel_selection["ids"]
 
     # Use unified trigger service
-    trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, metadata)
+    trigger_id = trigger_run(TriggerType.PR_UPDATE, metadata)
 
     if trigger_id:
         return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
     else:
         return jsonify({"error": "Failed to trigger run"}), 500
+
+
+@app.route("/workflow/manual/trigger", methods=["POST"])
+def trigger_manual_workflow():
+    """Trigger a manual benchmark workflow."""
+    response_data = request.get_json()
+
+    if not response_data or "config" not in response_data:
+        return jsonify({"error": "Missing config in request body"}), 400
+
+    config_data = response_data["config"]
+
+    # Validate required fields
+    if "name" not in config_data or not config_data["name"]:
+        return jsonify({"error": "Missing required field: name"}), 400
+    if "machine" not in config_data or not config_data["machine"]:
+        return jsonify({"error": "Missing required field: machine"}), 400
+    if "backends" not in config_data or not config_data["backends"]:
+        return jsonify({"error": "Missing required field: backends"}), 400
+    if not isinstance(config_data["backends"], list) or len(config_data["backends"]) == 0:
+        return jsonify({"error": "backends must be a non-empty array"}), 400
+    if "kernelSelection" not in config_data:
+        return jsonify({"error": "Missing required field: kernelSelection"}), 400
+
+    kernel_selection = config_data["kernelSelection"]
+
+    # Build metadata for trigger
+    metadata = {
+        "name": config_data["name"],
+        "machine": config_data["machine"],
+        "backends": config_data["backends"],
+    }
+
+    # Handle kernel selection
+    if kernel_selection["type"] == "all-quick":
+        # Get all quick kernels
+        bench_kernels = KernelConfigDb.query("workflow eq 'all'")
+        if len(bench_kernels) == 0:
+            return jsonify({"error": "No quick kernels found"}), 500
+        metadata["kernelIds"] = [k._id for k in bench_kernels]
+        logger.info(f"Loaded {len(bench_kernels)} quick kernels for manual benchmark")
+    elif kernel_selection["type"] == "specific-tags":
+        tags = kernel_selection["tags"]
+        if not tags or len(tags) == 0:
+            return jsonify({"error": "No tags specified for kernel selection"}), 400
+        # Query to verify we have kernels
+        bench_kernels = KernelConfigDb.query(
+            " or ".join([f"tag eq '{tag}'" for tag in tags])
+        )
+        if len(bench_kernels) == 0:
+            return jsonify({"error": "No kernels found for specified tags"}), 500
+        logger.info(
+            f"Loaded {len(bench_kernels)} kernels for manual benchmark with {len(tags)} tags"
+        )
+        metadata["tags"] = tags
+    elif kernel_selection["type"] == "specific-ids" and "ids" in kernel_selection:
+        if not kernel_selection["ids"] or len(kernel_selection["ids"]) == 0:
+            return jsonify({"error": "No kernel IDs specified"}), 400
+        metadata["kernelIds"] = kernel_selection["ids"]
+    else:
+        return jsonify({"error": "Invalid kernel selection type"}), 400
+
+    # Use unified trigger service with MANUAL_BENCHMARK type
+    trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, metadata)
+
+    if trigger_id:
+        return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
+    else:
+        return jsonify({"error": "Failed to trigger manual benchmark"}), 500
 
 
 @app.route("/workflow/cancel", methods=["POST"])

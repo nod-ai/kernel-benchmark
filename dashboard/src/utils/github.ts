@@ -7,6 +7,7 @@ import type {
   TuningConfig,
   ChangeStats,
   BenchmarkRuntimeConfig,
+  KernelSelection,
 } from "../types";
 
 export async function fetchModifications() {
@@ -164,7 +165,7 @@ export async function triggerBenchWorkflow(
   config: BenchmarkRuntimeConfig
 ) {
   const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/trigger`,
+    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/pr/trigger`,
     {
       method: "POST",
       headers: {
@@ -172,6 +173,30 @@ export async function triggerBenchWorkflow(
       },
       body: JSON.stringify({
         pr: pullRequest,
+        config,
+      }),
+    }
+  );
+  if (!response.ok) {
+    console.log(response.statusText);
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+}
+
+export async function triggerManualBenchWorkflow(config: {
+  name: string;
+  machine: string;
+  backends: string[];
+  kernelSelection: KernelSelection;
+}) {
+  const response = await fetch(
+    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/manual/trigger`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         config,
       }),
     }

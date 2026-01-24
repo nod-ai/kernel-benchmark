@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../components/PageContainer";
-import { fetchAllRuns, deleteRun } from "../utils/github";
+import { fetchAllRuns, deleteRun, triggerManualBenchWorkflow } from "../utils/github";
 import type { BenchmarkRun } from "../types";
 import {
   Clock,
@@ -12,8 +12,12 @@ import {
   Filter,
   Trash2,
   FileText,
+  PlayCircle,
 } from "lucide-react";
 import { toTitleCase } from "../utils/utils";
+import ManualBenchmarkModal, {
+  type ManualBenchmarkConfig,
+} from "../components/Modals/ManualBenchmarkModal";
 
 type RunTypeFilter = "ALL" | "BENCHMARK" | "TUNING" | "E2E";
 
@@ -212,6 +216,8 @@ export default function Runs() {
   const [hasMoreCompleted, setHasMoreCompleted] = useState(true);
   const [ongoingCount, setOngoingCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
+  const [isManualBenchmarkModalOpen, setIsManualBenchmarkModalOpen] =
+    useState(false);
   const pageSize = 30;
   const navigate = useNavigate();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -365,18 +371,37 @@ export default function Runs() {
     }
   };
 
+  const handleManualBenchmark = async (config: ManualBenchmarkConfig) => {
+    try {
+      await triggerManualBenchWorkflow(config);
+      // Refresh runs after triggering
+      await loadOngoingRuns();
+    } catch (error) {
+      console.error("Failed to trigger manual benchmark:", error);
+      alert("Failed to trigger manual benchmark. Please try again.");
+      throw error;
+    }
+  };
+
   return (
     <PageContainer activePage="runs" isLoading={isInitialLoading}>
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="space-y-8">
           {/* Header Section */}
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Runs
-            </h1>
-            <p className="text-gray-600">
-              Monitor and manage all benchmark, tuning, and E2E runs
-            </p>
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="text-center md:text-left">
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Runs</h1>
+              <p className="text-gray-600">
+                Monitor and manage all benchmark, tuning, and E2E runs
+              </p>
+            </div>
+            <button
+              onClick={() => setIsManualBenchmarkModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-all duration-200"
+            >
+              <PlayCircle className="w-5 h-5" />
+              Run Benchmark
+            </button>
           </div>
 
           {/* Filter Controls */}
@@ -510,6 +535,13 @@ export default function Runs() {
           )}
         </div>
       </div>
+
+      {/* Manual Benchmark Modal */}
+      <ManualBenchmarkModal
+        isOpen={isManualBenchmarkModalOpen}
+        onClose={() => setIsManualBenchmarkModalOpen(false)}
+        onConfirm={handleManualBenchmark}
+      />
     </PageContainer>
   );
 }
