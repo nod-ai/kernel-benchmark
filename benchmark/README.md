@@ -13,16 +13,16 @@ docker build --network=host \
   -t kernel-bench:v1 \
   -f docker/Dockerfile .
 
-# Build with specific backends only
+# Build with specific backends only (GPU_ARCH only required for hipblaslt)
 docker build --network=host \
-  --build-arg BACKENDS=torch,wave \
+  --build-arg BACKENDS=hipblaslt \
   --build-arg GPU_ARCH=gfx950 \
   -t kernel-bench:minimal \
   -f docker/Dockerfile .
 
 # Build with custom Wave source
 docker build --network=host \
-  --build-arg BACKENDS=wave,torch \
+  --build-arg BACKENDS=wave \
   --build-arg WAVE_REPO=iree-org/wave \
   --build-arg WAVE_BRANCH=main \
   -t kernel-bench:wave-custom \

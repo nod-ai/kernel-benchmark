@@ -103,6 +103,21 @@ if [[ "$BACKENDS" == "all" ]]; then
     echo "Installing all backends: ${BACKEND_LIST[*]}"
 else
     IFS=',' read -ra BACKEND_LIST <<< "$BACKENDS"
+    
+    # Always ensure Wave is in the list (required dependency for other backends)
+    WAVE_IN_LIST=false
+    for backend in "${BACKEND_LIST[@]}"; do
+        if [[ "$backend" == "wave" ]]; then
+            WAVE_IN_LIST=true
+            break
+        fi
+    done
+    
+    if [[ "$WAVE_IN_LIST" == "false" ]]; then
+        echo "Note: Adding Wave backend (required dependency)"
+        BACKEND_LIST=("wave" "${BACKEND_LIST[@]}")
+    fi
+    
     echo "Installing selected backends: ${BACKEND_LIST[*]}"
 fi
 echo ""

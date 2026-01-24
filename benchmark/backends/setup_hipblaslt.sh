@@ -16,21 +16,14 @@ if [[ -z "$GPU_ARCH" ]]; then
     exit 1
 fi
 
-# Check if hipBLASLt is already available
-if python -c "import ctypes; ctypes.CDLL('/opt/rocm/lib/libhipblaslt.so')" &> /dev/null; then
-    echo "hipBLASLt already installed in /opt/rocm/lib/"
-    echo "Skipping build from source."
-    echo "hipBLASLt backend setup complete!"
-    exit 0
-fi
-
 echo "Building hipBLASLt from source..."
 echo "Repository: $ROCM_LIBRARIES_REPO"
 echo "Branch: $ROCM_LIBRARIES_BRANCH"
 echo "GPU Architecture: $GPU_ARCH"
 
 # Create build directory
-BUILD_DIR=$(mktemp -d)
+BUILD_DIR="/workspace"
+mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
 # Clone Monorepo with Sparse Checkout
@@ -49,24 +42,11 @@ if [ -f "tensilelite/requirements.txt" ]; then
     pip install -r tensilelite/requirements.txt
 fi
 
-# Build & Install hipBLASLt
-echo "Building hipBLASLt..."
-cmake -B build -S . \
-    -D CMAKE_BUILD_TYPE=Release \
-    -D CMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/amdclang++ \
-    -D CMAKE_C_COMPILER=/opt/rocm/llvm/bin/amdclang \
-    -D CMAKE_PREFIX_PATH=/opt/rocm \
-    -D GPU_TARGETS="${GPU_ARCH}" \
-    -D BUILD_TESTING=OFF \
-    -D HIPBLASLT_BUILD_TESTING=OFF \
-    -D HIPBLASLT_ENABLE_CLIENT=OFF \
-    -D TENSILELITE_LIBRARY_FORMAT=msgpack
-
 echo "Installing hipBLASLt (this may take a while)..."
-cmake --build build --parallel $(nproc)
+./install.sh -dc -a $GPU_ARCH
 
-# Clean up build directory
-cd /
-rm -rf "$BUILD_DIR"
+# Source code preserved in $BUILD_DIR for reference/debugging
+echo "ROCm libraries source preserved in: $BUILD_DIR"
+echo "export PATH=/workspace/rocm-libraries/projects/hipblaslt/build/release/clients:\$PATH" >> ~/.bashrc
 
 echo "hipBLASLt backend setup complete!"

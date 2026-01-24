@@ -3,6 +3,7 @@ from math import ceil
 import traceback
 from typing import override
 import torch
+import warnings
 from torch.testing import assert_close
 
 # Import guards for backend-specific dependencies
@@ -20,8 +21,7 @@ try:
     import wave_lang.kernel.lang as tkl
     from wave_lang.kernel.wave import wave_schedule
     WAVE_AVAILABLE = True
-except ImportError as e:
-    import warnings
+except Exception as e:
     warnings.warn(f"Wave backend dependencies not available: {e}")
 
 from kernel_bench.utils.dtypes.device_context import get_shared_memory_limit
