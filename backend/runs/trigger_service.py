@@ -53,10 +53,14 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
 
     This is the ONLY place where workflow runs should be triggered from.
     All trigger logic is consolidated here for simplicity and maintainability.
+    
+    This function queues the trigger instead of dispatching immediately.
+    The RunScheduler in the event loop will dispatch queued triggers when machine
+    resources are available and no tracker conflicts exist.
 
     Args:
         trigger_type: Type of trigger (PR_UPDATE, MANUAL_BENCHMARK, etc.)
-        metadata: Type-specific metadata dictionary
+        metadata: Type-specific metadata dictionary (MUST include "machine")
 
     Returns:
         Trigger ID if successful, None if failed
@@ -68,62 +72,41 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
             "repoName": "iree-org/wave",
             "branchName": "feature/opt",
             "headSha": "abc123",
-            "commits": 5
+            "commits": 5,
+            "machine": "mi325"  # REQUIRED
         })
 
         # Manual benchmark
         trigger_run(TriggerType.MANUAL_BENCHMARK, {
             "tags": ["validation"],
-            "machine": "mi325x"
+            "machine": "mi325x"  # REQUIRED
         })
     """
     trigger_id = str(uuid4())
 
     try:
-        # 1. Create trigger in database with status=PENDING
+        # Extract machine from metadata (REQUIRED)
+        machine = metadata.get("machine")
+        if not machine:
+            raise ValueError("machine is required in metadata")
+
+        # Create trigger in database with status=QUEUED
+        # RunScheduler will dispatch it when machine is available
         trigger = RunTrigger(
             _id=trigger_id,
             type=trigger_type.value,
-            status=TriggerStatus.PENDING.value,
+            status=TriggerStatus.QUEUED.value,  # Changed from PENDING
             timestamp=datetime.now(timezone.utc),
             metadata=metadata,
+            machine=machine,  # Required field
         )
         RunTriggerDb.upsert(trigger)
-        logger.info(f"Created trigger {trigger_id} of type {trigger_type.value}")
+        logger.info(
+            f"Queued trigger {trigger_id} of type {trigger_type.value} "
+            f"for machine {machine}"
+        )
 
-        # 2. Determine workflow and build inputs
-        workflow_file = _determine_workflow(trigger_type, metadata)
-        if not workflow_file:
-            raise ValueError(
-                f"Could not determine workflow for trigger type {trigger_type}"
-            )
-
-        inputs = _build_workflow_inputs(trigger_type, metadata, trigger_id)
-
-        # 3. Dispatch to GitHub
-        success = _dispatch_workflow(workflow_file, inputs)
-
-        # 4. Update trigger status
-        if success:
-            RunTriggerDb.update_by_id(
-                trigger_id,
-                {
-                    "status": TriggerStatus.DISPATCHED.value,
-                    "dispatchedAt": datetime.now(timezone.utc),
-                },
-            )
-            logger.info(f"Successfully dispatched trigger {trigger_id}")
-            return trigger_id
-        else:
-            RunTriggerDb.update_by_id(
-                trigger_id,
-                {
-                    "status": TriggerStatus.FAILED.value,
-                    "error": "Workflow dispatch failed",
-                },
-            )
-            logger.error(f"Failed to dispatch trigger {trigger_id}")
-            return None
+        return trigger_id
 
     except Exception as e:
         logger.error(f"Error in trigger_run: {e}")

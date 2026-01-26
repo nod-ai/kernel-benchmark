@@ -17,6 +17,7 @@ class TriggerType(Enum):
 class TriggerStatus(Enum):
     """Status of a trigger through its lifecycle."""
     PENDING = "pending"          # Created, not yet dispatched
+    QUEUED = "queued"            # Queued in scheduler, awaiting dispatch
     DISPATCHED = "dispatched"    # Workflow dispatch called successfully
     LINKED = "linked"            # Linked to actual GitHub run
     FAILED = "failed"            # Dispatch or linking failed
@@ -35,6 +36,7 @@ class RunTrigger:
     status: str                                 # TriggerStatus enum value
     timestamp: datetime                         # When trigger was created
     metadata: dict[str, Any]                    # Type-specific metadata
+    machine: str                                # Machine for this run (required)
     
     # Set after workflow dispatch
     dispatchedAt: Optional[datetime] = None

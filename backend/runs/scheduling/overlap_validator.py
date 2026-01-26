@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from backend.runs.scheduling.scheduling_utils import (
+    normalize_day_name,
+    parse_schedule_time,
+    time_to_minutes,
+    minutes_between_times,
+)
 from backend.storage.types import Tracker, TrackerDb, Schedule
 
 logger = logging.getLogger(__name__)
@@ -102,10 +108,8 @@ def _extract_time_slots(schedule: Schedule) -> list[TimeSlot]:
     slots = []
 
     try:
-        # Parse time of day
-        time_parts = schedule.timeOfDay.split(":")
-        hour = int(time_parts[0])
-        minute = int(time_parts[1])
+        # Parse time of day using shared utility
+        hour, minute = parse_schedule_time(schedule.timeOfDay)
 
         if schedule.isInterval:
             # For interval schedules, create a single representative slot
@@ -132,36 +136,6 @@ def _extract_time_slots(schedule: Schedule) -> list[TimeSlot]:
     return slots
 
 
-def _normalize_day_name(day: str) -> str:
-    """
-    Normalize day name to full format for consistent comparison.
-    
-    Handles both full names (Monday) and abbreviations (Mon).
-    Case-insensitive to support "monday", "MONDAY", "Monday", etc.
-    
-    Args:
-        day: Day name (full or abbreviated)
-        
-    Returns:
-        Full day name in proper case (e.g., "Monday")
-    """
-    # Convert to title case for consistent lookup
-    day_title = day.strip().title()
-    
-    day_mapping = {
-        "Mon": "Monday",
-        "Tue": "Tuesday",
-        "Wed": "Wednesday",
-        "Thu": "Thursday",
-        "Fri": "Friday",
-        "Sat": "Saturday",
-        "Sun": "Sunday",
-    }
-    
-    # Return mapped value if abbreviation, otherwise return title-cased input
-    return day_mapping.get(day_title, day_title)
-
-
 def _time_slots_conflict(slot1: TimeSlot, slot2: TimeSlot) -> bool:
     """
     Check if two time slots conflict within the grace period.
@@ -173,30 +147,30 @@ def _time_slots_conflict(slot1: TimeSlot, slot2: TimeSlot) -> bool:
     Returns:
         True if the slots conflict
     """
-    # Convert time to minutes since midnight for easier comparison
-    slot1_minutes = slot1.hour * 60 + slot1.minute
-    slot2_minutes = slot2.hour * 60 + slot2.minute
+    # Convert time to minutes since midnight using shared utility
+    slot1_minutes = time_to_minutes(slot1.hour, slot1.minute)
+    slot2_minutes = time_to_minutes(slot2.hour, slot2.minute)
 
     grace_minutes = OVERLAP_GRACE_HOURS * 60
 
     # Check schedule type compatibility
     # Weekly vs Weekly: must be same day
     if slot1.day_of_week and slot2.day_of_week:
-        # Normalize day names to handle both "Mon" and "Monday" formats
-        day1 = _normalize_day_name(slot1.day_of_week)
-        day2 = _normalize_day_name(slot2.day_of_week)
+        # Normalize day names using shared utility
+        day1 = normalize_day_name(slot1.day_of_week)
+        day2 = normalize_day_name(slot2.day_of_week)
         
         if day1 != day2:
             return False  # Different days, no conflict
 
-        # Same day - check time difference
-        time_diff = abs(slot1_minutes - slot2_minutes)
+        # Same day - check time difference using shared utility
+        time_diff = minutes_between_times(slot1_minutes, slot2_minutes)
         return time_diff < grace_minutes
 
     # Interval vs Interval: check if intervals might overlap
     elif slot1.interval_days and slot2.interval_days:
-        # Check if the time of day conflicts
-        time_diff = abs(slot1_minutes - slot2_minutes)
+        # Check if the time of day conflicts using shared utility
+        time_diff = minutes_between_times(slot1_minutes, slot2_minutes)
         if time_diff >= grace_minutes:
             return False  # Times too far apart
 
@@ -219,8 +193,8 @@ def _time_slots_conflict(slot1: TimeSlot, slot2: TimeSlot) -> bool:
     # Mixed weekly and interval: check if they might overlap
     else:
         # For mixed schedules, we need to be conservative
-        # Check if the time of day is within grace period
-        time_diff = abs(slot1_minutes - slot2_minutes)
+        # Check if the time of day is within grace period using shared utility
+        time_diff = minutes_between_times(slot1_minutes, slot2_minutes)
 
         if time_diff < grace_minutes:
             # If interval schedule could fall on the weekly day, it conflicts

@@ -33,7 +33,9 @@ class WorkflowListener:
         logger.info(f"New run requested")
         run_data = run_payload["workflow_run"]
         run = parse_run_from_json(run_data)
-        logger.info(f"adding new run\n{jsonify(run)}")
+        
+        logger.info(f"Adding new run {run._id} on machine {run.machine}")
+        logger.debug(f"Run details:\n{jsonify(run)}")
         WorkflowRunDb.upsert(run)
 
     def _handle_workflow_run_progress(
