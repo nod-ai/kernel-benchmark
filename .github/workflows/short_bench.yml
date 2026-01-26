@@ -77,6 +77,7 @@ jobs:
           chmod +x ./docker/build_docker.sh
           ./docker/build_docker.sh \
             --machine ${{ inputs.machine }} \
+            ${{ inputs.selected_backend != 'all' && format('--backends {0}', inputs.selected_backend) || '' }} \
             ${{ inputs.pr_repository && format('--wave-repo {0}', inputs.pr_repository) || '' }} \
             ${{ inputs.pr_branch && format('--wave-branch {0}', inputs.pr_branch) || '' }} \
             -t ${{ env.DOCKER_IMAGE }}
