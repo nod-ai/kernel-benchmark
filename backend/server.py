@@ -450,20 +450,34 @@ def get_tuning_runs():
     )
 
 
+@app.route("/benchmark_stats", methods=["GET"])
+def get_all_benchmark_stats():
+    """Get all benchmark run statistics from the database."""
+    stats = BenchmarkRunStatsDb.find_all()
+    return jsonify([asdict(s) for s in stats])
+
+
+@app.route("/benchmark_stats/<run_id>", methods=["GET"])
+def get_benchmark_stat_by_run_id(run_id):
+    """Get benchmark statistics for a specific run."""
+    stats = BenchmarkRunStatsDb.find_all({"runId": str(run_id)})
+    if len(stats) == 0:
+        return "Failed to find benchmark stats", 404
+    return jsonify(asdict(stats[0]))
+
+
+# DEPRECATED: Old change_stats endpoints - kept for backward compatibility
+# These return empty results as we no longer compute change statistics
 @app.route("/change_stats", methods=["GET"])
 def get_all_change_stats():
-    """Get all kernel types from the database."""
-    change_stats = ChangeStatDb.find_all()
-    return jsonify([asdict(cs) for cs in change_stats])
+    """DEPRECATED: Use /benchmark_stats instead."""
+    return jsonify([])
 
 
 @app.route("/change_stats/<run_id>", methods=["GET"])
 def get_change_stat_by_run_id(run_id):
-    """Get all kernel types from the database."""
-    change_stats = ChangeStatDb.find_all({"runId": str(run_id)})
-    if len(change_stats) == 0:
-        return "Failed to find change stats", 500
-    return jsonify(asdict(change_stats[0]))
+    """DEPRECATED: Use /benchmark_stats/<run_id> instead."""
+    return jsonify({}), 404
 
 
 @app.route("/kernel_types", methods=["GET"])

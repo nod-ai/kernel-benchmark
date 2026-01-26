@@ -29,13 +29,33 @@ class TuningConfig:
     result: dict[str, Any]
 
 
+# DEPRECATED: BenchChangeStats is no longer used
+# This has been replaced by BenchmarkRunStats which stores performance snapshots
+# for every run instead of precomputed comparisons.
+# @dataclass
+# class BenchChangeStats:
+#     _id: str
+#     runId: str
+#     machine: str = "mi325x"
+#     old: Optional[dict[str, Any]] = None
+#     new: Optional[dict[str, Any]] = None
+
+
 @dataclass
-class BenchChangeStats:
-    _id: str
-    runId: str
-    machine: str = "mi325x"
-    old: Optional[dict[str, Any]] = None
-    new: Optional[dict[str, Any]] = None
+class BenchmarkRunStats:
+    """
+    Performance statistics for a single benchmark run.
+    
+    Stores aggregated performance metrics for all kernels in a run.
+    For tracker runs, trackerId links this to a specific tracker for time-series analysis.
+    """
+    _id: str                          # UUID
+    runId: str                        # WorkflowRunState._id
+    timestamp: datetime
+    machine: str
+    performance: dict[str, Any]       # machine → kernel_type → backend → stats
+    trackerId: Optional[str] = None   # Tracker._id for scheduled runs
+    trackerName: Optional[str] = None
 
 
 @dataclass
@@ -120,7 +140,11 @@ KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")
 WorkflowRunDb = create_repository(WorkflowRunState, "workflowrunstates2")
 """Repository for workflow run data with full type safety."""
 
-ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
+# DEPRECATED: ChangeStatDb is no longer used - replaced by BenchmarkRunStatsDb
+# ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
+
+BenchmarkRunStatsDb = create_repository(BenchmarkRunStats, "benchmarkrunstats")
+"""Repository for benchmark run performance statistics with full type safety."""
 
 TuningConfigDb = create_repository(TuningConfig, "tuningconfigsnew3")
 """Repository for tuning configuration data with full type safety."""
