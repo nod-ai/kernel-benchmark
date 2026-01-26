@@ -198,7 +198,7 @@ def thread_trace_hipblaslt_cmd(
         "rocprofv3",
         "--att",
         "--att-library-path",
-        "/root/rocprof-trace-decoder-ubuntu-22.04-0.1.4-Linux/opt/rocm/lib/",
+        "/root/rocprof-trace-decoder-ubuntu-22.04-0.1.6-Linux/opt/rocm/lib/",
         "--att-target-cu",
         "0",
         "--kernel-include-regex",

@@ -16,7 +16,7 @@ from tqdm import tqdm
 from kernel_bench.utils.dtypes.device_context import DeviceContext
 from wave_lang.kernel.wave.compile import wave_compile
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
-from wave_lang.kernel.wave.wave import LaunchableWave
+from wave_lang.kernel.wave.wave import LaunchableWave, WaveSchedule
 
 from kernel_bench.utils.parallel_utils.isolated_runtime import (
     isolated_validate_numerics,
@@ -240,6 +240,7 @@ class WaveTemplate:
     launchable: LaunchableWave
     hyperparams: Dict[Symbol, Any]
     dynamic_symbols: List[Symbol] = field(default_factory=list)
+    schedule: Optional[WaveSchedule] = None
 
 
 @dataclass
