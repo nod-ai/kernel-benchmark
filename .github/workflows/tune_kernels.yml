@@ -29,7 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: triggerId_${{ inputs.trigger_id }}
-        run: echo "Trigger ID: ${{ inputs.trigger_id }}"
+        run: |
+          echo "Trigger ID: ${{ inputs.trigger_id }}"
 
   tuning:
     name: Tune Kernels
