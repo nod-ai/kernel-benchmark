@@ -4,4 +4,4 @@ RUN_ALL_BACKENDS = True
 
 WAVE_REPO_NAME = "iree-org/wave"
 BENCH_REPO_NAME = "nod-ai/kernel-benchmark"
-BENCH_REPO_BRANCH = "main"
+BENCH_REPO_BRANCH = "develop/dashboard-restoration"

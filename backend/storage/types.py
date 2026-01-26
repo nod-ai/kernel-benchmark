@@ -14,7 +14,7 @@ class WorkflowRunState:
     conclusion: str
     numSteps: int
     steps: list[dict]
-    machine: str  # Machine this run executes on (required)
+    machine: Optional[str] = None
     completed: bool = False
     hasArtifact: bool = False
     triggerId: Optional[str] = None  # Foreign key to RunTrigger

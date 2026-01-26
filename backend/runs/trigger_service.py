@@ -53,7 +53,7 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
 
     This is the ONLY place where workflow runs should be triggered from.
     All trigger logic is consolidated here for simplicity and maintainability.
-    
+
     This function queues the trigger instead of dispatching immediately.
     The RunScheduler in the event loop will dispatch queued triggers when machine
     resources are available and no tracker conflicts exist.
@@ -249,6 +249,13 @@ def _build_manual_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         "tuned_config_url": tuned_configs_gist.raw_url,
     }
 
+    # Optional backend selection
+    if "backends" in metadata:
+        if isinstance(metadata["backends"], list):
+            inputs["selected_backend"] = ",".join(metadata["backends"])
+        else:
+            inputs["selected_backend"] = metadata["backends"]
+
     # Optional PR info for manual runs
     if "repoName" in metadata:
         inputs["pr_repository"] = metadata["repoName"]
@@ -289,6 +296,11 @@ def _build_scheduled_tracker_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
     """
     tags = metadata.get("tags", [])
 
+    # Optional backend selection
+    backends = metadata.get("backends", [])
+    if isinstance(backends, list):
+        backends = ",".join(backends)
+
     # Query kernels by tags
     if tags:
         query = " or ".join([f"tag eq '{tag}'" for tag in tags])
@@ -310,6 +322,7 @@ def _build_scheduled_tracker_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "machine": metadata.get("machine", "mi325"),
+        "selected_backend": backends,
         "problems_url": problems_gist.raw_url,
         "tuned_config_url": tuned_configs_gist.raw_url,
     }

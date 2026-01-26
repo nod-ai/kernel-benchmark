@@ -217,18 +217,26 @@ class DatabaseRepository(Generic[T]):
                 else:
                     filter_parts.append(f"{key} eq {value}")
             query_filter = " and ".join(filter_parts)
-            entities = list(
-                table_client.query_entities(
-                    query_filter,
-                    headers={"Accept": "application/json;odata=nometadata"},
+            try:
+                entities = list(
+                    table_client.query_entities(
+                        query_filter,
+                        headers={"Accept": "application/json;odata=nometadata"},
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"Error querying entities: {e}")
+                return []
         else:
-            entities = list(
-                table_client.list_entities(
-                    headers={"Accept": "application/json;odata=nometadata"}
+            try:
+                entities = list(
+                    table_client.list_entities(
+                        headers={"Accept": "application/json;odata=nometadata"}
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"Error listing entities: {e}")
+                return []
 
         results = []
         for entity in entities:

@@ -6,6 +6,7 @@ Checks tracker schedules and triggers benchmark runs at the appropriate times.
 
 import logging
 from datetime import datetime, timezone
+import traceback
 from typing import Optional
 
 from backend.runs.trigger_service import trigger_run, TriggerType
@@ -59,7 +60,9 @@ class TrackerScheduler:
                     logger.error(f"Error processing tracker {tracker._id}: {e}")
 
         except Exception as e:
-            logger.error(f"Error in check_and_trigger_due_trackers: {e}")
+            logger.error(
+                f"Error in check_and_trigger_due_trackers: {traceback.format_exc()}"
+            )
 
     def _is_tracker_due(self, tracker: Tracker, now: datetime) -> bool:
         """
@@ -80,7 +83,9 @@ class TrackerScheduler:
                 return False
 
         # Use shared utility to check if tracker is due
-        return is_tracker_due_now(tracker, now, grace_minutes=SCHEDULE_GRACE_WINDOW_MINUTES)
+        return is_tracker_due_now(
+            tracker, now, grace_minutes=SCHEDULE_GRACE_WINDOW_MINUTES
+        )
 
     def _trigger_tracker_run(self, tracker: Tracker):
         """

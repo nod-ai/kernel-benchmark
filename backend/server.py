@@ -316,7 +316,10 @@ def trigger_manual_workflow():
         return jsonify({"error": "Missing required field: machine"}), 400
     if "backends" not in config_data or not config_data["backends"]:
         return jsonify({"error": "Missing required field: backends"}), 400
-    if not isinstance(config_data["backends"], list) or len(config_data["backends"]) == 0:
+    if (
+        not isinstance(config_data["backends"], list)
+        or len(config_data["backends"]) == 0
+    ):
         return jsonify({"error": "backends must be a non-empty array"}), 400
     if "kernelSelection" not in config_data:
         return jsonify({"error": "Missing required field: kernelSelection"}), 400
