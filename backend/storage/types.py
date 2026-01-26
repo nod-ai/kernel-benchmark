@@ -45,16 +45,17 @@ class TuningConfig:
 class BenchmarkRunStats:
     """
     Performance statistics for a single benchmark run.
-    
+
     Stores aggregated performance metrics for all kernels in a run.
     For tracker runs, trackerId links this to a specific tracker for time-series analysis.
     """
-    _id: str                          # UUID
-    runId: str                        # WorkflowRunState._id
+
+    _id: str  # UUID
+    runId: str  # WorkflowRunState._id
     timestamp: datetime
     machine: str
-    performance: dict[str, Any]       # machine → kernel_type → backend → stats
-    trackerId: Optional[str] = None   # Tracker._id for scheduled runs
+    performance: dict[str, Any]  # machine → kernel_type → backend → stats
+    trackerId: Optional[str] = None  # Tracker._id for scheduled runs
     trackerName: Optional[str] = None
 
 
