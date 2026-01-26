@@ -33,6 +33,10 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
                 steps = gh_job.raw_data["steps"]
                 break
 
+    # Extract machine from workflow run (GitHub API might not always provide this)
+    machine = "unknown"  # Default for runs without machine info
+    # Note: GitHub API may not expose inputs in all contexts, handled in webhook
+
     return WorkflowRunState(
         _id=str(gh_run.id),
         type=workflow.run_type.name,
@@ -42,9 +46,10 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
         conclusion=gh_run.conclusion,
         numSteps=10,
         steps=steps,
+        machine=machine,  # Required field
         completed=gh_run.completed,
         hasArtifact=False,
-        mappingId=None,
+        triggerId=None,  # Will be linked when trigger is found
     )
 
 
@@ -56,6 +61,11 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
     run_id = str(run_json["id"])
     run_type = workflow.run_type.name
 
+    # Extract machine from workflow inputs
+    machine = "unknown"  # Default for runs without machine info
+    if "inputs" in run_json and "machine" in run_json["inputs"]:
+        machine = run_json["inputs"]["machine"]
+
     return WorkflowRunState(
         _id=run_id,
         type=run_type,
@@ -65,9 +75,10 @@ def parse_run_from_json(run_json: dict[str, Any]) -> WorkflowRunState:
         conclusion=run_json["conclusion"] or "unknown",
         numSteps=10,
         steps=[],
+        machine=machine,  # Required field
         completed=False,
         hasArtifact=False,
-        mappingId="undefined",
+        triggerId=None,  # Will be set by webhook listener when identifier job runs
     )
 
 

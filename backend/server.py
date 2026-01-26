@@ -5,7 +5,8 @@ from backend.github_utils.gist import load_gist_by_id
 from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import find_incomplete_runs, get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
-from backend.runs.workflows import trigger_bench_workflow, trigger_short_bench_run
+from backend.runs.trigger_service import trigger_run, TriggerType
+from backend.runs.scheduling import validate_tracker_no_overlap
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
 from backend.storage.utils import test_logger
@@ -131,6 +132,117 @@ def get_all_perfs():
     return jsonify([asdict(perf) for perf in perfs])
 
 
+@app.route("/api/runs", methods=["GET"])
+def get_runs():
+    """Get all workflow runs with optional pagination and type filtering."""
+    try:
+        # Get query parameters
+        page = request.args.get("page", default=1, type=int)
+        page_size = request.args.get("page_size", default=50, type=int)
+        run_type = request.args.get("type", default=None, type=str)
+        has_artifact = request.args.get("has_artifact", default=None, type=str)
+        completed_only = request.args.get("completed_only", default=None, type=str)
+
+        # Validate pagination parameters
+        if page < 1:
+            return jsonify({"error": "Page must be >= 1"}), 400
+        if page_size < 1 or page_size > 1000:
+            return jsonify({"error": "Page size must be between 1 and 1000"}), 400
+
+        # Query database with optional type filter
+        query = {"type": run_type} if run_type else None
+        all_runs = WorkflowRunDb.find_all(query)
+
+        # Apply artifact filter if specified
+        if has_artifact is not None:
+            has_artifact_bool = has_artifact.lower() == "true"
+            all_runs = [run for run in all_runs if run.hasArtifact == has_artifact_bool]
+
+        # Apply completed filter if specified
+        if completed_only is not None:
+            completed_only_bool = completed_only.lower() == "true"
+            if completed_only_bool:
+                all_runs = [run for run in all_runs if run.completed]
+            else:
+                all_runs = [run for run in all_runs if not run.completed]
+
+        # Sort by timestamp (most recent first)
+        all_runs.sort(key=lambda r: r.timestamp, reverse=True)
+
+        # Calculate counts (from unfiltered query for totals)
+        query_for_counts = {"type": run_type} if run_type else None
+        all_runs_for_counts = WorkflowRunDb.find_all(query_for_counts)
+        if has_artifact is not None:
+            has_artifact_bool = has_artifact.lower() == "true"
+            all_runs_for_counts = [
+                run
+                for run in all_runs_for_counts
+                if run.hasArtifact == has_artifact_bool
+            ]
+
+        total = len(all_runs)
+        ongoing_count = sum(1 for run in all_runs_for_counts if not run.completed)
+        completed_count = sum(1 for run in all_runs_for_counts if run.completed)
+
+        # Calculate pagination
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+
+        # Get paginated results
+        runs_page = all_runs[start_idx:end_idx]
+
+        return jsonify(
+            {
+                "runs": [asdict(run) for run in runs_page],
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size,
+                "ongoing_count": ongoing_count,
+                "completed_count": completed_count,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting runs: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get runs: {str(e)}"}), 500
+
+
+@app.route("/api/runs/<run_id>", methods=["DELETE"])
+# @token_required
+def delete_run(run_id):
+    """Delete a workflow run and its associated blob artifact."""
+    try:
+        # Find the run
+        run = WorkflowRunDb.find_by_id(run_id)
+
+        if not run:
+            return jsonify({"error": "Run not found"}), 404
+
+        # Delete blob artifact if it exists
+        if run.hasArtifact and run.blobName:
+            try:
+                directory_client.rm(run.blobName, recursive=True)
+                logger.info(f"Deleted blob artifact: {run.blobName}")
+            except Exception as blob_error:
+                logger.warning(f"Failed to delete blob {run.blobName}: {blob_error}")
+                # Continue with database deletion even if blob deletion fails
+
+        # Delete from database
+        success = WorkflowRunDb.delete_by_id(run_id)
+
+        if success:
+            return jsonify({"message": "Run deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete run from database"}), 500
+
+    except Exception as e:
+        logger.error(f"Error deleting run {run_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to delete run: {str(e)}"}), 500
+
+
 @app.route("/artifact/<blob_name>")
 def get_artifact_by_run_id(blob_name):
     new_kernels = get_artifact_parser(RunType.BENCHMARK).load_data(blob_name)
@@ -140,39 +252,120 @@ def get_artifact_by_run_id(blob_name):
         return "Failed to gather artifact data", 500
 
 
-@app.route("/workflow/trigger", methods=["POST"])
-def trigger_workflow():
+@app.route("/workflow/pr/trigger", methods=["POST"])
+def trigger_pr_workflow():
+    """Trigger a benchmark workflow for a pull request."""
     response_data = request.get_json()
 
     pr_data = response_data["pr"]
     config_data = response_data["config"]
     kernel_selection = config_data["kernelSelection"]
-    machine = config_data.get("machine", None)
 
-    bench_kernels = None
+    # Build metadata for trigger
+    metadata = {
+        "machine": config_data.get("machine", "mi325"),
+    }
+
+    # Optional PR info for manual runs
+    if pr_data.get("repoName"):
+        metadata["repoName"] = pr_data["repoName"]
+    if pr_data.get("branchName"):
+        metadata["branchName"] = pr_data["branchName"]
+    if pr_data.get("mappingId"):  # Legacy field name (actually headSha)
+        metadata["headSha"] = pr_data["mappingId"]
+
+    # Handle kernel selection
     if kernel_selection["type"] == "specific-tags":
         tags = kernel_selection["tags"]
+        # Query to verify we have kernels
         bench_kernels = KernelConfigDb.query(
             " or ".join([f"tag eq '{tag}'" for tag in tags])
         )
         if len(bench_kernels) == 0:
-            return "No kernels found", 500
+            return jsonify({"error": "No kernels found for specified tags"}), 500
         logger.info(
             f"Loaded {len(bench_kernels)} kernels for benchmark with {len(tags)} tags"
         )
+        metadata["tags"] = tags
+    elif kernel_selection["type"] == "specific-ids" and "ids" in kernel_selection:
+        metadata["kernelIds"] = kernel_selection["ids"]
 
-    trigger_success = trigger_short_bench_run(
-        machine=machine,
-        problems=bench_kernels,
-        pr_repository=pr_data.get("repoName", None),
-        pr_branch=pr_data.get("branchName", None),
-        pr_headsha=pr_data.get("mappingId", None),
-    )
+    # Use unified trigger service
+    trigger_id = trigger_run(TriggerType.PR_UPDATE, metadata)
 
-    if trigger_success:
-        return "Success", 200
+    if trigger_id:
+        return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
     else:
-        return "Failure", 500
+        return jsonify({"error": "Failed to trigger run"}), 500
+
+
+@app.route("/workflow/manual/trigger", methods=["POST"])
+def trigger_manual_workflow():
+    """Trigger a manual benchmark workflow."""
+    response_data = request.get_json()
+
+    if not response_data or "config" not in response_data:
+        return jsonify({"error": "Missing config in request body"}), 400
+
+    config_data = response_data["config"]
+
+    # Validate required fields
+    if "name" not in config_data or not config_data["name"]:
+        return jsonify({"error": "Missing required field: name"}), 400
+    if "machine" not in config_data or not config_data["machine"]:
+        return jsonify({"error": "Missing required field: machine"}), 400
+    if "backends" not in config_data or not config_data["backends"]:
+        return jsonify({"error": "Missing required field: backends"}), 400
+    if not isinstance(config_data["backends"], list) or len(config_data["backends"]) == 0:
+        return jsonify({"error": "backends must be a non-empty array"}), 400
+    if "kernelSelection" not in config_data:
+        return jsonify({"error": "Missing required field: kernelSelection"}), 400
+
+    kernel_selection = config_data["kernelSelection"]
+
+    # Build metadata for trigger
+    metadata = {
+        "name": config_data["name"],
+        "machine": config_data["machine"],
+        "backends": config_data["backends"],
+    }
+
+    # Handle kernel selection
+    if kernel_selection["type"] == "all-quick":
+        # Get all quick kernels
+        bench_kernels = KernelConfigDb.query("workflow eq 'all'")
+        if len(bench_kernels) == 0:
+            return jsonify({"error": "No quick kernels found"}), 500
+        metadata["kernelIds"] = [k._id for k in bench_kernels]
+        logger.info(f"Loaded {len(bench_kernels)} quick kernels for manual benchmark")
+    elif kernel_selection["type"] == "specific-tags":
+        tags = kernel_selection["tags"]
+        if not tags or len(tags) == 0:
+            return jsonify({"error": "No tags specified for kernel selection"}), 400
+        # Query to verify we have kernels
+        bench_kernels = KernelConfigDb.query(
+            " or ".join([f"tag eq '{tag}'" for tag in tags])
+        )
+        if len(bench_kernels) == 0:
+            return jsonify({"error": "No kernels found for specified tags"}), 500
+        logger.info(
+            f"Loaded {len(bench_kernels)} kernels for manual benchmark with {len(tags)} tags"
+        )
+        metadata["tags"] = tags
+    elif kernel_selection["type"] == "specific-ids" and "ids" in kernel_selection:
+        if not kernel_selection["ids"] or len(kernel_selection["ids"]) == 0:
+            return jsonify({"error": "No kernel IDs specified"}), 400
+        metadata["kernelIds"] = kernel_selection["ids"]
+    else:
+        return jsonify({"error": "Invalid kernel selection type"}), 400
+
+    # Use unified trigger service with MANUAL_BENCHMARK type
+    trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, metadata)
+
+    if trigger_id:
+        return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
+    else:
+        return jsonify({"error": "Failed to trigger manual benchmark"}), 500
 
 
 @app.route("/workflow/cancel", methods=["POST"])
@@ -206,31 +399,20 @@ def tune_kernels():
     payload = request.get_json()
     kernel_ids = [str(id) for id in payload["kernel_ids"]]
 
-    kernels = KernelConfigDb.find_all()
-    tuning_kernels = [asdict(k) for k in kernels if k._id in kernel_ids]
+    # Build metadata for tuning trigger
+    metadata = {
+        "kernelIds": kernel_ids,
+        "numTrials": payload.get("numTrials", 75),
+        "backend": payload.get("backend", "wave"),
+    }
 
-    tuning_request_id = uuid4()
-    tuning_upload = create_gist(
-        tuning_kernels,
-        filename=f"tuning-request-{tuning_request_id}",
-        description=f"Tuning configuration for {len(tuning_kernels)} kernels",
-    )
+    # Use unified trigger service
+    trigger_id = trigger_run(TriggerType.MANUAL_TUNING, metadata)
 
-    if not tuning_upload:
-        return "Failed to upload config to gist", 500
-
-    dispatch_success = trigger_bench_workflow(
-        RunType.TUNING,
-        {
-            "problems_url": tuning_upload.raw_url,
-            "identifier": tuning_upload.gist_id,
-        },
-    )
-
-    if dispatch_success:
-        return "Success", 200
+    if trigger_id:
+        return jsonify({"triggerId": trigger_id, "message": "Success"}), 200
     else:
-        return "Failed to dispatch workflow", 500
+        return jsonify({"error": "Failed to trigger tuning"}), 500
 
 
 @app.route("/tune/results", methods=["GET"])
@@ -245,11 +427,20 @@ def get_tuning_runs():
 
     tuning_kernels = []
     for run in runs:
-        if not run.mappingId:
-            continue
-        run_kernels = load_gist_by_id(run.mappingId)
-        if run_kernels:
-            tuning_kernels.extend(run_kernels)
+        # Get kernels from trigger metadata
+        if run.triggerId:
+            try:
+                from backend.storage.triggers import RunTriggerDb
+
+                trigger = RunTriggerDb.find_by_id(run.triggerId)
+                if trigger and "kernelIds" in trigger.metadata:
+                    # Get kernels by IDs
+                    kernel_ids = trigger.metadata["kernelIds"]
+                    kernels = [KernelConfigDb.find_by_id(kid) for kid in kernel_ids]
+                    kernels = [asdict(k) for k in kernels if k is not None]
+                    tuning_kernels.extend(kernels)
+            except Exception as e:
+                logger.warning(f"Failed to get kernels for run {run._id}: {e}")
 
     return jsonify(
         {
@@ -259,20 +450,34 @@ def get_tuning_runs():
     )
 
 
+@app.route("/benchmark_stats", methods=["GET"])
+def get_all_benchmark_stats():
+    """Get all benchmark run statistics from the database."""
+    stats = BenchmarkRunStatsDb.find_all()
+    return jsonify([asdict(s) for s in stats])
+
+
+@app.route("/benchmark_stats/<run_id>", methods=["GET"])
+def get_benchmark_stat_by_run_id(run_id):
+    """Get benchmark statistics for a specific run."""
+    stats = BenchmarkRunStatsDb.find_all({"runId": str(run_id)})
+    if len(stats) == 0:
+        return "Failed to find benchmark stats", 404
+    return jsonify(asdict(stats[0]))
+
+
+# DEPRECATED: Old change_stats endpoints - kept for backward compatibility
+# These return empty results as we no longer compute change statistics
 @app.route("/change_stats", methods=["GET"])
 def get_all_change_stats():
-    """Get all kernel types from the database."""
-    change_stats = ChangeStatDb.find_all()
-    return jsonify([asdict(cs) for cs in change_stats])
+    """DEPRECATED: Use /benchmark_stats instead."""
+    return jsonify([])
 
 
 @app.route("/change_stats/<run_id>", methods=["GET"])
 def get_change_stat_by_run_id(run_id):
-    """Get all kernel types from the database."""
-    change_stats = ChangeStatDb.find_all({"runId": str(run_id)})
-    if len(change_stats) == 0:
-        return "Failed to find change stats", 500
-    return jsonify(asdict(change_stats[0]))
+    """DEPRECATED: Use /benchmark_stats/<run_id> instead."""
+    return jsonify({}), 404
 
 
 @app.route("/kernel_types", methods=["GET"])
@@ -523,6 +728,266 @@ def remove_kernels():
     except Exception as e:
         logger.error(traceback.format_exc())
         return f"Error deleting kernel configurations: {str(e)}", 500
+
+
+@app.route("/api/trackers", methods=["GET"])
+def get_trackers():
+    """Get all trackers."""
+    try:
+        trackers = TrackerDb.find_all()
+        return jsonify([asdict(tracker) for tracker in trackers])
+    except Exception as e:
+        logger.error(f"Error getting trackers: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get trackers: {str(e)}"}), 500
+
+
+@app.route("/api/trackers", methods=["POST"])
+# @token_required
+def create_tracker():
+    """Create a new tracker."""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Validate required fields
+        required_fields = [
+            "name",
+            "blobName",
+            "tags",
+            "backends",
+            "machine",
+            "schedule",
+        ]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        # Validate schedule
+        schedule_data = data["schedule"]
+        schedule_required = ["isInterval", "startDate", "timeOfDay"]
+        for field in schedule_required:
+            if field not in schedule_data:
+                return (
+                    jsonify({"error": f"Missing required schedule field: {field}"}),
+                    400,
+                )
+
+        # Create tracker with generated ID
+        tracker_data = {
+            "_id": str(uuid4()),
+            "name": data["name"],
+            "blobName": data["blobName"],
+            "tags": data["tags"],
+            "backends": data["backends"],
+            "machine": data["machine"],
+            "schedule": schedule_data,
+            "isActive": data.get("isActive", True),
+            "createdAt": datetime.now(timezone.utc),
+        }
+
+        tracker = fromdict(Tracker, tracker_data)
+
+        # Validate no overlap with existing trackers
+        is_valid, error_msg = validate_tracker_no_overlap(tracker)
+        if not is_valid:
+            return jsonify({"error": error_msg}), 409
+
+        TrackerDb.upsert(tracker)
+
+        return jsonify(asdict(tracker)), 201
+
+    except Exception as e:
+        logger.error(f"Error creating tracker: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to create tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>", methods=["PUT"])
+# @token_required
+def update_tracker(tracker_id):
+    """Update an existing tracker."""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Find existing tracker
+        existing_tracker = TrackerDb.find_by_id(tracker_id)
+        if not existing_tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        # Update schedule if provided
+        schedule_data = asdict(existing_tracker.schedule)
+        if "schedule" in data:
+            schedule_data = data["schedule"]
+
+        # Update tracker fields
+        tracker_data = {
+            "_id": tracker_id,
+            "name": data.get("name", existing_tracker.name),
+            "blobName": data.get("blobName", existing_tracker.blobName),
+            "tags": data.get("tags", existing_tracker.tags),
+            "backends": data.get("backends", existing_tracker.backends),
+            "machine": data.get("machine", existing_tracker.machine),
+            "schedule": schedule_data,
+            "isActive": data.get("isActive", existing_tracker.isActive),
+            "createdAt": existing_tracker.createdAt,
+        }
+
+        updated_tracker = fromdict(Tracker, tracker_data)
+
+        # Validate no overlap with existing trackers
+        # Important: Only validate if tracker is being activated or is already active
+        # This allows deactivating conflicting trackers, but prevents activating
+        # a tracker that would conflict
+        if updated_tracker.isActive:
+            is_valid, error_msg = validate_tracker_no_overlap(
+                updated_tracker, tracker_id=tracker_id
+            )
+            if not is_valid:
+                return jsonify({"error": error_msg}), 409
+
+        success = TrackerDb.upsert(updated_tracker)
+
+        if success:
+            return jsonify(asdict(updated_tracker)), 200
+        else:
+            return jsonify({"error": "Failed to update tracker"}), 500
+
+    except Exception as e:
+        logger.error(f"Error updating tracker {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to update tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>", methods=["DELETE"])
+# @token_required
+def delete_tracker(tracker_id):
+    """Delete a tracker."""
+    try:
+        tracker = TrackerDb.find_by_id(tracker_id)
+
+        if not tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        success = TrackerDb.delete_by_id(tracker_id)
+
+        if success:
+            return jsonify({"message": "Tracker deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete tracker"}), 500
+
+    except Exception as e:
+        logger.error(f"Error deleting tracker {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to delete tracker: {str(e)}"}), 500
+
+
+@app.route("/api/triggers", methods=["GET"])
+def get_triggers():
+    """Get all triggers with optional filtering."""
+    try:
+        from backend.storage.triggers import RunTriggerDb
+
+        # Get query parameters for filtering
+        trigger_type = request.args.get("type")
+        status = request.args.get("status")
+        limit = request.args.get("limit", type=int)
+
+        # Build query
+        if trigger_type and status:
+            query = f"type eq '{trigger_type}' and status eq '{status}'"
+        elif trigger_type:
+            query = f"type eq '{trigger_type}'"
+        elif status:
+            query = f"status eq '{status}'"
+        else:
+            query = None
+
+        # Get triggers
+        if query:
+            triggers = RunTriggerDb.query(query)
+        else:
+            triggers = RunTriggerDb.find_all()
+
+        # Sort by timestamp (most recent first)
+        triggers.sort(key=lambda t: t.timestamp, reverse=True)
+
+        # Apply limit if specified
+        if limit:
+            triggers = triggers[:limit]
+
+        return jsonify([asdict(t) for t in triggers])
+
+    except Exception as e:
+        logger.error(f"Error getting triggers: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get triggers: {str(e)}"}), 500
+
+
+@app.route("/api/triggers/<trigger_id>", methods=["GET"])
+def get_trigger(trigger_id):
+    """Get a specific trigger with its linked run info."""
+    try:
+        from backend.storage.triggers import RunTriggerDb
+
+        trigger = RunTriggerDb.find_by_id(trigger_id)
+
+        if not trigger:
+            return jsonify({"error": "Trigger not found"}), 404
+
+        trigger_data = asdict(trigger)
+
+        # If trigger is linked to a run, include run info
+        if trigger.runId:
+            try:
+                run = WorkflowRunDb.find_by_id(trigger.runId)
+                if run:
+                    trigger_data["run"] = asdict(run)
+            except:
+                pass
+
+        return jsonify(trigger_data)
+
+    except Exception as e:
+        logger.error(f"Error getting trigger {trigger_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get trigger: {str(e)}"}), 500
+
+
+@app.route("/api/runs/<run_id>/trigger", methods=["GET"])
+def get_run_trigger(run_id):
+    """Get the trigger that caused a specific run."""
+    try:
+        from backend.storage.triggers import RunTriggerDb
+
+        # Get the run
+        run = WorkflowRunDb.find_by_id(run_id)
+
+        if not run:
+            return jsonify({"error": "Run not found"}), 404
+
+        # Get trigger by triggerId or by querying runId
+        if run.triggerId:
+            trigger = RunTriggerDb.find_by_id(run.triggerId)
+        else:
+            # Fallback: search by runId
+            triggers = RunTriggerDb.query(f"runId eq '{run_id}'")
+            trigger = triggers[0] if triggers else None
+
+        if not trigger:
+            return jsonify({"error": "No trigger found for this run"}), 404
+
+        return jsonify(asdict(trigger))
+
+    except Exception as e:
+        logger.error(f"Error getting trigger for run {run_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get trigger: {str(e)}"}), 500
 
 
 def serve_backend(port=3000):

@@ -5,14 +5,13 @@ import {
   X,
   Loader2,
   Settings,
-  Monitor,
   Cpu,
   Clock,
   Target,
 } from "lucide-react";
 import Modal from "../Modal/Modal";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal/ModalComponents";
-import { AVAILABLE_MACHINES } from "../../types";
+import MachineSelector from "./blocks/MachineSelector";
 
 interface TuningPhaseConfig {
   blockSizesMfma: {
@@ -173,47 +172,13 @@ export default function TuningConfirmationModal({
       <ModalBody>
         <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
           {/* Machine Selection */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-lg">
-                <Monitor className="w-4 h-4 text-green-600" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-gray-900">
-                  Target Machine *
-                </h4>
-                <p className="text-sm text-gray-600">
-                  Hardware platform for tuning execution
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-row gap-3">
-              {AVAILABLE_MACHINES.map((machine) => (
-                <label
-                  key={machine}
-                  className="flex grow items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  <input
-                    type="radio"
-                    name="machine"
-                    value={machine}
-                    checked={config.machine === machine}
-                    onChange={(e) =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        machine: e.target.value,
-                      }))
-                    }
-                    disabled={isSubmitting}
-                    className="border-gray-300 text-green-600 focus:ring-green-500"
-                  />
-                  <span className="text-sm font-medium text-gray-900">
-                    {machine}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
+          <MachineSelector
+            machine={config.machine}
+            onChange={(machine) =>
+              setConfig((prev) => ({ ...prev, machine }))
+            }
+            disabled={isSubmitting}
+          />
 
           {/* Tuning Phases */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional, Any
 from .repository import create_repository
 
@@ -14,9 +14,10 @@ class WorkflowRunState:
     conclusion: str
     numSteps: int
     steps: list[dict]
+    machine: str  # Machine this run executes on (required)
     completed: bool = False
     hasArtifact: bool = False
-    mappingId: Optional[str] = None
+    triggerId: Optional[str] = None  # Foreign key to RunTrigger
 
 
 @dataclass
@@ -28,13 +29,34 @@ class TuningConfig:
     result: dict[str, Any]
 
 
+# DEPRECATED: BenchChangeStats is no longer used
+# This has been replaced by BenchmarkRunStats which stores performance snapshots
+# for every run instead of precomputed comparisons.
+# @dataclass
+# class BenchChangeStats:
+#     _id: str
+#     runId: str
+#     machine: str = "mi325x"
+#     old: Optional[dict[str, Any]] = None
+#     new: Optional[dict[str, Any]] = None
+
+
 @dataclass
-class BenchChangeStats:
-    _id: str
-    runId: str
-    machine: str = "mi325x"
-    old: Optional[dict[str, Any]] = None
-    new: Optional[dict[str, Any]] = None
+class BenchmarkRunStats:
+    """
+    Performance statistics for a single benchmark run.
+
+    Stores aggregated performance metrics for all kernels in a run.
+    For tracker runs, trackerId links this to a specific tracker for time-series analysis.
+    """
+
+    _id: str  # UUID
+    runId: str  # WorkflowRunState._id
+    timestamp: datetime
+    machine: str
+    performance: dict[str, Any]  # machine → kernel_type → backend → stats
+    trackerId: Optional[str] = None  # Tracker._id for scheduled runs
+    trackerName: Optional[str] = None
 
 
 @dataclass
@@ -89,13 +111,41 @@ class RepoPullRequest:
     isMerged: bool = False
 
 
+@dataclass
+class Schedule:
+    isInterval: bool
+    startDate: str  # MM-DD-YYYY format
+    timeOfDay: str  # HH:MM in UTC
+    daysOfWeek: Optional[list[str]] = None  # For weekly schedules
+    intervalValue: Optional[int] = None  # For interval schedules
+    intervalUnit: Optional[Literal["weeks", "months"]] = None  # For interval schedules
+    endDate: Optional[str] = None  # MM-DD-YYYY format
+
+
+@dataclass
+class Tracker:
+    _id: str
+    name: str
+    blobName: str  # Simplified name for dashboard URL
+    tags: list[str]
+    backends: list[str]
+    machine: str
+    schedule: Schedule
+    isActive: bool = True
+    createdAt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")
 """Repository for kernel types and their respective attributes"""
 
 WorkflowRunDb = create_repository(WorkflowRunState, "workflowrunstates2")
 """Repository for workflow run data with full type safety."""
 
-ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
+# DEPRECATED: ChangeStatDb is no longer used - replaced by BenchmarkRunStatsDb
+# ChangeStatDb = create_repository(BenchChangeStats, "benchchangestats")
+
+BenchmarkRunStatsDb = create_repository(BenchmarkRunStats, "benchmarkrunstats")
+"""Repository for benchmark run performance statistics with full type safety."""
 
 TuningConfigDb = create_repository(TuningConfig, "tuningconfigsnew3")
 """Repository for tuning configuration data with full type safety."""
@@ -105,3 +155,6 @@ KernelConfigDb = create_repository(KernelConfig, "kernelconfigs")
 
 RepoPullRequestDb = create_repository(RepoPullRequest, "repopullrequests")
 """Repository for repository pull request data with full type safety."""
+
+TrackerDb = create_repository(Tracker, "trackers2")
+"""Repository for kernel benchmark trackers with full type safety."""

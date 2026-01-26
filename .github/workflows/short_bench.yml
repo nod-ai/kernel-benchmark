@@ -36,9 +36,13 @@ on:
       pr_headsha:
         description: "Head sha of pull request that triggered dispatch"
         required: false
+      trigger_id:
+        description: "Backend trigger ID for linking"
+        required: false
+        default: "undefined"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.pr_headsha }}-${{ inputs.machine }}
+  group: ${{ github.workflow }}-${{ inputs.trigger_id }}-${{ inputs.machine }}
   cancel-in-progress: true
 
 jobs:
@@ -46,8 +50,9 @@ jobs:
     name: Benchmark Run Identifier
     runs-on: ubuntu-latest
     steps:
-      - name: headSha_${{ inputs.pr_headsha || 'undefined' }}
-        run: echo run identifier ${{ inputs.pr_headsha || 'undefined' }}
+      - name: triggerId_${{ inputs.trigger_id }}
+        run: |
+          echo "Trigger ID: ${{ inputs.trigger_id }}"
 
   short_benchmark:
     name: Short Benchmark

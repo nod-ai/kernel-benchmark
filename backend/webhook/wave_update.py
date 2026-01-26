@@ -1,8 +1,7 @@
 import logging
 from backend.github_utils import get_repo
 from backend.globals import WAVE_REPO_NAME
-from backend.runs import RunType
-from backend.runs.workflows import trigger_short_bench_run
+from backend.runs.trigger_service import trigger_run, TriggerType
 from backend.storage.auth import get_blob_client
 from backend.storage.conversion import parse_pr_obj
 from backend.storage.types import *
@@ -53,20 +52,27 @@ class WaveUpdateListener:
         if not has_changed or is_merge:
             return
 
-        logger.info(
-            f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
-        )
-        head_repo_name = pr_obj["head"]["repo"]["full_name"]
-        head_branch = pr_obj["head"]["ref"]
-        head_sha = pr_obj["head"]["sha"]
-        trigger_success = trigger_short_bench_run(
-            pr_repository=head_repo_name, pr_branch=head_branch, pr_headsha=head_sha
-        )
-        if trigger_success:
-            logger.info(
-                f'Successfully triggered workflow for Pull Request {pr_obj["html_url"]}'
-            )
-        else:
-            logger.error(
-                f'Failed to trigger workflow for Pull Request {pr_obj["html_url"]}'
-            )
+        # logger.info(
+        #     f'Pull Request {pr_obj["html_url"]} triggering workflow on {action}'
+        # )
+        # head_repo_name = pr_obj["head"]["repo"]["full_name"]
+        # head_branch = pr_obj["head"]["ref"]
+        # head_sha = pr_obj["head"]["sha"]
+
+        # # Use unified trigger service
+        # trigger_id = trigger_run(TriggerType.PR_UPDATE, {
+        #     "prId": str(pr_obj["id"]),
+        #     "repoName": head_repo_name,
+        #     "branchName": head_branch,
+        #     "headSha": head_sha,
+        #     "commits": pr_obj["commits"]
+        # })
+
+        # if trigger_id:
+        #     logger.info(
+        #         f'Successfully triggered workflow for Pull Request {pr_obj["html_url"]} (trigger_id: {trigger_id})'
+        #     )
+        # else:
+        #     logger.error(
+        #         f'Failed to trigger workflow for Pull Request {pr_obj["html_url"]}'
+        #     )
