@@ -155,3 +155,23 @@ export function formatMMDDYYYY(dateStr: string): string {
   const date = new Date(toYYYYMMDD(dateStr));
   return date.toLocaleDateString();
 }
+
+/**
+ * Formats elapsed time from a start date to now in a human-readable format
+ */
+export function formatElapsedTime(startTime: Date): string {
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - startTime.getTime()) / 1000); // seconds
+  
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  const seconds = diff % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}

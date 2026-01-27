@@ -5,12 +5,12 @@ type IntervalUnit = "weeks" | "months";
 
 export interface Schedule {
   isInterval: boolean;
-  startDate: string; // MM-DD-YYYY format
+  startDate: string; // YYYY-MM-DD format (HTML date input format, converted to MM-DD-YYYY for backend)
   timeOfDay: string; // HH:MM in UTC
   daysOfWeek?: string[]; // For weekly schedules
   intervalValue?: number; // For interval schedules
   intervalUnit?: IntervalUnit; // For interval schedules
-  endDate?: string; // MM-DD-YYYY format
+  endDate?: string; // YYYY-MM-DD format (HTML date input format, converted to MM-DD-YYYY for backend)
 }
 
 interface ScheduleSelectorProps {

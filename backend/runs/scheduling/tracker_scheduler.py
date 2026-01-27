@@ -39,7 +39,7 @@ class TrackerScheduler:
         """
         try:
             # Get all active trackers
-            trackers = TrackerDb.find_all({"isActive": True})
+            trackers = TrackerDb.query("isActive eq true")
 
             if not trackers:
                 logger.debug("No active trackers found")
@@ -94,7 +94,11 @@ class TrackerScheduler:
         Args:
             tracker: The tracker to trigger
         """
+        now = datetime.now(timezone.utc)
+        formatted_time = now.strftime("%m/%d/%Y %I:%M %p UTC")
+
         metadata = {
+            "name": f"{tracker.name} (Scheduled): {formatted_time}",
             "trackerId": tracker._id,
             "trackerName": tracker.name,
             "tags": tracker.tags,

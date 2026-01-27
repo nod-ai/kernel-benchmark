@@ -631,3 +631,26 @@ export async function deleteTracker(trackerId: string): Promise<void> {
     throw new Error(`Failed to delete tracker: ${error}`);
   }
 }
+
+export async function triggerTrackerRun(trackerId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/trigger`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to trigger tracker run: ${error}`);
+  }
+}

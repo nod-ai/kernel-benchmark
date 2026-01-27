@@ -956,6 +956,52 @@ def delete_tracker(tracker_id):
         return jsonify({"error": f"Failed to delete tracker: {str(e)}"}), 500
 
 
+@app.route("/api/trackers/<tracker_id>/trigger", methods=["POST"])
+# @token_required
+def trigger_tracker_manually(tracker_id):
+    """Manually trigger a tracker run before its scheduled time."""
+    try:
+        # Find the tracker
+        tracker = TrackerDb.find_by_id(tracker_id)
+
+        if not tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        # Validate tracker is active (optional - we could allow manual triggers even when paused)
+        # For now, we'll allow triggering even if paused since it's a manual action
+        
+        # Build metadata from tracker configuration
+        now = datetime.now(timezone.utc)
+        formatted_time = now.strftime("%m/%d/%Y %I:%M %p UTC")
+        
+        metadata = {
+            "name": f"{tracker.name} (Manual): {formatted_time}",
+            "trackerId": tracker._id,
+            "trackerName": tracker.name,
+            "tags": tracker.tags,
+            "backends": tracker.backends,
+            "machine": tracker.machine,
+            "blobName": tracker.blobName,
+        }
+
+        # Use MANUAL_BENCHMARK type so it's treated like a manual run in scheduling
+        # but include trackerId to maintain association
+        trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, metadata)
+
+        if trigger_id:
+            logger.info(
+                f"Manually triggered tracker '{tracker.name}' (trigger_id: {trigger_id})"
+            )
+            return jsonify({"triggerId": trigger_id, "message": "Tracker run queued successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to trigger tracker run"}), 500
+
+    except Exception as e:
+        logger.error(f"Error manually triggering tracker {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to trigger tracker: {str(e)}"}), 500
+
+
 @app.route("/api/triggers", methods=["GET"])
 def get_triggers():
     """Get all triggers with optional filtering."""

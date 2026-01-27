@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../components/PageContainer";
-import { fetchAllRuns, deleteRun, triggerManualBenchWorkflow } from "../utils/github";
+import { fetchAllRuns, deleteRun, triggerManualBenchWorkflow, cancelWorkflow } from "../utils/github";
 import type { BenchmarkRun, RunWithTrigger } from "../types";
 import {
   Clock,
@@ -13,8 +13,11 @@ import {
   Trash2,
   FileText,
   PlayCircle,
+  StopCircle,
+  Calendar,
+  Server,
 } from "lucide-react";
-import { toTitleCase } from "../utils/utils";
+import { toTitleCase, formatElapsedTime } from "../utils/utils";
 import ManualBenchmarkModal, {
   type ManualBenchmarkConfig,
 } from "../components/Modals/ManualBenchmarkModal";
@@ -105,12 +108,15 @@ function getStatusText(run: BenchmarkRun): string {
 interface RunCardProps {
   item: RunWithTrigger;
   onDelete: (runId: string) => void;
+  onCancel: (runId: string) => void;
   onNavigate: (blobName: string) => void;
 }
 
-function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
+function RunCard({ item, onDelete, onCancel, onNavigate }: RunCardProps) {
   const { run, trigger } = item;
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState<string>("");
   
   // Determine display values (trigger is source of truth for type)
   const displayName = trigger?.metadata?.name || run?.blobName || "Unknown Run";
@@ -119,6 +125,26 @@ function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
   const isCompleted = run?.completed ?? false;
   const canNavigate = isCompleted && run?.hasArtifact;
   const itemId = run?._id || trigger?._id || "";
+  const trackerName = trigger?.metadata?.trackerName as string | undefined;
+  const machine = (trigger?.machine || trigger?.metadata?.machine) as string | undefined;
+
+  // Update elapsed time for running runs
+  useEffect(() => {
+    if (run?.status === "in_progress" && run?.timestamp) {
+      const updateElapsed = () => {
+        setElapsedTime(formatElapsedTime(new Date(run.timestamp)));
+        console.log(run?.timestamp);
+      };
+      
+      // Update immediately
+      updateElapsed();
+      
+      // Update every second
+      const interval = setInterval(updateElapsed, 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [run?.status, run?.timestamp]);
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -134,6 +160,24 @@ function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
         console.error("Failed to delete run:", error);
         alert("Failed to delete run. Please try again.");
         setIsDeleting(false);
+      }
+    }
+  };
+
+  const handleCancel = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (
+      window.confirm(
+        "Are you sure you want to cancel this run? This will stop the workflow execution."
+      )
+    ) {
+      setIsCancelling(true);
+      try {
+        await onCancel(itemId);
+      } catch (error) {
+        console.error("Failed to cancel run:", error);
+        alert("Failed to cancel run. Please try again.");
+        setIsCancelling(false);
       }
     }
   };
@@ -169,7 +213,7 @@ function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                 </span>
-                Running
+                Running {elapsedTime && `(${elapsedTime})`}
               </span>
             )}
             {/* Show trigger status if not linked */}
@@ -190,6 +234,26 @@ function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
           <h3 className={`text-sm font-semibold ${colors.text} mb-1 truncate`}>
             {displayName}
           </h3>
+
+          {/* Tracker Name - shown when run is associated with a tracker */}
+          {trackerName && (
+            <div className="flex items-center gap-1.5 mb-1">
+              <Calendar className="w-3.5 h-3.5 text-gray-500" />
+              <span className="text-xs text-gray-600">
+                Tracker: <span className="font-medium text-gray-700">{trackerName}</span>
+              </span>
+            </div>
+          )}
+
+          {/* Machine - shown when machine info is available */}
+          {machine && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <Server className="w-3.5 h-3.5 text-gray-500" />
+              <span className="text-xs text-gray-600">
+                Machine: <span className="font-medium text-gray-700">{machine}</span>
+              </span>
+            </div>
+          )}
 
           {/* Timestamp */}
           <p className="text-xs text-gray-500 mb-3">
@@ -256,20 +320,39 @@ function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
         </div>
 
         {/* Actions */}
-        {isCompleted && (
-          <button
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="flex-shrink-0 p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Delete run"
-          >
-            {isDeleting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Trash2 className="w-5 h-5" />
-            )}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Cancel button for ongoing runs */}
+          {!isCompleted && run && (
+            <button
+              onClick={handleCancel}
+              disabled={isCancelling}
+              className="flex-shrink-0 p-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Cancel run"
+            >
+              {isCancelling ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <StopCircle className="w-5 h-5" />
+              )}
+            </button>
+          )}
+          
+          {/* Delete button for completed runs */}
+          {isCompleted && (
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="flex-shrink-0 p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Delete run"
+            >
+              {isDeleting ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Trash2 className="w-5 h-5" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -430,6 +513,12 @@ export default function Runs() {
     }
   };
 
+  const handleCancel = async (runId: string) => {
+    await cancelWorkflow(runId);
+    // Refresh ongoing runs after cancellation
+    await loadOngoingRuns();
+  };
+
   const handleNavigate = (blobName: string) => {
     navigate(`/dashboard/${blobName}`);
   };
@@ -560,6 +649,7 @@ export default function Runs() {
                         key={item.run?._id || item.trigger?._id || ""}
                         item={item}
                         onDelete={handleDelete}
+                        onCancel={handleCancel}
                         onNavigate={handleNavigate}
                       />
                     ))}
@@ -580,6 +670,7 @@ export default function Runs() {
                         key={item.run?._id || item.trigger?._id || ""}
                         item={item}
                         onDelete={handleDelete}
+                        onCancel={handleCancel}
                         onNavigate={handleNavigate}
                       />
                     ))}

@@ -8,10 +8,11 @@ import {
   createTracker,
   updateTracker,
   deleteTracker,
+  triggerTrackerRun,
   type TrackerData,
   type ScheduleData,
 } from "../utils/github";
-import { toYYYYMMDD, formatMMDDYYYY } from "../utils/utils";
+import { formatMMDDYYYY } from "../utils/utils";
 import {
   Plus,
   Calendar,
@@ -23,6 +24,7 @@ import {
   PauseCircle,
   Edit,
   Cpu,
+  Play,
 } from "lucide-react";
 
 interface Tracker {
@@ -135,16 +137,28 @@ export default function Tracking() {
     }
   };
 
-  const handleEditTracker = (tracker: Tracker) => {
-    // Convert dates from MM-DD-YYYY (backend) to YYYY-MM-DD (HTML input) for editing
-    const scheduleForEdit: TrackerConfig["schedule"] = {
-      ...tracker.schedule,
-      startDate: toYYYYMMDD(tracker.schedule.startDate),
-      endDate: tracker.schedule.endDate
-        ? toYYYYMMDD(tracker.schedule.endDate)
-        : undefined,
-    };
+  const handleTriggerTracker = async (tracker: Tracker) => {
+    if (
+      window.confirm(
+        `Run "${tracker.name}" now?\n\nThis will queue a manual benchmark with the tracker's configuration:\n\n` +
+        `• Machine: ${tracker.machine}\n` +
+        `• Backends: ${tracker.backends.join(", ")}\n` +
+        `• Tags: ${tracker.tags.join(", ")}`
+      )
+    ) {
+      try {
+        await triggerTrackerRun(tracker.id);
+        alert(`Successfully queued run for tracker "${tracker.name}". Check the Runs page to monitor progress.`);
+      } catch (error) {
+        console.error("Failed to trigger tracker run:", error);
+        alert(`Failed to trigger tracker run:\n\n${error}\n\nPlease try again.`);
+      }
+    }
+  };
 
+  const handleEditTracker = (tracker: Tracker) => {
+    // Note: AddTrackerModal will handle date format conversion
+    // tracker.schedule dates are in MM-DD-YYYY format from backend
     const trackerConfig: TrackerConfig & { _id: string } = {
       _id: tracker.id,
       name: tracker.name,
@@ -155,7 +169,7 @@ export default function Tracking() {
       },
       backends: tracker.backends,
       machine: tracker.machine,
-      schedule: scheduleForEdit,
+      schedule: tracker.schedule,
     };
     setEditingTracker(trackerConfig);
     setIsModalOpen(true);
@@ -273,6 +287,13 @@ export default function Tracking() {
                         title="Edit tracker"
                       >
                         <Edit className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleTriggerTracker(tracker)}
+                        className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                        title="Run now"
+                      >
+                        <Play className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => toggleTrackerStatus(tracker.id)}
