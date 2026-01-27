@@ -8,6 +8,7 @@ import type {
   ChangeStats,
   BenchmarkRuntimeConfig,
   KernelSelection,
+  RunWithTrigger,
 } from "../types";
 
 export async function fetchModifications() {
@@ -432,7 +433,7 @@ export interface FetchRunsParams {
 }
 
 export interface FetchRunsResponse {
-  runs: BenchmarkRun[];
+  runs: RunWithTrigger[];
   page: number;
   page_size: number;
   total: number;
@@ -466,10 +467,26 @@ export async function fetchAllRuns(
 
     const data: FetchRunsResponse = await response.json();
 
-    // Convert timestamp strings to Date objects
-    data.runs = data.runs.map((run) => ({
-      ...run,
-      timestamp: new Date(run.timestamp),
+    // Convert timestamp strings to Date objects for both run and trigger
+    data.runs = data.runs.map((item) => ({
+      run: item.run
+        ? {
+            ...item.run,
+            timestamp: new Date(item.run.timestamp),
+          }
+        : null,
+      trigger: item.trigger
+        ? {
+            ...item.trigger,
+            timestamp: new Date(item.trigger.timestamp),
+            dispatchedAt: item.trigger.dispatchedAt
+              ? new Date(item.trigger.dispatchedAt)
+              : undefined,
+            linkedAt: item.trigger.linkedAt
+              ? new Date(item.trigger.linkedAt)
+              : undefined,
+          }
+        : null,
     }));
 
     return data;

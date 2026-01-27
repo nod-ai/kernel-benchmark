@@ -158,6 +158,26 @@ export interface BenchmarkRun {
   completed: boolean;
   hasArtifact: boolean;
   mappingId?: string;
+  triggerId?: string;
+  machine?: string;
+}
+
+export interface RunTrigger {
+  _id: string;
+  type: string;  // pr_update, manual_bench, manual_tuning, scheduled, rebase
+  status: string;  // pending, queued, dispatched, linked, failed
+  timestamp: Date;
+  metadata: Record<string, any>;
+  machine: string;
+  dispatchedAt?: Date;
+  runId?: string;
+  linkedAt?: Date;
+  error?: string;
+}
+
+export interface RunWithTrigger {
+  run: BenchmarkRun | null;
+  trigger: RunTrigger | null;
 }
 
 export interface TuningConfig {

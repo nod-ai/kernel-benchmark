@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../components/PageContainer";
 import { fetchAllRuns, deleteRun, triggerManualBenchWorkflow } from "../utils/github";
-import type { BenchmarkRun } from "../types";
+import type { BenchmarkRun, RunWithTrigger } from "../types";
 import {
   Clock,
   CheckCircle,
@@ -19,7 +19,7 @@ import ManualBenchmarkModal, {
   type ManualBenchmarkConfig,
 } from "../components/Modals/ManualBenchmarkModal";
 
-type RunTypeFilter = "ALL" | "BENCHMARK" | "TUNING" | "E2E";
+type RunTypeFilter = "ALL" | "pr_update" | "manual_bench" | "manual_tuning" | "scheduled" | "rebase";
 
 const RUN_TYPE_COLORS = {
   BENCHMARK: {
@@ -39,6 +39,37 @@ const RUN_TYPE_COLORS = {
     border: "border-green-200",
     text: "text-green-700",
     badge: "bg-green-100 text-green-700",
+  },
+  // Trigger type colors
+  PR_UPDATE: {
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+    text: "text-indigo-700",
+    badge: "bg-indigo-100 text-indigo-700",
+  },
+  MANUAL_BENCH: {
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    text: "text-blue-700",
+    badge: "bg-blue-100 text-blue-700",
+  },
+  MANUAL_TUNING: {
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+    text: "text-purple-700",
+    badge: "bg-purple-100 text-purple-700",
+  },
+  SCHEDULED: {
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+    badge: "bg-emerald-100 text-emerald-700",
+  },
+  REBASE: {
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    text: "text-amber-700",
+    badge: "bg-amber-100 text-amber-700",
   },
 };
 
@@ -72,17 +103,22 @@ function getStatusText(run: BenchmarkRun): string {
 }
 
 interface RunCardProps {
-  run: BenchmarkRun;
+  item: RunWithTrigger;
   onDelete: (runId: string) => void;
   onNavigate: (blobName: string) => void;
 }
 
-function RunCard({ run, onDelete, onNavigate }: RunCardProps) {
+function RunCard({ item, onDelete, onNavigate }: RunCardProps) {
+  const { run, trigger } = item;
   const [isDeleting, setIsDeleting] = useState(false);
-  const runType = run.type as keyof typeof RUN_TYPE_COLORS;
-  const colors = RUN_TYPE_COLORS[runType] || RUN_TYPE_COLORS.BENCHMARK;
-  const isCompleted = run.completed;
-  const canNavigate = isCompleted && run.hasArtifact;
+  
+  // Determine display values (trigger is source of truth for type)
+  const displayName = trigger?.metadata?.name || run?.blobName || "Unknown Run";
+  const runType = (trigger?.type || "manual_bench").toUpperCase();
+  const colors = RUN_TYPE_COLORS[runType as keyof typeof RUN_TYPE_COLORS] || RUN_TYPE_COLORS.BENCHMARK;
+  const isCompleted = run?.completed ?? false;
+  const canNavigate = isCompleted && run?.hasArtifact;
+  const itemId = run?._id || trigger?._id || "";
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -93,7 +129,7 @@ function RunCard({ run, onDelete, onNavigate }: RunCardProps) {
     ) {
       setIsDeleting(true);
       try {
-        await onDelete(run._id);
+        await onDelete(itemId);
       } catch (error) {
         console.error("Failed to delete run:", error);
         alert("Failed to delete run. Please try again.");
@@ -103,7 +139,7 @@ function RunCard({ run, onDelete, onNavigate }: RunCardProps) {
   };
 
   const handleClick = () => {
-    if (canNavigate) {
+    if (canNavigate && run) {
       onNavigate(run.blobName);
     }
   };
@@ -119,14 +155,30 @@ function RunCard({ run, onDelete, onNavigate }: RunCardProps) {
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          {/* Header */}
+          {/* Header with badges */}
           <div className="flex items-center gap-2 mb-2">
             <span
               className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors.badge}`}
             >
-              {runType}
+              {toTitleCase(runType.replace(/_/g, " "))}
             </span>
-            {run.hasArtifact && (
+            {/* Show Running badge for in-progress runs */}
+            {run?.status === "in_progress" && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                Running
+              </span>
+            )}
+            {/* Show trigger status if not linked */}
+            {trigger && trigger.status !== "linked" && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                {toTitleCase(trigger.status)}
+              </span>
+            )}
+            {run?.hasArtifact && (
               <span className="inline-flex items-center gap-1 text-xs text-gray-600">
                 <FileText className="w-3 h-3" />
                 Has Artifact
@@ -134,27 +186,45 @@ function RunCard({ run, onDelete, onNavigate }: RunCardProps) {
             )}
           </div>
 
-          {/* Blob Name */}
+          {/* Display Name */}
           <h3 className={`text-sm font-semibold ${colors.text} mb-1 truncate`}>
-            {run.blobName}
+            {displayName}
           </h3>
 
           {/* Timestamp */}
           <p className="text-xs text-gray-500 mb-3">
-            {new Date(run.timestamp).toLocaleString()}
+            {new Date(
+              trigger?.timestamp || run?.timestamp || new Date()
+            ).toLocaleString()}
           </p>
 
-          {/* Status */}
-          <div className="flex items-center gap-2">
-            {getStatusIcon(run)}
-            <span className="text-sm font-medium text-gray-700">
-              {getStatusText(run)}
-            </span>
-          </div>
+          {/* Status - only show for non-running states */}
+          {run?.status !== "in_progress" && (
+            <div className="flex items-center gap-2">
+              {run && getStatusIcon(run)}
+              <span className="text-sm font-medium text-gray-700">
+                {run ? getStatusText(run) : toTitleCase(trigger?.status || "Queued")}
+              </span>
+            </div>
+          )}
 
-          {/* Progress for in-progress runs */}
-          {run.status === "in_progress" && run.steps && run.steps.length > 0 && (
+          {/* Progress for in-progress runs with current step */}
+          {run?.status === "in_progress" && run.steps && run.steps.length > 0 && (
             <div className="mt-2">
+              {/* Current step name */}
+              {(() => {
+                const currentStep = run.steps.find((s) => s.status === "in_progress");
+                if (currentStep) {
+                  return (
+                    <div className="text-xs text-gray-600 mb-1">
+                      Current: <span className="font-medium">{currentStep.name}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              
+              {/* Progress bar */}
               <div className="flex w-full overflow-hidden rounded-md bg-gray-200 h-2">
                 {Array.from({ length: run.numSteps }, (_, i) => {
                   const step = run.steps[i];
@@ -206,8 +276,8 @@ function RunCard({ run, onDelete, onNavigate }: RunCardProps) {
 }
 
 export default function Runs() {
-  const [ongoingRuns, setOngoingRuns] = useState<BenchmarkRun[]>([]);
-  const [completedRuns, setCompletedRuns] = useState<BenchmarkRun[]>([]);
+  const [ongoingRuns, setOngoingRuns] = useState<RunWithTrigger[]>([]);
+  const [completedRuns, setCompletedRuns] = useState<RunWithTrigger[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [typeFilter, setTypeFilter] = useState<RunTypeFilter>("ALL");
@@ -298,7 +368,7 @@ export default function Runs() {
 
         // Reload all currently loaded completed pages
         const currentPageCount = Math.ceil(completedRuns.length / pageSize);
-        const allCompletedUpdates: BenchmarkRun[] = [];
+        const allCompletedUpdates: RunWithTrigger[] = [];
 
         for (let i = 1; i <= currentPageCount; i++) {
           const response = await fetchAllRuns({
@@ -342,11 +412,17 @@ export default function Runs() {
 
   const handleDelete = async (runId: string) => {
     await deleteRun(runId);
-    // Remove the deleted run from the appropriate list
-    setOngoingRuns((prev) => prev.filter((run) => run._id !== runId));
-    setCompletedRuns((prev) => prev.filter((run) => run._id !== runId));
+    // Remove the deleted item from the appropriate list
+    setOngoingRuns((prev) =>
+      prev.filter((item) => (item.run?._id || item.trigger?._id) !== runId)
+    );
+    setCompletedRuns((prev) =>
+      prev.filter((item) => (item.run?._id || item.trigger?._id) !== runId)
+    );
     // Update counts
-    const wasOngoing = ongoingRuns.some((run) => run._id === runId);
+    const wasOngoing = ongoingRuns.some(
+      (item) => (item.run?._id || item.trigger?._id) === runId
+    );
     if (wasOngoing) {
       setOngoingCount((prev) => Math.max(0, prev - 1));
     } else {
@@ -412,21 +488,25 @@ export default function Runs() {
                 Filter by type:
               </span>
               <div className="flex gap-2">
-                {(["ALL", "BENCHMARK", "TUNING", "E2E"] as RunTypeFilter[]).map(
-                  (type) => (
-                    <button
-                      key={type}
-                      onClick={() => handleTypeFilterChange(type)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                        typeFilter === type
-                          ? "bg-blue-600 text-white shadow-sm"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  )
-                )}
+                {[
+                  { value: "ALL" as RunTypeFilter, label: "ALL" },
+                  { value: "manual_bench" as RunTypeFilter, label: "Manual Bench" },
+                  { value: "pr_update" as RunTypeFilter, label: "PR Update" },
+                  { value: "manual_tuning" as RunTypeFilter, label: "Tuning" },
+                  { value: "scheduled" as RunTypeFilter, label: "Scheduled" },
+                ].map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => handleTypeFilterChange(value)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      typeFilter === value
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -475,10 +555,10 @@ export default function Runs() {
                     Ongoing Runs ({ongoingCount})
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {ongoingRuns.map((run) => (
+                    {ongoingRuns.map((item) => (
                       <RunCard
-                        key={run._id}
-                        run={run}
+                        key={item.run?._id || item.trigger?._id || ""}
+                        item={item}
                         onDelete={handleDelete}
                         onNavigate={handleNavigate}
                       />
@@ -495,10 +575,10 @@ export default function Runs() {
                     Completed Runs ({completedCount})
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {completedRuns.map((run) => (
+                    {completedRuns.map((item) => (
                       <RunCard
-                        key={run._id}
-                        run={run}
+                        key={item.run?._id || item.trigger?._id || ""}
+                        item={item}
                         onDelete={handleDelete}
                         onNavigate={handleNavigate}
                       />

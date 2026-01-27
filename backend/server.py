@@ -9,6 +9,7 @@ from backend.runs.trigger_service import trigger_run, TriggerType
 from backend.runs.scheduling import validate_tracker_no_overlap
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
+from backend.storage.triggers import RunTriggerDb
 from backend.storage.utils import test_logger
 from backend.webhook.wave_update import WaveUpdateListener
 from backend.storage.auth import get_blob_client
@@ -134,7 +135,7 @@ def get_all_perfs():
 
 @app.route("/api/runs", methods=["GET"])
 def get_runs():
-    """Get all workflow runs with optional pagination and type filtering."""
+    """Get all workflow runs paired with their triggers."""
     try:
         # Get query parameters
         page = request.args.get("page", default=1, type=int)
@@ -149,51 +150,107 @@ def get_runs():
         if page_size < 1 or page_size > 1000:
             return jsonify({"error": "Page size must be between 1 and 1000"}), 400
 
-        # Query database with optional type filter
-        query = {"type": run_type} if run_type else None
-        all_runs = WorkflowRunDb.find_all(query)
+        # Step 1: Query all triggers and runs
+        all_triggers = RunTriggerDb.find_all()
+        all_runs = WorkflowRunDb.find_all()
 
-        # Apply artifact filter if specified
+        # Step 2: Build lookup maps for O(1) access
+        run_by_id = {run._id: run for run in all_runs}
+        
+        # Step 3: Create combined list (triggers are source of truth)
+        combined_items = []
+        for trigger in all_triggers:
+            # Find matching run if trigger is linked
+            run = None
+            if trigger.runId:
+                run = run_by_id.get(trigger.runId)
+            
+            # Skip triggers that are linked but have no run (run was deleted)
+            if trigger.status == "linked" and not run:
+                continue
+            
+            combined_items.append({
+                "trigger": trigger,
+                "run": run
+            })
+
+        # Step 4: Apply filters
+        filtered_items = combined_items
+
+        # Type filter - always use trigger.type
+        if run_type:
+            filtered_items = [
+                item for item in filtered_items 
+                if item["trigger"].type == run_type
+            ]
+
+        # Artifact filter - check run.hasArtifact
         if has_artifact is not None:
             has_artifact_bool = has_artifact.lower() == "true"
-            all_runs = [run for run in all_runs if run.hasArtifact == has_artifact_bool]
+            filtered_items = [
+                item for item in filtered_items
+                if item["run"] and item["run"].hasArtifact == has_artifact_bool
+            ]
 
-        # Apply completed filter if specified
+        # Completed filter - check run.completed
         if completed_only is not None:
             completed_only_bool = completed_only.lower() == "true"
             if completed_only_bool:
-                all_runs = [run for run in all_runs if run.completed]
+                filtered_items = [
+                    item for item in filtered_items
+                    if item["run"] and item["run"].completed
+                ]
             else:
-                all_runs = [run for run in all_runs if not run.completed]
+                # Ongoing means either no run yet or run not completed
+                filtered_items = [
+                    item for item in filtered_items
+                    if not item["run"] or not item["run"].completed
+                ]
 
-        # Sort by timestamp (most recent first)
-        all_runs.sort(key=lambda r: r.timestamp, reverse=True)
+        # Step 5: Sort by trigger.timestamp (most recent first)
+        filtered_items.sort(key=lambda item: item["trigger"].timestamp, reverse=True)
 
-        # Calculate counts (from unfiltered query for totals)
-        query_for_counts = {"type": run_type} if run_type else None
-        all_runs_for_counts = WorkflowRunDb.find_all(query_for_counts)
+        # Calculate counts for unfiltered data (for display purposes)
+        # Apply type and artifact filters for counts but not completed filter
+        items_for_counts = combined_items
+        if run_type:
+            items_for_counts = [
+                item for item in items_for_counts 
+                if item["trigger"].type == run_type
+            ]
         if has_artifact is not None:
             has_artifact_bool = has_artifact.lower() == "true"
-            all_runs_for_counts = [
-                run
-                for run in all_runs_for_counts
-                if run.hasArtifact == has_artifact_bool
+            items_for_counts = [
+                item for item in items_for_counts
+                if item["run"] and item["run"].hasArtifact == has_artifact_bool
             ]
+        
+        ongoing_count = sum(
+            1 for item in items_for_counts
+            if not item["run"] or not item["run"].completed
+        )
+        completed_count = sum(
+            1 for item in items_for_counts
+            if item["run"] and item["run"].completed
+        )
 
-        total = len(all_runs)
-        ongoing_count = sum(1 for run in all_runs_for_counts if not run.completed)
-        completed_count = sum(1 for run in all_runs_for_counts if run.completed)
-
-        # Calculate pagination
+        # Step 6: Paginate
+        total = len(filtered_items)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
+        items_page = filtered_items[start_idx:end_idx]
 
-        # Get paginated results
-        runs_page = all_runs[start_idx:end_idx]
+        # Step 7: Convert to JSON (convert dataclasses to dicts)
+        runs_json = []
+        for item in items_page:
+            runs_json.append({
+                "trigger": asdict(item["trigger"]) if item["trigger"] else None,
+                "run": asdict(item["run"]) if item["run"] else None
+            })
 
         return jsonify(
             {
-                "runs": [asdict(run) for run in runs_page],
+                "runs": runs_json,
                 "page": page,
                 "page_size": page_size,
                 "total": total,
@@ -212,7 +269,7 @@ def get_runs():
 @app.route("/api/runs/<run_id>", methods=["DELETE"])
 # @token_required
 def delete_run(run_id):
-    """Delete a workflow run and its associated blob artifact."""
+    """Delete a workflow run, its artifact, and its trigger."""
     try:
         # Find the run
         run = WorkflowRunDb.find_by_id(run_id)
@@ -228,6 +285,15 @@ def delete_run(run_id):
             except Exception as blob_error:
                 logger.warning(f"Failed to delete blob {run.blobName}: {blob_error}")
                 # Continue with database deletion even if blob deletion fails
+
+        # Delete the corresponding trigger if it exists
+        if run.triggerId:
+            try:
+                RunTriggerDb.delete_by_id(run.triggerId)
+                logger.info(f"Deleted trigger: {run.triggerId}")
+            except Exception as trigger_error:
+                logger.warning(f"Failed to delete trigger {run.triggerId}: {trigger_error}")
+                # Continue with run deletion even if trigger deletion fails
 
         # Delete from database
         success = WorkflowRunDb.delete_by_id(run_id)
