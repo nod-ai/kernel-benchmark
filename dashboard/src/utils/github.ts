@@ -8,6 +8,7 @@ import type {
   ChangeStats,
   BenchmarkRuntimeConfig,
   KernelSelection,
+  RunWithTrigger,
 } from "../types";
 
 export async function fetchModifications() {
@@ -432,7 +433,7 @@ export interface FetchRunsParams {
 }
 
 export interface FetchRunsResponse {
-  runs: BenchmarkRun[];
+  runs: RunWithTrigger[];
   page: number;
   page_size: number;
   total: number;
@@ -466,10 +467,26 @@ export async function fetchAllRuns(
 
     const data: FetchRunsResponse = await response.json();
 
-    // Convert timestamp strings to Date objects
-    data.runs = data.runs.map((run) => ({
-      ...run,
-      timestamp: new Date(run.timestamp),
+    // Convert timestamp strings to Date objects for both run and trigger
+    data.runs = data.runs.map((item) => ({
+      run: item.run
+        ? {
+            ...item.run,
+            timestamp: new Date(item.run.timestamp),
+          }
+        : null,
+      trigger: item.trigger
+        ? {
+            ...item.trigger,
+            timestamp: new Date(item.trigger.timestamp),
+            dispatchedAt: item.trigger.dispatchedAt
+              ? new Date(item.trigger.dispatchedAt)
+              : undefined,
+            linkedAt: item.trigger.linkedAt
+              ? new Date(item.trigger.linkedAt)
+              : undefined,
+          }
+        : null,
     }));
 
     return data;
@@ -513,6 +530,7 @@ export interface TrackerData {
   _id?: string;
   name: string;
   blobName: string;
+  dashboardName?: string;
   tags: string[];
   backends: string[];
   machine: string;
@@ -612,5 +630,86 @@ export async function deleteTracker(trackerId: string): Promise<void> {
     }
   } catch (error) {
     throw new Error(`Failed to delete tracker: ${error}`);
+  }
+}
+
+export async function triggerTrackerRun(trackerId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/trigger`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to trigger tracker run: ${error}`);
+  }
+}
+
+export async function fetchTrackerByDashboardName(dashboardName: string): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/dashboard/${dashboardName}`
+    );
+    
+    if (!response.ok) {
+      throw new Error("Tracker not found");
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker by dashboard name: ${error}`);
+  }
+}
+
+export async function fetchTrackerRuns(trackerId: string): Promise<any[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/runs`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker runs: ${error}`);
+  }
+}
+
+export async function fetchTrackerPerformanceTimeline(
+  trackerId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<any[]> {
+  try {
+    const params = new URLSearchParams();
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+    
+    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
+      params.toString() ? `?${params.toString()}` : ""
+    }`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker performance timeline: ${error}`);
   }
 }

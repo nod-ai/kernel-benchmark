@@ -126,7 +126,8 @@ class Schedule:
 class Tracker:
     _id: str
     name: str
-    blobName: str  # Simplified name for dashboard URL
+    blobName: str
+    dashboardName: str
     tags: list[str]
     backends: list[str]
     machine: str

@@ -176,15 +176,15 @@ def _build_workflow_inputs(
 
     elif trigger_type == TriggerType.MANUAL_BENCHMARK:
         # Manual benchmark: load kernels by tags or IDs
-        inputs.update(_build_manual_benchmark_inputs(metadata))
+        inputs.update(_build_benchmark_inputs(metadata))
 
     elif trigger_type == TriggerType.MANUAL_TUNING:
         # Tuning: create gist with kernels to tune
         inputs.update(_build_tuning_inputs(metadata))
 
     elif trigger_type == TriggerType.SCHEDULED:
-        # Scheduled tracker run
-        inputs.update(_build_scheduled_tracker_inputs(metadata))
+        # Scheduled tracker run: uses same logic as manual benchmarks
+        inputs.update(_build_benchmark_inputs(metadata))
 
     return inputs
 
@@ -215,8 +215,25 @@ def _build_pr_update_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_manual_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Build inputs for manual benchmark triggers."""
+def _build_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build inputs for benchmark triggers (manual or scheduled).
+    
+    Consolidated function that handles both manual benchmarks and scheduled tracker runs.
+    Both use the same workflow (short_bench.yml) with the same input structure.
+    
+    Args:
+        metadata: Trigger metadata which may contain:
+            - kernelIds: List of specific kernel IDs to benchmark
+            - tags: List of tags to filter kernels
+            - backends: List of backends or comma-separated string
+            - machine: Target machine (default: "mi325")
+            - repoName, branchName, headSha: Optional PR info for manual runs
+            - trackerId, trackerName, blobName: Optional tracker info for scheduled runs
+    
+    Returns:
+        Dictionary of workflow inputs for short_bench.yml
+    """
     # Determine which kernels to benchmark
     if "kernelIds" in metadata:
         # Specific kernel IDs provided
@@ -232,7 +249,7 @@ def _build_manual_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         # No selection - use all workflow kernels
         problems = KernelConfigDb.find_all({"workflow": "all"})
 
-    logger.info(f"Loaded {len(problems)} kernels for manual benchmark")
+    logger.info(f"Loaded {len(problems)} kernels for benchmark")
 
     # Create gist with problems
     problems_json = [asdict(p) for p in problems]
@@ -256,7 +273,7 @@ def _build_manual_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         else:
             inputs["selected_backend"] = metadata["backends"]
 
-    # Optional PR info for manual runs
+    # Optional PR info (for manual runs)
     if "repoName" in metadata:
         inputs["pr_repository"] = metadata["repoName"]
     if "branchName" in metadata:
@@ -284,47 +301,6 @@ def _build_tuning_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         "problems_url": gist.raw_url,
         "num_trials": str(metadata.get("numTrials", 75)),
         "backend": metadata.get("backend", "wave"),
-    }
-
-
-def _build_scheduled_tracker_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
-    """
-    Build inputs for scheduled tracker triggers.
-
-    Uses short_bench.yml to allow granular control over which kernels run
-    based on the tracker's configured tags.
-    """
-    tags = metadata.get("tags", [])
-
-    # Optional backend selection
-    backends = metadata.get("backends", [])
-    if isinstance(backends, list):
-        backends = ",".join(backends)
-
-    # Query kernels by tags
-    if tags:
-        query = " or ".join([f"tag eq '{tag}'" for tag in tags])
-        problems = KernelConfigDb.query(query)
-    else:
-        # No tags specified - use all kernels
-        problems = KernelConfigDb.find_all({"workflow": "all"})
-
-    logger.info(f"Loaded {len(problems)} kernels for scheduled tracker run")
-
-    # Create gist with problems
-    problems_json = [asdict(p) for p in problems]
-    problems_gist = create_gist(problems_json)
-
-    # Find latest tuning configs
-    tuned_configs = _find_latest_tuned_configs(problems)
-    tuned_configs_json = [asdict(c) for c in tuned_configs]
-    tuned_configs_gist = create_gist(tuned_configs_json)
-
-    return {
-        "machine": metadata.get("machine", "mi325"),
-        "selected_backend": backends,
-        "problems_url": problems_gist.raw_url,
-        "tuned_config_url": tuned_configs_gist.raw_url,
     }
 
 

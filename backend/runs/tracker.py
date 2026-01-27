@@ -57,7 +57,6 @@ class RunTracker:
         db_run_update = {
             "status": gh_run.status,
             "conclusion": gh_run.conclusion,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Note: Identifier extraction is now handled by webhook listener

@@ -20,6 +20,7 @@ import { simplifyNameForUrl, toMMDDYYYY, toYYYYMMDD } from "../../utils/utils";
 export interface TrackerConfig {
   name: string;
   blobName: string;
+  dashboardName?: string;
   kernelSelection: KernelSelection;
   backends: string[]; // Array of backends
   machine: string;
@@ -61,7 +62,7 @@ export default function AddTrackerModal({
   const simplifiedName = simplifyNameForUrl(name);
   const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL || window.location.origin;
   const previewUrl = simplifiedName
-    ? `${dashboardUrl}/dashboard/${simplifiedName}`
+    ? `${dashboardUrl}/dashboard/tracker/${simplifiedName}`
     : "";
 
   // Load kernels data when modal opens
@@ -139,6 +140,7 @@ export default function AddTrackerModal({
       const config: TrackerConfig = {
         name: name.trim(),
         blobName: simplifiedName,
+        dashboardName: simplifiedName,
         kernelSelection,
         backends: selectedBackends,
         machine,

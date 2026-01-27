@@ -110,6 +110,8 @@ RUN SETUP_CMD="bash setup.sh"; \
     echo "Running: $SETUP_CMD"; \
     eval "$SETUP_CMD" || echo "Warning: Some backends may have failed to install"
 
+# Set environment variables for backends
+ENV PATH="/workspace/rocm-libraries/projects/hipblaslt/build/release/clients:${PATH}"
 ENV WAVE_CACHE_ON=0
 
 CMD ["/bin/bash"]

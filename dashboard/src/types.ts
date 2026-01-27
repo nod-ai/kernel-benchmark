@@ -158,6 +158,26 @@ export interface BenchmarkRun {
   completed: boolean;
   hasArtifact: boolean;
   mappingId?: string;
+  triggerId?: string;
+  machine?: string;
+}
+
+export interface RunTrigger {
+  _id: string;
+  type: string;  // pr_update, manual_bench, manual_tuning, scheduled, rebase
+  status: string;  // pending, queued, dispatched, linked, failed
+  timestamp: Date;
+  metadata: Record<string, any>;
+  machine: string;
+  dispatchedAt?: Date;
+  runId?: string;
+  linkedAt?: Date;
+  error?: string;
+}
+
+export interface RunWithTrigger {
+  run: BenchmarkRun | null;
+  trigger: RunTrigger | null;
 }
 
 export interface TuningConfig {
@@ -186,4 +206,48 @@ export interface KernelSelection {
 export interface BenchmarkRuntimeConfig {
   machine: string;
   kernelSelection: KernelSelection;
+}
+
+export interface TrackerRunHistory {
+  run: BenchmarkRun;
+  stats: BenchmarkRunStats;
+}
+
+export interface BenchmarkRunStats {
+  _id: string;
+  runId: string;
+  timestamp: Date;
+  machine: string;
+  performance: Record<string, any>;  // machine → kernel_type → backend → stats
+  trackerId?: string;
+  trackerName?: string;
+}
+
+export interface TrackerPerformancePoint {
+  timestamp: string;
+  runId: string;
+  backends: Record<string, {
+    average: {
+      tflops: number;
+      runtimeUs: number;
+    };
+    geoMean: {
+      tflops: number;
+      runtimeUs: number;
+    };
+    numKernels: number;
+  }>;
+}
+
+export interface Tracker {
+  _id: string;
+  name: string;
+  blobName: string;
+  dashboardName?: string;
+  tags: string[];
+  backends: string[];
+  machine: string;
+  schedule: any;
+  isActive: boolean;
+  createdAt: Date;
 }

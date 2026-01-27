@@ -9,6 +9,7 @@ from backend.runs.trigger_service import trigger_run, TriggerType
 from backend.runs.scheduling import validate_tracker_no_overlap
 from backend.storage.rebase import rebase_all, rebase_pull_requests
 from backend.storage.types import *
+from backend.storage.triggers import RunTriggerDb
 from backend.storage.utils import test_logger
 from backend.webhook.wave_update import WaveUpdateListener
 from backend.storage.auth import get_blob_client
@@ -134,7 +135,7 @@ def get_all_perfs():
 
 @app.route("/api/runs", methods=["GET"])
 def get_runs():
-    """Get all workflow runs with optional pagination and type filtering."""
+    """Get all workflow runs paired with their triggers."""
     try:
         # Get query parameters
         page = request.args.get("page", default=1, type=int)
@@ -149,51 +150,107 @@ def get_runs():
         if page_size < 1 or page_size > 1000:
             return jsonify({"error": "Page size must be between 1 and 1000"}), 400
 
-        # Query database with optional type filter
-        query = {"type": run_type} if run_type else None
-        all_runs = WorkflowRunDb.find_all(query)
+        # Step 1: Query all triggers and runs
+        all_triggers = RunTriggerDb.find_all()
+        all_runs = WorkflowRunDb.find_all()
 
-        # Apply artifact filter if specified
+        # Step 2: Build lookup maps for O(1) access
+        run_by_id = {run._id: run for run in all_runs}
+        
+        # Step 3: Create combined list (triggers are source of truth)
+        combined_items = []
+        for trigger in all_triggers:
+            # Find matching run if trigger is linked
+            run = None
+            if trigger.runId:
+                run = run_by_id.get(trigger.runId)
+            
+            # Skip triggers that are linked but have no run (run was deleted)
+            if trigger.status == "linked" and not run:
+                continue
+            
+            combined_items.append({
+                "trigger": trigger,
+                "run": run
+            })
+
+        # Step 4: Apply filters
+        filtered_items = combined_items
+
+        # Type filter - always use trigger.type
+        if run_type:
+            filtered_items = [
+                item for item in filtered_items 
+                if item["trigger"].type == run_type
+            ]
+
+        # Artifact filter - check run.hasArtifact
         if has_artifact is not None:
             has_artifact_bool = has_artifact.lower() == "true"
-            all_runs = [run for run in all_runs if run.hasArtifact == has_artifact_bool]
+            filtered_items = [
+                item for item in filtered_items
+                if item["run"] and item["run"].hasArtifact == has_artifact_bool
+            ]
 
-        # Apply completed filter if specified
+        # Completed filter - check run.completed
         if completed_only is not None:
             completed_only_bool = completed_only.lower() == "true"
             if completed_only_bool:
-                all_runs = [run for run in all_runs if run.completed]
+                filtered_items = [
+                    item for item in filtered_items
+                    if item["run"] and item["run"].completed
+                ]
             else:
-                all_runs = [run for run in all_runs if not run.completed]
+                # Ongoing means either no run yet or run not completed
+                filtered_items = [
+                    item for item in filtered_items
+                    if not item["run"] or not item["run"].completed
+                ]
 
-        # Sort by timestamp (most recent first)
-        all_runs.sort(key=lambda r: r.timestamp, reverse=True)
+        # Step 5: Sort by trigger.timestamp (most recent first)
+        filtered_items.sort(key=lambda item: item["trigger"].timestamp, reverse=True)
 
-        # Calculate counts (from unfiltered query for totals)
-        query_for_counts = {"type": run_type} if run_type else None
-        all_runs_for_counts = WorkflowRunDb.find_all(query_for_counts)
+        # Calculate counts for unfiltered data (for display purposes)
+        # Apply type and artifact filters for counts but not completed filter
+        items_for_counts = combined_items
+        if run_type:
+            items_for_counts = [
+                item for item in items_for_counts 
+                if item["trigger"].type == run_type
+            ]
         if has_artifact is not None:
             has_artifact_bool = has_artifact.lower() == "true"
-            all_runs_for_counts = [
-                run
-                for run in all_runs_for_counts
-                if run.hasArtifact == has_artifact_bool
+            items_for_counts = [
+                item for item in items_for_counts
+                if item["run"] and item["run"].hasArtifact == has_artifact_bool
             ]
+        
+        ongoing_count = sum(
+            1 for item in items_for_counts
+            if not item["run"] or not item["run"].completed
+        )
+        completed_count = sum(
+            1 for item in items_for_counts
+            if item["run"] and item["run"].completed
+        )
 
-        total = len(all_runs)
-        ongoing_count = sum(1 for run in all_runs_for_counts if not run.completed)
-        completed_count = sum(1 for run in all_runs_for_counts if run.completed)
-
-        # Calculate pagination
+        # Step 6: Paginate
+        total = len(filtered_items)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
+        items_page = filtered_items[start_idx:end_idx]
 
-        # Get paginated results
-        runs_page = all_runs[start_idx:end_idx]
+        # Step 7: Convert to JSON (convert dataclasses to dicts)
+        runs_json = []
+        for item in items_page:
+            runs_json.append({
+                "trigger": asdict(item["trigger"]) if item["trigger"] else None,
+                "run": asdict(item["run"]) if item["run"] else None
+            })
 
         return jsonify(
             {
-                "runs": [asdict(run) for run in runs_page],
+                "runs": runs_json,
                 "page": page,
                 "page_size": page_size,
                 "total": total,
@@ -212,7 +269,7 @@ def get_runs():
 @app.route("/api/runs/<run_id>", methods=["DELETE"])
 # @token_required
 def delete_run(run_id):
-    """Delete a workflow run and its associated blob artifact."""
+    """Delete a workflow run, its artifact, and its trigger."""
     try:
         # Find the run
         run = WorkflowRunDb.find_by_id(run_id)
@@ -228,6 +285,15 @@ def delete_run(run_id):
             except Exception as blob_error:
                 logger.warning(f"Failed to delete blob {run.blobName}: {blob_error}")
                 # Continue with database deletion even if blob deletion fails
+
+        # Delete the corresponding trigger if it exists
+        if run.triggerId:
+            try:
+                RunTriggerDb.delete_by_id(run.triggerId)
+                logger.info(f"Deleted trigger: {run.triggerId}")
+            except Exception as trigger_error:
+                logger.warning(f"Failed to delete trigger {run.triggerId}: {trigger_error}")
+                # Continue with run deletion even if trigger deletion fails
 
         # Delete from database
         success = WorkflowRunDb.delete_by_id(run_id)
@@ -778,6 +844,12 @@ def create_tracker():
                     400,
                 )
 
+        # Validate dashboardName uniqueness if provided
+        if "dashboardName" in data and data["dashboardName"]:
+            existing = TrackerDb.query(f"dashboardName eq '{data['dashboardName']}'")
+            if existing:
+                return jsonify({"error": "Dashboard name already in use"}), 409
+
         # Create tracker with generated ID
         tracker_data = {
             "_id": str(uuid4()),
@@ -789,6 +861,7 @@ def create_tracker():
             "schedule": schedule_data,
             "isActive": data.get("isActive", True),
             "createdAt": datetime.now(timezone.utc),
+            "dashboardName": data.get("dashboardName"),
         }
 
         tracker = fromdict(Tracker, tracker_data)
@@ -823,6 +896,13 @@ def update_tracker(tracker_id):
         if not existing_tracker:
             return jsonify({"error": "Tracker not found"}), 404
 
+        # Validate dashboardName uniqueness if provided and changed
+        if "dashboardName" in data and data["dashboardName"]:
+            if data["dashboardName"] != existing_tracker.dashboardName:
+                existing = TrackerDb.query(f"dashboardName eq '{data['dashboardName']}'")
+                if existing and existing[0]._id != tracker_id:
+                    return jsonify({"error": "Dashboard name already in use"}), 409
+
         # Update schedule if provided
         schedule_data = asdict(existing_tracker.schedule)
         if "schedule" in data:
@@ -839,6 +919,7 @@ def update_tracker(tracker_id):
             "schedule": schedule_data,
             "isActive": data.get("isActive", existing_tracker.isActive),
             "createdAt": existing_tracker.createdAt,
+            "dashboardName": data.get("dashboardName", existing_tracker.dashboardName),
         }
 
         updated_tracker = fromdict(Tracker, tracker_data)
@@ -888,6 +969,156 @@ def delete_tracker(tracker_id):
         logger.error(f"Error deleting tracker {tracker_id}: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to delete tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>/trigger", methods=["POST"])
+# @token_required
+def trigger_tracker_manually(tracker_id):
+    """Manually trigger a tracker run before its scheduled time."""
+    try:
+        # Find the tracker
+        tracker = TrackerDb.find_by_id(tracker_id)
+
+        if not tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        # Validate tracker is active (optional - we could allow manual triggers even when paused)
+        # For now, we'll allow triggering even if paused since it's a manual action
+        
+        # Build metadata from tracker configuration
+        now = datetime.now(timezone.utc)
+        formatted_time = now.strftime("%m/%d/%Y %I:%M %p UTC")
+        
+        metadata = {
+            "name": f"{tracker.name} (Manual): {formatted_time}",
+            "trackerId": tracker._id,
+            "trackerName": tracker.name,
+            "tags": tracker.tags,
+            "backends": tracker.backends,
+            "machine": tracker.machine,
+            "blobName": tracker.blobName,
+        }
+
+        # Use MANUAL_BENCHMARK type so it's treated like a manual run in scheduling
+        # but include trackerId to maintain association
+        trigger_id = trigger_run(TriggerType.MANUAL_BENCHMARK, metadata)
+
+        if trigger_id:
+            logger.info(
+                f"Manually triggered tracker '{tracker.name}' (trigger_id: {trigger_id})"
+            )
+            return jsonify({"triggerId": trigger_id, "message": "Tracker run queued successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to trigger tracker run"}), 500
+
+    except Exception as e:
+        logger.error(f"Error manually triggering tracker {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to trigger tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/dashboard/<dashboard_name>", methods=["GET"])
+def get_tracker_by_dashboard_name(dashboard_name):
+    """Get tracker by its dashboard name."""
+    try:
+        trackers = TrackerDb.query(f"dashboardName eq '{dashboard_name}'")
+        if not trackers:
+            return jsonify({"error": "Tracker not found"}), 404
+        return jsonify(asdict(trackers[0]))
+    except Exception as e:
+        logger.error(f"Error getting tracker by dashboard name {dashboard_name}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>/runs", methods=["GET"])
+def get_tracker_runs(tracker_id):
+    """
+    Get all benchmark runs for a tracker with their statistics.
+    
+    Returns runs sorted by timestamp (newest first) that have:
+    - trackerId matching the given tracker
+    - hasArtifact = true (completed runs with data)
+    
+    Response includes both WorkflowRunState and BenchmarkRunStats data.
+    """
+    try:
+        # Query BenchmarkRunStats filtered by trackerId
+        stats = BenchmarkRunStatsDb.query(f"trackerId eq '{tracker_id}'")
+        
+        # For each stat, fetch the corresponding WorkflowRunState
+        runs_with_stats = []
+        for stat in stats:
+            run = WorkflowRunDb.find_by_id(stat.runId)
+            if run and run.hasArtifact:
+                runs_with_stats.append({
+                    "run": asdict(run),
+                    "stats": asdict(stat)
+                })
+        
+        # Sort by timestamp descending
+        runs_with_stats.sort(key=lambda x: x["run"]["timestamp"], reverse=True)
+        
+        return jsonify(runs_with_stats)
+    except Exception as e:
+        logger.error(f"Error getting tracker runs for {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get tracker runs: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>/performance", methods=["GET"])
+def get_tracker_performance_timeline(tracker_id):
+    """
+    Get performance timeline data for a tracker.
+    
+    Returns aggregated performance metrics across all runs:
+    - timestamp
+    - backend → {tflops_avg, tflops_geomean, runtime_avg, runtime_geomean}
+    
+    Supports optional date range filtering via query params:
+    ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+    """
+    try:
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        
+        # Query BenchmarkRunStats for this tracker
+        stats = BenchmarkRunStatsDb.query(f"trackerId eq '{tracker_id}'")
+        
+        # Filter by date range if provided
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date)
+            stats = [s for s in stats if s.timestamp >= start_dt]
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date)
+            stats = [s for s in stats if s.timestamp <= end_dt]
+        
+        # Sort by timestamp
+        stats.sort(key=lambda s: s.timestamp)
+        
+        # Transform data for frontend consumption
+        timeline = []
+        for stat in stats:
+            # Extract backend performance from stat.performance dict
+            # Format: performance[machine][kernel_type][backend] = {avg_tflops, geomean_tflops, ...}
+            backends_data = {}
+            for machine_data in stat.performance.values():
+                for kernel_type_data in machine_data.values():
+                    for backend, metrics in kernel_type_data.items():
+                        if backend not in backends_data:
+                            backends_data[backend] = metrics
+            
+            timeline.append({
+                "timestamp": stat.timestamp.isoformat(),
+                "runId": stat.runId,
+                "backends": backends_data
+            })
+        
+        return jsonify(timeline)
+    except Exception as e:
+        logger.error(f"Error getting tracker performance timeline for {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get tracker performance timeline: {str(e)}"}), 500
 
 
 @app.route("/api/triggers", methods=["GET"])
