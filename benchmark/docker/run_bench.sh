@@ -95,8 +95,24 @@ echo "Output Dir:   $OUTPUT_DIR"
 echo "=========================================="
 echo ""
 
-# Build the docker run command
-DOCKER_CMD="docker run --rm \
+# Print step headers
+echo "Step 1: Downloading problems from URL..."
+echo "Step 2: Downloading tuned configurations from URL..."
+echo "Step 3: Running benchmarks..."
+echo "Step 4: Copying results to output directory..."
+echo ""
+echo "Executing benchmark..."
+echo "=========================================="
+
+# Build the tuned argument
+if [ -n "$TUNED_CONFIGS_URL" ]; then
+    TUNED_ARG="--use_tuned=/data/tuned_config.json"
+else
+    TUNED_ARG=""
+fi
+
+# Execute the docker command directly using a here-document
+docker run --rm \
     --device=/dev/kfd \
     --device=/dev/dri \
     --ipc=host \
@@ -104,53 +120,38 @@ DOCKER_CMD="docker run --rm \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     -e WAVE_CACHE_ON=0 \
-    -v \"$OUTPUT_DIR:/data\" \
-    -w /workspace/benchmark \
-    $IMAGE \
-    bash -c '"
-
-# Build the bash command to run inside container
-BASH_CMD="set -e && "
+    -v "$OUTPUT_DIR:/data" \
+    -w /workspace \
+    "$IMAGE" \
+    bash -c "
+set -e
 
 # Download problems
-echo "Step 1: Downloading problems from URL..."
-BASH_CMD+="curl -o /data/problems.json \"$PROBLEMS_URL\" && "
-BASH_CMD+="python -m json.tool /data/problems.json > /dev/null || { echo 'Error: Invalid JSON format in problems.json'; exit 1; } && "
+curl -o /data/problems.json '$PROBLEMS_URL'
+python -m json.tool /data/problems.json > /dev/null || { echo 'Error: Invalid JSON format in problems.json'; exit 1; }
 
 # Download tuned configs if provided
-if [ -n "$TUNED_CONFIGS_URL" ]; then
-    echo "Step 2: Downloading tuned configurations from URL..."
-    BASH_CMD+="curl -o /data/tuned_config.json \"$TUNED_CONFIGS_URL\" && "
-    BASH_CMD+="python -m json.tool /data/tuned_config.json > /dev/null || { echo 'Error: Invalid JSON format in tuned_config.json'; exit 1; } && "
-    TUNED_ARG="--use_tuned=/data/tuned_config.json"
-else
-    echo "Step 2: Skipping tuned configurations (none provided)..."
-    TUNED_ARG=""
+if [ -n '$TUNED_CONFIGS_URL' ]; then
+    curl -o /data/tuned_config.json '$TUNED_CONFIGS_URL'
+    python -m json.tool /data/tuned_config.json > /dev/null || { echo 'Error: Invalid JSON format in tuned_config.json'; exit 1; }
 fi
 
 # Run benchmarks
-echo "Step 3: Running benchmarks..."
-BASH_CMD+="python3 -m kernel_bench.cli.bench \
+python3 -m kernel_bench.cli.bench \
     --backend=$BACKENDS \
     --kernel_type=$KERNEL_TYPES \
     --load_problems=/data/problems.json \
     $TUNED_ARG \
-    --machine=${MACHINE}x && "
+    --machine=${MACHINE}x
 
 # Copy results to output directory
-echo "Step 4: Copying results to output directory..."
-BASH_CMD+="mkdir -p /data/results && "
-BASH_CMD+="if [ -d results/json ]; then cp -r results/json/* /data/results/ 2>/dev/null || true; fi && "
-BASH_CMD+="echo 'Benchmark completed successfully!'"
+mkdir -p /data/results
+if [ -d results/json ]; then
+    cp -r results/json/* /data/results/ 2>/dev/null || true
+fi
 
-# Close the bash -c command
-DOCKER_CMD+="$BASH_CMD'\""
-
-# Execute the command
-echo ""
-echo "Executing benchmark..."
-echo "=========================================="
-eval $DOCKER_CMD
+echo 'Benchmark completed successfully!'
+"
 
 # Check if results were generated
 if [ -d "$OUTPUT_DIR/results" ] && [ "$(ls -A "$OUTPUT_DIR/results" 2>/dev/null)" ]; then
@@ -166,3 +167,4 @@ else
     echo "=========================================="
     exit 1
 fi
+

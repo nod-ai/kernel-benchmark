@@ -20,6 +20,7 @@ try:
     import wave_lang.kernel.wave as tkw
     import wave_lang.kernel.lang as tkl
     from wave_lang.kernel.wave import wave_schedule
+
     WAVE_AVAILABLE = True
 except Exception as e:
     warnings.warn(f"Wave backend dependencies not available: {e}")
@@ -37,7 +38,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     def validate_config(self):
         if not WAVE_AVAILABLE:
             return False
-            
+
         config = self.config
 
         if config.M < 4 or config.N < 4 or config.K < 4:
@@ -102,7 +103,9 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         # Compute max unroll factor: (K // BLOCK_K) - 2
         # Use minimum BLOCK_K to get maximum possible iterations (conservative upper bound)
         # This ensures the unroll factor is valid across all possible BLOCK_K values
-        max_unroll = max(1, (self.config.K // 32) - 2) # Assuming 32 is the minimum BLOCK_K
+        max_unroll = max(
+            1, (self.config.K // 32) - 2
+        )  # Assuming 32 is the minimum BLOCK_K
         self.UNROLL_FACTOR = self.add_param(
             "UNROLL_FACTOR",
             IntegerBounds(min=1, max=max_unroll, step=1),
@@ -142,20 +145,14 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
     @override
     def load_wave_kernel(self):
-        config = self.config
-        if config.dtype == "f8":
-            input_dtype = self.device_ctx.dtype_to_torch("f16")
-            quantized_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-        else:
-            input_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-            quantized_dtype = None
-
-        # Try to call with newer API parameters, fall back to older API if not supported
-        if config.dtype == "bf16":
-            print('Loading triple buffer kernel for bf16')
+        if self.config.dtype == "bf16":
             return self._load_triple_buffer_kernel()
-        
-        # Try new API with input_dtype and quantized_dtype
+        elif self.config.dtype == "f16":
+            return self._load_reordered_gemm_kernel()
+        else:
+            raise ValueError(f"Unsupported dtype: {self.config.dtype}")
+
+    def _load_reordered_gemm_kernel(self):
         base_gemm, hyperparams = get_reordered_matmul(
             self.config.M,
             self.config.N,
@@ -165,13 +162,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             16,  # self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            #input_dtype=input_dtype,
-            #quantized_dtype=quantized_dtype,
-            #tA=config.tA,
-            #tB=config.tB,
-            #num_waves=self.NUM_WAVES.value,
         )
-        
+
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
 
@@ -180,8 +172,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         config = self.config
         mfma_variant = MMAType.F32_16x16x32_F16
 
-        print('MFMA: ', mfma_variant)
-        
         # Determine dtype for kernel
         if config.dtype == "f8":
             kernel_dtype = tkl.f16
@@ -189,7 +179,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             kernel_dtype = tkl.bf16
         else:
             kernel_dtype = tkl.f16
-        
+
         # Symbol definitions
         M = tkl.sym.M
         N = tkl.sym.N
@@ -282,11 +272,15 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             global_to_shared_a = tkw.filter_nodes(
                 global_to_shared_a, subgraph=pipeline_loop.KERNEL
             )
-            shared_load_a = tkw.filter_nodes(shared_load_a, subgraph=pipeline_loop.KERNEL)
+            shared_load_a = tkw.filter_nodes(
+                shared_load_a, subgraph=pipeline_loop.KERNEL
+            )
             global_to_shared_b = tkw.filter_nodes(
                 global_to_shared_b, subgraph=pipeline_loop.KERNEL
             )
-            shared_load_b = tkw.filter_nodes(shared_load_b, subgraph=pipeline_loop.KERNEL)
+            shared_load_b = tkw.filter_nodes(
+                shared_load_b, subgraph=pipeline_loop.KERNEL
+            )
             mma = tkw.filter_nodes(mma, subgraph=pipeline_loop.KERNEL)
 
             mma_0, mma_1 = tkw.partition_by_dim(mma, dim=K, num_partitions=2)
@@ -363,15 +357,10 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             UNROLL_FACTOR: self.UNROLL_FACTOR.value,
         }
 
-        print('BLOCK_M: ', self.BLOCK_M.value)
-        print('BLOCK_N: ', self.BLOCK_N.value)
-        print('BLOCK_K: ', self.BLOCK_K.value)
-        print('UNROLL_FACTOR: ', self.UNROLL_FACTOR.value)
-
         return WaveTemplate(
             launchable=gemm_prefetch,
             hyperparams=hyperparams,
-            schedule=async_gemm_schedule_triple_buffering
+            schedule=async_gemm_schedule_triple_buffering,
         )
 
     @override
@@ -408,9 +397,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             use_buffer_ops=True,
             use_global_to_shared=use_g2s,
             waves_per_eu=1,
-            # use_fast_math=True,
-            # multi_buffer_count=1,
-            # postprocess=get_unroll_pipeline(1),
         )
 
     @override
@@ -471,15 +457,3 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
-
-
-def get_unroll_pipeline(unroll_factor: int):
-    return f"""
-    module attributes {{transform.with_named_sequence}} {{
-        transform.named_sequence @__transform_main(%arg0: !transform.any_op {{transform.readonly}}) {{
-            %0 = transform.structured.match ops{{["scf.for"]}} in %arg0 : (!transform.any_op) -> !transform.any_op
-            transform.loop.unroll %0 {{ factor = {unroll_factor} }} : !transform.any_op
-            transform.yield
-        }}
-    }}
-    """

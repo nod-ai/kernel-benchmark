@@ -20,9 +20,7 @@ from kernel_bench.config.registry import (
 from kernel_bench.config.loaders import (
     load_configs,
     load_configs_from_json,
-    load_configs_from_csv,
     save_configs_to_json,
-    save_configs_to_csv,
 )
 
 __all__ = [

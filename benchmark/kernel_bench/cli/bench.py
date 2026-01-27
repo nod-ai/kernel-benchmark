@@ -43,8 +43,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--kernel_type",
         type=str,
-        required=True,
-        help="Kernel Type (eg: attention, gemm, conv, etc.)",
+        required=False,
+        default=None,
+        help="Kernel Type (eg: attention, gemm, conv, etc.). Not required if --load_problems is specified.",
     )
     parser.add_argument(
         "--backend",
@@ -110,9 +111,21 @@ if __name__ == "__main__":
 
     logger = get_logger()
 
-    kernel_types = str(args.kernel_type).split(",")
-    if "all" in kernel_types:
-        kernel_types = list(BENCHMARKS.keys())
+    # Validate that either kernel_type or load_problems is specified
+    if not args.kernel_type and not args.load_problems:
+        parser.error("Either --kernel_type or --load_problems must be specified")
+
+    # Determine kernel types to benchmark
+    if args.load_problems:
+        # Load kernel types from the problems file
+        loaded_data = load_configs(args.load_problems)
+        kernel_types = loaded_data["kernel_types"]
+        logger.info(f"Using kernel types from problems file: {kernel_types}")
+    else:
+        # Use kernel types from command line args
+        kernel_types = str(args.kernel_type).split(",")
+        if "all" in kernel_types:
+            kernel_types = list(BENCHMARKS.keys())
 
     backend_names = str(args.backend).split(",")
     if "all" in backend_names:
@@ -141,12 +154,18 @@ if __name__ == "__main__":
 
             configs: list[tuple[str, OpConfig]] = []
             if args.load_problems:
-                configs = load_configs(args.load_problems, CONFIG_CLASSES[kernel_type])
+                loaded_data = load_configs(args.load_problems)
+                configs = loaded_data["configs"]
                 if args.tune and len(configs) == 0:
                     exit(0)
+            else:
+                configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
 
             if len(configs) == 0:
-                configs = LOAD_PROBLEMS[kernel_type](kernel_type, backend_name)
+                logger.error(
+                    f"No {kernel_type} configs found for backend {backend_name}. Skipping..."
+                )
+                continue
 
             if "all" not in tags:
                 configs = [(tag, config) for tag, config in configs if tag in tags]
