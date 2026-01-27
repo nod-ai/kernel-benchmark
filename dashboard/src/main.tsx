@@ -20,6 +20,7 @@ createRoot(document.getElementById("root")!).render(
     <Router>
       <AuthProvider>
         <Routes>
+          <Route path="/dashboard/tracker/:dashboardName" element={<Dashboard />} />
           <Route path="/dashboard/:runId" element={<Dashboard />} />
           <Route path="/history" element={<History />} />
           <Route path="/runs" element={<Runs />} />

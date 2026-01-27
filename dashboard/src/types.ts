@@ -207,3 +207,47 @@ export interface BenchmarkRuntimeConfig {
   machine: string;
   kernelSelection: KernelSelection;
 }
+
+export interface TrackerRunHistory {
+  run: BenchmarkRun;
+  stats: BenchmarkRunStats;
+}
+
+export interface BenchmarkRunStats {
+  _id: string;
+  runId: string;
+  timestamp: Date;
+  machine: string;
+  performance: Record<string, any>;  // machine → kernel_type → backend → stats
+  trackerId?: string;
+  trackerName?: string;
+}
+
+export interface TrackerPerformancePoint {
+  timestamp: string;
+  runId: string;
+  backends: Record<string, {
+    average: {
+      tflops: number;
+      runtimeUs: number;
+    };
+    geoMean: {
+      tflops: number;
+      runtimeUs: number;
+    };
+    numKernels: number;
+  }>;
+}
+
+export interface Tracker {
+  _id: string;
+  name: string;
+  blobName: string;
+  dashboardName?: string;
+  tags: string[];
+  backends: string[];
+  machine: string;
+  schedule: any;
+  isActive: boolean;
+  createdAt: Date;
+}

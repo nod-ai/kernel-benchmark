@@ -41,7 +41,7 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
         _id=str(gh_run.id),
         type=workflow.run_type.name,
         blobName=str(gh_run.id),
-        timestamp=gh_run.updated_at,
+        timestamp=gh_run.created_at,
         status=gh_run.status,
         conclusion=gh_run.conclusion,
         numSteps=10,

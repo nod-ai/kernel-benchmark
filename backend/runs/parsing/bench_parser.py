@@ -80,9 +80,11 @@ class BenchmarkArtifactParser(RunArtifactParser):
         if run.triggerId:
             try:
                 trigger = RunTriggerDb.find_by_id(run.triggerId)
-                if trigger and trigger.type == TriggerType.SCHEDULED.value:
+                if trigger and "trackerId" in trigger.metadata:
                     tracker_id = trigger.metadata.get("trackerId")
-                    tracker_name = trigger.metadata.get("trackerName")
+                    tracker_name = trigger.metadata.get(
+                        "trackerName", "Unknown Tracker"
+                    )
                     logger.debug(
                         f"Run {run_id} is linked to tracker {tracker_name} ({tracker_id})"
                     )

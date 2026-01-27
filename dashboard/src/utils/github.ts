@@ -530,6 +530,7 @@ export interface TrackerData {
   _id?: string;
   name: string;
   blobName: string;
+  dashboardName?: string;
   tags: string[];
   backends: string[];
   machine: string;
@@ -652,5 +653,63 @@ export async function triggerTrackerRun(trackerId: string): Promise<void> {
     }
   } catch (error) {
     throw new Error(`Failed to trigger tracker run: ${error}`);
+  }
+}
+
+export async function fetchTrackerByDashboardName(dashboardName: string): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/dashboard/${dashboardName}`
+    );
+    
+    if (!response.ok) {
+      throw new Error("Tracker not found");
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker by dashboard name: ${error}`);
+  }
+}
+
+export async function fetchTrackerRuns(trackerId: string): Promise<any[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/runs`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker runs: ${error}`);
+  }
+}
+
+export async function fetchTrackerPerformanceTimeline(
+  trackerId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<any[]> {
+  try {
+    const params = new URLSearchParams();
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+    
+    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
+      params.toString() ? `?${params.toString()}` : ""
+    }`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker performance timeline: ${error}`);
   }
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import PageContainer from "../components/PageContainer";
 import AddTrackerModal, {
   type TrackerConfig,
@@ -25,12 +26,14 @@ import {
   Edit,
   Cpu,
   Play,
+  ExternalLink,
 } from "lucide-react";
 
 interface Tracker {
   id: string;
   name: string;
   blobName: string;
+  dashboardName?: string;
   tags: string[];
   backends: string[];
   machine: string;
@@ -40,6 +43,7 @@ interface Tracker {
 }
 
 export default function Tracking() {
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [trackers, setTrackers] = useState<Tracker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +64,7 @@ export default function Tracking() {
         id: t._id!,
         name: t.name,
         blobName: t.blobName,
+        dashboardName: t.dashboardName,
         tags: t.tags,
         backends: t.backends,
         machine: t.machine,
@@ -84,6 +89,7 @@ export default function Tracking() {
       const trackerData: TrackerData = {
         name: config.name,
         blobName: config.blobName,
+        dashboardName: config.dashboardName,
         tags: config.kernelSelection.tags || [],
         backends: config.backends,
         machine: config.machine,
@@ -156,13 +162,15 @@ export default function Tracking() {
     }
   };
 
-  const handleEditTracker = (tracker: Tracker) => {
+  const handleEditTracker = (tracker: Tracker, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card click navigation
     // Note: AddTrackerModal will handle date format conversion
     // tracker.schedule dates are in MM-DD-YYYY format from backend
     const trackerConfig: TrackerConfig & { _id: string } = {
       _id: tracker.id,
       name: tracker.name,
       blobName: tracker.blobName,
+      dashboardName: tracker.dashboardName,
       kernelSelection: {
         type: "specific-tags",
         tags: tracker.tags,
@@ -173,6 +181,12 @@ export default function Tracking() {
     };
     setEditingTracker(trackerConfig);
     setIsModalOpen(true);
+  };
+
+  const handleNavigateToDashboard = (tracker: Tracker) => {
+    if (tracker.dashboardName) {
+      navigate(`/dashboard/tracker/${tracker.dashboardName}`);
+    }
   };
 
   const handleCloseModal = () => {
@@ -245,11 +259,21 @@ export default function Tracking() {
               {trackers.map((tracker) => (
                 <div
                   key={tracker.id}
+                  onClick={() => handleNavigateToDashboard(tracker)}
                   className={`bg-white border ${
                     tracker.isActive
                       ? "border-blue-200 bg-blue-50"
                       : "border-gray-200"
-                  } rounded-xl p-6 shadow-sm transition-all duration-200`}
+                  } rounded-xl p-6 shadow-sm transition-all duration-200 ${
+                    tracker.dashboardName
+                      ? "cursor-pointer hover:shadow-md hover:scale-[1.01] hover:border-blue-400"
+                      : "cursor-default"
+                  }`}
+                  title={
+                    tracker.dashboardName
+                      ? "Click to view dashboard"
+                      : "Dashboard not configured"
+                  }
                 >
                   {/* Tracker Header */}
                   <div className="flex items-start justify-between mb-4">
@@ -266,9 +290,14 @@ export default function Tracking() {
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900 truncate">
-                          {tracker.name}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-gray-900 truncate">
+                            {tracker.name}
+                          </h3>
+                          {tracker.dashboardName && (
+                            <ExternalLink className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                          )}
+                        </div>
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             tracker.isActive
@@ -282,21 +311,27 @@ export default function Tracking() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => handleEditTracker(tracker)}
+                        onClick={(e) => handleEditTracker(tracker, e)}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title="Edit tracker"
                       >
                         <Edit className="w-5 h-5" />
                       </button>
                       <button
-                        onClick={() => handleTriggerTracker(tracker)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTriggerTracker(tracker);
+                        }}
                         className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                         title="Run now"
                       >
                         <Play className="w-5 h-5" />
                       </button>
                       <button
-                        onClick={() => toggleTrackerStatus(tracker.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTrackerStatus(tracker.id);
+                        }}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title={tracker.isActive ? "Pause tracker" : "Resume tracker"}
                       >
@@ -307,7 +342,10 @@ export default function Tracking() {
                         )}
                       </button>
                       <button
-                        onClick={() => handleDeleteTracker(tracker.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTracker(tracker.id);
+                        }}
                         className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete tracker"
                       >

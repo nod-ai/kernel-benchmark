@@ -185,6 +185,43 @@ class RunType(Enum):
     E2E = 2        # Full end-to-end performance runs
 ```
 
+## Trackers and Automated Scheduling
+
+### Trackers (`tracker.py`)
+
+Trackers are automated benchmark runners that execute on a configured schedule. They provide continuous performance monitoring without manual intervention.
+
+**Key Features:**
+- **Scheduled Execution**: Runs automatically based on weekly or interval schedules
+- **Machine Assignment**: Each tracker is bound to a specific machine
+- **Configuration Reuse**: References a stored benchmark configuration (blob)
+- **Tags and Backends**: Filters benchmarks by tags and target backends
+
+**Tracker Lifecycle:**
+1. Dashboard creates tracker with schedule and configuration
+2. `TrackerScheduler` monitors active trackers
+3. When schedule is due, triggers run via `trigger_run(TriggerType.SCHEDULED, ...)`
+4. Run executes like any manual run (same workflow, tracking, artifacts)
+
+### Custom Run Scheduling (`scheduling/`)
+
+The scheduling system orchestrates both automated tracker runs and manual/queued runs to ensure:
+- No machine conflicts (one run per machine)
+- Tracker priority (trackers get first access to machines)
+- Fair queuing (FIFO for manual runs)
+
+**Core Components:**
+- **`tracker_scheduler.py`**: Triggers tracker runs when their schedule is due
+- **`run_scheduler.py`**: Dispatches queued manual runs when machines are available
+- **`overlap_validator.py`**: Prevents conflicting tracker schedules on the same machine
+- **`scheduling_utils.py`**: Shared utilities for schedule calculations and time parsing
+
+**Schedule Types:**
+- **Weekly**: Runs on specific days of the week at a set time (e.g., "Monday, Wednesday at 10:00 UTC")
+- **Interval**: Runs every N weeks/months at a set time (e.g., "every 2 weeks at 14:30 UTC")
+
+See [`backend/runs/scheduling/README.md`](scheduling/README.md) for detailed scheduling logic and prioritization.
+
 ## Artifact Parsing
 
 After a run completes, artifacts are automatically:

@@ -844,6 +844,12 @@ def create_tracker():
                     400,
                 )
 
+        # Validate dashboardName uniqueness if provided
+        if "dashboardName" in data and data["dashboardName"]:
+            existing = TrackerDb.query(f"dashboardName eq '{data['dashboardName']}'")
+            if existing:
+                return jsonify({"error": "Dashboard name already in use"}), 409
+
         # Create tracker with generated ID
         tracker_data = {
             "_id": str(uuid4()),
@@ -855,6 +861,7 @@ def create_tracker():
             "schedule": schedule_data,
             "isActive": data.get("isActive", True),
             "createdAt": datetime.now(timezone.utc),
+            "dashboardName": data.get("dashboardName"),
         }
 
         tracker = fromdict(Tracker, tracker_data)
@@ -889,6 +896,13 @@ def update_tracker(tracker_id):
         if not existing_tracker:
             return jsonify({"error": "Tracker not found"}), 404
 
+        # Validate dashboardName uniqueness if provided and changed
+        if "dashboardName" in data and data["dashboardName"]:
+            if data["dashboardName"] != existing_tracker.dashboardName:
+                existing = TrackerDb.query(f"dashboardName eq '{data['dashboardName']}'")
+                if existing and existing[0]._id != tracker_id:
+                    return jsonify({"error": "Dashboard name already in use"}), 409
+
         # Update schedule if provided
         schedule_data = asdict(existing_tracker.schedule)
         if "schedule" in data:
@@ -905,6 +919,7 @@ def update_tracker(tracker_id):
             "schedule": schedule_data,
             "isActive": data.get("isActive", existing_tracker.isActive),
             "createdAt": existing_tracker.createdAt,
+            "dashboardName": data.get("dashboardName", existing_tracker.dashboardName),
         }
 
         updated_tracker = fromdict(Tracker, tracker_data)
@@ -1000,6 +1015,110 @@ def trigger_tracker_manually(tracker_id):
         logger.error(f"Error manually triggering tracker {tracker_id}: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to trigger tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/dashboard/<dashboard_name>", methods=["GET"])
+def get_tracker_by_dashboard_name(dashboard_name):
+    """Get tracker by its dashboard name."""
+    try:
+        trackers = TrackerDb.query(f"dashboardName eq '{dashboard_name}'")
+        if not trackers:
+            return jsonify({"error": "Tracker not found"}), 404
+        return jsonify(asdict(trackers[0]))
+    except Exception as e:
+        logger.error(f"Error getting tracker by dashboard name {dashboard_name}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get tracker: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>/runs", methods=["GET"])
+def get_tracker_runs(tracker_id):
+    """
+    Get all benchmark runs for a tracker with their statistics.
+    
+    Returns runs sorted by timestamp (newest first) that have:
+    - trackerId matching the given tracker
+    - hasArtifact = true (completed runs with data)
+    
+    Response includes both WorkflowRunState and BenchmarkRunStats data.
+    """
+    try:
+        # Query BenchmarkRunStats filtered by trackerId
+        stats = BenchmarkRunStatsDb.query(f"trackerId eq '{tracker_id}'")
+        
+        # For each stat, fetch the corresponding WorkflowRunState
+        runs_with_stats = []
+        for stat in stats:
+            run = WorkflowRunDb.find_by_id(stat.runId)
+            if run and run.hasArtifact:
+                runs_with_stats.append({
+                    "run": asdict(run),
+                    "stats": asdict(stat)
+                })
+        
+        # Sort by timestamp descending
+        runs_with_stats.sort(key=lambda x: x["run"]["timestamp"], reverse=True)
+        
+        return jsonify(runs_with_stats)
+    except Exception as e:
+        logger.error(f"Error getting tracker runs for {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get tracker runs: {str(e)}"}), 500
+
+
+@app.route("/api/trackers/<tracker_id>/performance", methods=["GET"])
+def get_tracker_performance_timeline(tracker_id):
+    """
+    Get performance timeline data for a tracker.
+    
+    Returns aggregated performance metrics across all runs:
+    - timestamp
+    - backend → {tflops_avg, tflops_geomean, runtime_avg, runtime_geomean}
+    
+    Supports optional date range filtering via query params:
+    ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+    """
+    try:
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        
+        # Query BenchmarkRunStats for this tracker
+        stats = BenchmarkRunStatsDb.query(f"trackerId eq '{tracker_id}'")
+        
+        # Filter by date range if provided
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date)
+            stats = [s for s in stats if s.timestamp >= start_dt]
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date)
+            stats = [s for s in stats if s.timestamp <= end_dt]
+        
+        # Sort by timestamp
+        stats.sort(key=lambda s: s.timestamp)
+        
+        # Transform data for frontend consumption
+        timeline = []
+        for stat in stats:
+            # Extract backend performance from stat.performance dict
+            # Format: performance[machine][kernel_type][backend] = {avg_tflops, geomean_tflops, ...}
+            backends_data = {}
+            for machine_data in stat.performance.values():
+                for kernel_type_data in machine_data.values():
+                    for backend, metrics in kernel_type_data.items():
+                        if backend not in backends_data:
+                            backends_data[backend] = metrics
+            
+            timeline.append({
+                "timestamp": stat.timestamp.isoformat(),
+                "runId": stat.runId,
+                "backends": backends_data
+            })
+        
+        return jsonify(timeline)
+    except Exception as e:
+        logger.error(f"Error getting tracker performance timeline for {tracker_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": f"Failed to get tracker performance timeline: {str(e)}"}), 500
 
 
 @app.route("/api/triggers", methods=["GET"])
