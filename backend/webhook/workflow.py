@@ -21,7 +21,6 @@ WORKFLOW_TO_RUN_TYPE = {
     "Tune Wave Kernels": "tune",
 }
 
-
 class WorkflowListener:
     def __init__(self):
         self._repo = get_repo("bench")
@@ -33,7 +32,6 @@ class WorkflowListener:
         logger.info(f"New run requested")
         run_data = run_payload["workflow_run"]
         run = parse_run_from_json(run_data)
-        
         logger.info(f"Adding new run {run._id} on machine {run.machine}")
         logger.debug(f"Run details:\n{jsonify(run)}")
         WorkflowRunDb.upsert(run)
@@ -45,16 +43,22 @@ class WorkflowListener:
         run_id = str(run_data["id"])
         run_type = workflow_info.run_type.name
 
-        logger.info(f"updating run {run_id=} {run_type=} status={run_data['status']}")
-        WorkflowRunDb.update_by_id(
-            run_id,
-            {
-                "status": run_data["status"],
-                "conclusion": run_data["conclusion"],
-                "completed": run_data["status"] == "completed",
-                "timestamp": datetime.fromisoformat(run_data["updated_at"]),
-            },
-        )
+        if WorkflowRunDb.find_by_id(run_id):
+            WorkflowRunDb.update_by_id(
+                run_id,
+                {
+                    "status": run_data["status"],
+                    "conclusion": run_data["conclusion"],
+                    "completed": run_data["status"] == "completed",
+                    "timestamp": datetime.fromisoformat(run_data["created_at"]),
+                },
+            )
+        else:
+            run = parse_run_from_json(run_data)
+            logger.info(f"In progress run {run._id} not found. Adding to database")
+            logger.debug(f"Run details:\n{jsonify(run)}")
+            WorkflowRunDb.upsert(run)
+
 
     def handle_workflow_run_payload(self, run_payload: dict):
         if run_payload["workflow_run"]["event"] != "workflow_dispatch":
