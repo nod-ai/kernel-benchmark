@@ -47,6 +47,6 @@ echo "Installing hipBLASLt (this may take a while)..."
 
 # Source code preserved in $BUILD_DIR for reference/debugging
 echo "ROCm libraries source preserved in: $BUILD_DIR"
-echo "export PATH=/workspace/rocm-libraries/projects/hipblaslt/build/release/clients:\$PATH" >> ~/.bashrc
+echo "Note: PATH will be set in Dockerfile ENV for persistent access"
 
 echo "hipBLASLt backend setup complete!"
