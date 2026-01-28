@@ -1,10 +1,10 @@
 FROM python:3.12
 
-COPY . /backend
-WORKDIR /backend
+COPY . /app/backend
+WORKDIR /app
 
 # RUN apk add --no-cache gcc musl-dev linux-headers
-RUN pip install -r requirements.txt
+RUN pip install -r backend/requirements.txt
 EXPOSE 3000 2500
 
 RUN \
@@ -16,4 +16,4 @@ RUN \
 RUN pip install certifi
 ENV REQUESTS_CA_BUNDLE=/usr/local/lib/python3.12/site-packages/certifi/cacert.pem
 
-CMD ["python", "-m", "run"]
+CMD ["python", "-m", "backend.run"]
