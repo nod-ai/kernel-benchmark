@@ -516,11 +516,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         
         try:
             stats = parse_rocprof3_from_output_dir(profiler_dump_path, kernel_name_pattern)
-            self.logger.info(
-                f"[rocprof3] {stats['kernel_name']}: "
-                f"{stats['mean_duration_us']:.2f} μs "
-                f"({stats['total_calls']} calls)"
-            )
             return stats
         except Exception as e:
             self.logger.error(f"Error parsing profiling stats: {e}")
