@@ -85,19 +85,19 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
             IntegerBounds(min=16, max=min(512, self.config.M), step=8),
-            initial_value=256,
+            initial_value=64,
             clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
             IntegerBounds(min=16, max=min(512, self.config.N), step=8),
-            initial_value=256,
+            initial_value=32,
             clamp_value=True,
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
             IntegerBounds(min=16, max=min(256, self.config.K), step=8),
-            initial_value=128,
+            initial_value=64,
             clamp_value=True,
         )
         # Compute max unroll factor: (K // BLOCK_K) - 2
