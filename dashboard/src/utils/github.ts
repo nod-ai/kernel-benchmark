@@ -7,6 +7,8 @@ import type {
   TuningConfig,
   ChangeStats,
   BenchmarkRuntimeConfig,
+  KernelSelection,
+  RunWithTrigger,
 } from "../types";
 
 export async function fetchModifications() {
@@ -164,7 +166,7 @@ export async function triggerBenchWorkflow(
   config: BenchmarkRuntimeConfig
 ) {
   const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/trigger`,
+    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/pr/trigger`,
     {
       method: "POST",
       headers: {
@@ -172,6 +174,30 @@ export async function triggerBenchWorkflow(
       },
       body: JSON.stringify({
         pr: pullRequest,
+        config,
+      }),
+    }
+  );
+  if (!response.ok) {
+    console.log(response.statusText);
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+}
+
+export async function triggerManualBenchWorkflow(config: {
+  name: string;
+  machine: string;
+  backends: string[];
+  kernelSelection: KernelSelection;
+}) {
+  const response = await fetch(
+    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/manual/trigger`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         config,
       }),
     }
@@ -393,5 +419,315 @@ export async function deleteKernels(kernelIds: string[]): Promise<void> {
     }
   } catch (error) {
     throw new Error(`Failed to delete kernels: ${error}`);
+  }
+}
+
+// Run Management Functions
+
+export interface FetchRunsParams {
+  page?: number;
+  page_size?: number;
+  type?: string;
+  has_artifact?: boolean;
+  completed_only?: boolean;
+}
+
+export interface FetchRunsResponse {
+  runs: RunWithTrigger[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  ongoing_count: number;
+  completed_count: number;
+}
+
+export async function fetchAllRuns(
+  params: FetchRunsParams = {}
+): Promise<FetchRunsResponse> {
+  try {
+    const queryParams = new URLSearchParams();
+    if (params.page) queryParams.append("page", params.page.toString());
+    if (params.page_size)
+      queryParams.append("page_size", params.page_size.toString());
+    if (params.type) queryParams.append("type", params.type);
+    if (params.has_artifact !== undefined)
+      queryParams.append("has_artifact", params.has_artifact.toString());
+    if (params.completed_only !== undefined)
+      queryParams.append("completed_only", params.completed_only.toString());
+
+    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs${
+      queryParams.toString() ? `?${queryParams.toString()}` : ""
+    }`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data: FetchRunsResponse = await response.json();
+
+    // Convert timestamp strings to Date objects for both run and trigger
+    data.runs = data.runs.map((item) => ({
+      run: item.run
+        ? {
+            ...item.run,
+            timestamp: new Date(item.run.timestamp),
+          }
+        : null,
+      trigger: item.trigger
+        ? {
+            ...item.trigger,
+            timestamp: new Date(item.trigger.timestamp),
+            dispatchedAt: item.trigger.dispatchedAt
+              ? new Date(item.trigger.dispatchedAt)
+              : undefined,
+            linkedAt: item.trigger.linkedAt
+              ? new Date(item.trigger.linkedAt)
+              : undefined,
+          }
+        : null,
+    }));
+
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to fetch runs: ${error}`);
+  }
+}
+
+export async function deleteRun(runId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs/${runId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to delete run: ${error}`);
+  }
+}
+
+// Tracker types
+export interface ScheduleData {
+  isInterval: boolean;
+  startDate: string; // MM-DD-YYYY
+  timeOfDay: string; // HH:MM in UTC
+  daysOfWeek?: string[]; // For weekly schedules
+  intervalValue?: number; // For interval schedules
+  intervalUnit?: "weeks" | "months"; // For interval schedules
+  endDate?: string; // MM-DD-YYYY
+}
+
+export interface TrackerData {
+  _id?: string;
+  name: string;
+  blobName: string;
+  dashboardName?: string;
+  tags: string[];
+  backends: string[];
+  machine: string;
+  schedule: ScheduleData;
+  branch: string;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+export async function fetchTrackers(): Promise<TrackerData[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers`
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data: TrackerData[] = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to fetch trackers: ${error}`);
+  }
+}
+
+export async function createTracker(tracker: TrackerData): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(tracker),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+
+    const data: TrackerData = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to create tracker: ${error}`);
+  }
+}
+
+export async function updateTracker(
+  trackerId: string,
+  tracker: Partial<TrackerData>
+): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(tracker),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+
+    const data: TrackerData = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Failed to update tracker: ${error}`);
+  }
+}
+
+export async function deleteTracker(trackerId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to delete tracker: ${error}`);
+  }
+}
+
+export async function triggerTrackerRun(trackerId: string): Promise<void> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/trigger`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `HTTP error! Status: ${response.status}`
+      );
+    }
+  } catch (error) {
+    throw new Error(`Failed to trigger tracker run: ${error}`);
+  }
+}
+
+export async function fetchTrackerByDashboardName(dashboardName: string): Promise<TrackerData> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/dashboard/${dashboardName}`
+    );
+    
+    if (!response.ok) {
+      throw new Error("Tracker not found");
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker by dashboard name: ${error}`);
+  }
+}
+
+export async function fetchTrackerRuns(trackerId: string): Promise<any[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/runs`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker runs: ${error}`);
+  }
+}
+
+export async function fetchTrackerPerformanceTimeline(
+  trackerId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<any[]> {
+  try {
+    const params = new URLSearchParams();
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+    
+    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
+      params.toString() ? `?${params.toString()}` : ""
+    }`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    throw new Error(`Failed to fetch tracker performance timeline: ${error}`);
+  }
+}
+
+export async function fetchBranches(): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/branches`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    const branches: string[] = await response.json();
+    return branches;
+  } catch (error) {
+    throw new Error(`Failed to fetch branches: ${error}`);
   }
 }

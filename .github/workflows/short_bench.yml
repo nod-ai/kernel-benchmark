@@ -36,9 +36,13 @@ on:
       pr_headsha:
         description: "Head sha of pull request that triggered dispatch"
         required: false
+      trigger_id:
+        description: "Backend trigger ID for linking"
+        required: false
+        default: "undefined"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.pr_headsha }}-${{ inputs.machine }}
+  group: ${{ github.workflow }}-${{ inputs.trigger_id }}-${{ inputs.machine }}
   cancel-in-progress: true
 
 jobs:
@@ -46,23 +50,14 @@ jobs:
     name: Benchmark Run Identifier
     runs-on: ubuntu-latest
     steps:
-      - name: headSha_${{ inputs.pr_headsha || 'undefined' }}
-        run: echo run identifier ${{ inputs.pr_headsha || 'undefined' }}
+      - name: triggerId_${{ inputs.trigger_id }}
+        run: |
+          echo "Trigger ID: ${{ inputs.trigger_id }}"
 
   short_benchmark:
     name: Short Benchmark
     needs: identifier
     runs-on: "linux-${{ inputs.machine }}-1gpu-ossci-nod-ai"
-
-    container:
-      image: rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
-      options: >-
-        --ipc=host
-        --device=/dev/kfd
-        --device=/dev/dri
-        --group-add video
-        --cap-add=SYS_PTRACE
-        --security-opt seccomp=unconfined
 
     concurrency:
       group: kernel-benchmarking-${{ inputs.machine }}
@@ -70,50 +65,38 @@ jobs:
 
     env:
       WAVE_CACHE_ON: 0
+      DOCKER_IMAGE: kernel-bench:${{ github.run_id }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: "Setting up Rust"
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Setup venv
+      - name: Build Docker Image
         run: |
           cd benchmark
-          chmod +x ./setup.sh
-          ./setup.sh --no-install-torch --wave-repo ${{ inputs.pr_repository }} --wave-branch ${{ inputs.pr_branch }}
-
-      - name: Load Problems from URL
-        run: |
-          cd benchmark
-          curl -o problems.json ${{ inputs.problems_url }}
-          python -m json.tool problems.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
-
-      - name: Load Tuning Configuration from URL
-        if: ${{ inputs.tuned_config_url }}
-        run: |
-          cd benchmark
-          curl -o tuned_config.json ${{ inputs.tuned_config_url }}
-          python -m json.tool tuned_config.json > /dev/null || { echo "Error: Invalid JSON format"; exit 1; }
+          chmod +x ./docker/build_docker.sh
+          ./docker/build_docker.sh \
+            --machine ${{ inputs.machine }} \
+            ${{ inputs.selected_backend != 'all' && format('--backends {0}', inputs.selected_backend) || '' }} \
+            ${{ inputs.pr_repository && format('--wave-repo {0}', inputs.pr_repository) || '' }} \
+            ${{ inputs.pr_branch && format('--wave-branch {0}', inputs.pr_branch) || '' }} \
+            -t ${{ env.DOCKER_IMAGE }}
 
       - name: Run Benchmarks
         run: |
           cd benchmark
-          python3 -m kernel_bench.cli.bench --backend=${{ inputs.selected_backend }} --kernel_type=${{ inputs.selected_kernel }} --load_problems=problems.json --use_tuned=tuned_config.json --machine=${{ inputs.machine }}x
-
-      - name: Tag result
-        if: ${{ inputs.metadata }}
-        run: |
-          cd benchmark
-          mkdir -p ./results
-          cat <<'EOF' > ./results/metadata.txt
-          "${{ inputs.metadata }}"
+          chmod +x ./docker/run_bench.sh
+          ./docker/run_bench.sh \
+            --image ${{ env.DOCKER_IMAGE }} \
+            --machine ${{ inputs.machine }} \
+            --backends ${{ inputs.selected_backend }} \
+            --kernel-types ${{ inputs.selected_kernel }} \
+            --problems-url ${{ inputs.problems_url }} \
+            ${{ inputs.tuned_config_url && format('--tuned-configs-url {0}', inputs.tuned_config_url) || '' }} \
+            -o $(pwd)/benchmark_results
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
           name: benchmark-results
-          path: ./benchmark/results/json/
+          path: ./benchmark/benchmark_results/results/

@@ -3,27 +3,31 @@ from math import ceil
 import traceback
 from typing import override
 import torch
+import warnings
 from torch.testing import assert_close
+
+# Import guards for backend-specific dependencies
+WAVE_AVAILABLE = False
+try:
+    from wave_lang.kernel.wave.constraints import MMAType
+    from wave_lang.kernel.lang.global_symbols import *
+    from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
+    from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
+    from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+    from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
+    from wave_lang.kernel.wave.utils.torch_utils import device_randn, device_zeros
+    from wave_lang.kernel.wave.iree_utils import generate_iree_ref
+    import wave_lang.kernel.wave as tkw
+    import wave_lang.kernel.lang as tkl
+    from wave_lang.kernel.wave import wave_schedule
+
+    WAVE_AVAILABLE = True
+except Exception as e:
+    warnings.warn(f"Wave backend dependencies not available: {e}")
+
 from kernel_bench.utils.dtypes.device_context import get_shared_memory_limit
 from kernel_bench.utils.iree_utils import shape_to_iree
-from wave_lang.kernel.wave.constraints import MMAType
-from wave_lang.kernel.lang.global_symbols import *
-from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
-from wave_lang.kernel.wave.utils.general_utils import (
-    get_default_scheduling_params,
-)
-from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
-from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
-from wave_lang.kernel.wave.utils.torch_utils import (
-    device_randn,
-    device_zeros,
-)
-from wave_lang.kernel.wave.iree_utils import generate_iree_ref
-
-from kernel_bench.tuning.hyperparam import (
-    CategoricalBounds,
-    IntegerBounds,
-)
+from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from ..gemm_utils import GemmConfig
 
@@ -32,9 +36,18 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
 
     def validate_config(self):
+        if not WAVE_AVAILABLE:
+            return False
+
         config = self.config
 
         if config.M < 4 or config.N < 4 or config.K < 4:
+            return False
+
+        if config.tA != "N" or config.tB != "T":
+            return False
+
+        if config.dtype not in ["f16", "bf16"]:
             return False
 
         return True
@@ -87,12 +100,24 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             initial_value=128,
             clamp_value=True,
         )
-        self.NUM_WAVES = self.add_param(
-            "NUM_WAVES",
-            IntegerBounds(min=4, max=8, step=4),
-            initial_value=4,
+        # Compute max unroll factor: (K // BLOCK_K) - 2
+        # Use minimum BLOCK_K to get maximum possible iterations (conservative upper bound)
+        # This ensures the unroll factor is valid across all possible BLOCK_K values
+        max_unroll = max(
+            1, (self.config.K // 32) - 2
+        )  # Assuming 32 is the minimum BLOCK_K
+        self.UNROLL_FACTOR = self.add_param(
+            "UNROLL_FACTOR",
+            IntegerBounds(min=1, max=max_unroll, step=1),
+            initial_value=14,
             clamp_value=True,
         )
+        # self.NUM_WAVES = self.add_param(
+        #     "NUM_WAVES",
+        #     IntegerBounds(min=4, max=8, step=4),
+        #     initial_value=4,
+        #     clamp_value=True,
+        # )
         self.USE_GATHER_TO_LDS = self.add_param(
             "USE_GATHER_TO_LDS",
             CategoricalBounds([False, True]),
@@ -120,14 +145,14 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
     @override
     def load_wave_kernel(self):
-        config = self.config
-        if config.dtype == "f8":
-            input_dtype = self.device_ctx.dtype_to_torch("f16")
-            quantized_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+        if self.config.dtype == "bf16":
+            return self._load_triple_buffer_kernel()
+        elif self.config.dtype == "f16":
+            return self._load_reordered_gemm_kernel()
         else:
-            input_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-            quantized_dtype = None
+            raise ValueError(f"Unsupported dtype: {self.config.dtype}")
 
+    def _load_reordered_gemm_kernel(self):
         base_gemm, hyperparams = get_reordered_matmul(
             self.config.M,
             self.config.N,
@@ -137,14 +162,206 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             16,  # self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            input_dtype=input_dtype,
-            quantized_dtype=quantized_dtype,
-            tA=config.tA,
-            tB=config.tB,
-            num_waves=self.NUM_WAVES.value,
         )
+
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
+
+    def _load_triple_buffer_kernel(self):
+        """Load custom GEMM kernel with manual scheduling"""
+        config = self.config
+        mfma_variant = MMAType.F32_16x16x32_F16
+
+        # Determine dtype for kernel
+        if config.dtype == "f8":
+            kernel_dtype = tkl.f16
+        elif config.dtype == "bf16":
+            kernel_dtype = tkl.bf16
+        else:
+            kernel_dtype = tkl.f16
+
+        # Symbol definitions
+        M = tkl.sym.M
+        N = tkl.sym.N
+        K = tkl.sym.K
+        BLOCK_M = tkl.sym.BLOCK_M
+        BLOCK_N = tkl.sym.BLOCK_N
+        BLOCK_K = tkl.sym.BLOCK_K
+        ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+        ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
+        UNROLL_FACTOR = tkl.sym.UNROLL_FACTOR
+
+        # Basic constraints needed for compilation
+        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
+        constraints += [tkw.TilingConstraint(K, BLOCK_K)]
+        constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
+        constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
+
+        constraints += [
+            tkw.HardwareConstraint(
+                threads_per_wave=64,
+                mma_type=mfma_variant,
+            )
+        ]
+
+        # Define the kernel
+        @tkw.wave(constraints)
+        def gemm_prefetch(
+            a: tkl.Memory[M, K, ADDRESS_SPACE, kernel_dtype],
+            b: tkl.Memory[N, K, ADDRESS_SPACE, kernel_dtype],
+            c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
+        ):
+            c_reg = tkl.Register[M, N, tkl.f32](0.0)
+
+            @tkw.iterate(K, init_args=[c_reg], tag="k_loop")
+            def repeat(
+                acc: tkl.Register[M, N, tkl.f32],
+            ) -> tkl.Register[M, N, tkl.f32]:
+                a_reg = tkw.read(a, tag="read_a")
+                b_reg = tkw.read(b, tag="read_b")
+                acc = tkw.mma(a_reg, b_reg, acc, tag="mma")
+                return acc
+
+            tkw.write(repeat, c)
+
+        # Define the schedule
+        @wave_schedule.wave_schedule()
+        def async_gemm_schedule_triple_buffering():
+            """
+            Scheduling with cluster-based reordering and ping-pong buffering.
+            """
+            # Get nodes to be manipulated in the schedule.
+            k_loop = tkw.get_node_by_tag("k_loop")
+
+            # Get all nodes with tag "read_a" - includes both Read and GatherToLDS nodes
+            all_read_a = tkw.get_node_by_tag("read_a")
+            global_to_shared_a = tkw.filter_nodes(all_read_a, node_type=tkw.GatherToLDS)
+            shared_load_a = tkw.filter_nodes(all_read_a, node_type=tkw.Read)
+
+            # Get all nodes with tag "read_b" - includes both Read and GatherToLDS nodes
+            all_read_b = tkw.get_node_by_tag("read_b")
+            global_to_shared_b = tkw.filter_nodes(all_read_b, node_type=tkw.GatherToLDS)
+            shared_load_b = tkw.filter_nodes(all_read_b, node_type=tkw.Read)
+
+            mma = tkw.get_node_by_tag("mma")
+
+            pipeline_loop = tkw.pipeline(k_loop)
+            # First, create the basic 3-stage pipeline
+            with pipeline_loop as pl:
+                pl.set_stage(
+                    [
+                        (global_to_shared_a, global_to_shared_b),
+                        (),
+                    ],
+                )
+                pl.set_stage(
+                    [
+                        (),
+                        (),
+                    ],
+                )
+                pl.set_stage(
+                    [
+                        (shared_load_a, shared_load_b),
+                        (mma,),
+                    ],
+                )
+
+            # Now apply advanced scheduling to the KERNEL stage
+            global_to_shared_a = tkw.filter_nodes(
+                global_to_shared_a, subgraph=pipeline_loop.KERNEL
+            )
+            shared_load_a = tkw.filter_nodes(
+                shared_load_a, subgraph=pipeline_loop.KERNEL
+            )
+            global_to_shared_b = tkw.filter_nodes(
+                global_to_shared_b, subgraph=pipeline_loop.KERNEL
+            )
+            shared_load_b = tkw.filter_nodes(
+                shared_load_b, subgraph=pipeline_loop.KERNEL
+            )
+            mma = tkw.filter_nodes(mma, subgraph=pipeline_loop.KERNEL)
+
+            mma_0, mma_1 = tkw.partition_by_dim(mma, dim=K, num_partitions=2)
+            shared_load_a_0, shared_load_a_1 = tkw.partition_by_dim(
+                shared_load_a, dim=K, num_partitions=2
+            )
+            shared_load_b_0, shared_load_b_1 = tkw.partition_by_dim(
+                shared_load_b, dim=K, num_partitions=2
+            )
+
+            independent_global_count = len(global_to_shared_a) + len(global_to_shared_b)
+
+            clusters = [
+                tkw.cluster(
+                    [
+                        tkw.MemoryCounterWait(load=independent_global_count),
+                        tkw.WorkgroupBarrier(),
+                        tkw.WorkgroupBarrier(),
+                        shared_load_a_0,
+                        shared_load_b_0,
+                        tkw.SchedulingBarrier([]),
+                        global_to_shared_a,
+                        global_to_shared_b,
+                        tkw.SchedulingBarrier([]),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        mma_0,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        shared_load_a_1,
+                        shared_load_b_1,
+                        tkw.SchedulingBarrier([]),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        mma_1,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+            ]
+
+            # Apply the cluster-based reordering to the KERNEL stage
+            tkw.reorder_graph(pipeline_loop.KERNEL, clusters)
+
+            # Apply staggering waves scheduling
+            tkw.stagger(pipeline_loop.KERNEL)
+
+        # Prepare hyperparameters
+        hyperparams = {
+            M: config.M,
+            N: config.N,
+            K: config.K,
+            BLOCK_M: self.BLOCK_M.value,
+            BLOCK_N: self.BLOCK_N.value,
+            BLOCK_K: self.BLOCK_K.value,
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+            UNROLL_FACTOR: self.UNROLL_FACTOR.value,
+        }
+
+        return WaveTemplate(
+            launchable=gemm_prefetch,
+            hyperparams=hyperparams,
+            schedule=async_gemm_schedule_triple_buffering,
+        )
 
     @override
     def extra_compile_options(self):
@@ -152,15 +369,34 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         supports_g2s = self.device_ctx.hip_target.startswith("gfx95")
         use_g2s = supports_g2s and self.USE_GATHER_TO_LDS.value
 
+        if self.config.dtype == "bf16":
+            options = WaveCompileOptions(
+                canonicalize=True,
+                schedule=use_scheduling,
+                use_buffer_ops=True,
+                use_global_to_shared=use_g2s,
+                waves_per_eu=1,
+                minimize_shared_allocs=False,
+            )
+
+            options.postprocess = """
+            module attributes {transform.with_named_sequence} {
+                transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+                    %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+                    transform.loop.unroll %0 { factor = %%UNROLL_FACTOR%% } : !transform.any_op
+                    transform.yield
+                }
+            }
+            """
+
+            return options
+
         return WaveCompileOptions(
             canonicalize=True,
             schedule=use_scheduling,
             use_buffer_ops=True,
             use_global_to_shared=use_g2s,
             waves_per_eu=1,
-            # use_fast_math=True,
-            # multi_buffer_count=1,
-            # postprocess=get_unroll_pipeline(1),
         )
 
     @override
@@ -221,15 +457,3 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
-
-
-def get_unroll_pipeline(unroll_factor: int):
-    return f"""
-    module attributes {{transform.with_named_sequence}} {{
-        transform.named_sequence @__transform_main(%arg0: !transform.any_op {{transform.readonly}}) {{
-            %0 = transform.structured.match ops{{["scf.for"]}} in %arg0 : (!transform.any_op) -> !transform.any_op
-            transform.loop.unroll %0 {{ factor = {unroll_factor} }} : !transform.any_op
-            transform.yield
-        }}
-    }}
-    """

@@ -10,3 +10,4 @@ seaborn
 triton
 setuptools
 dataclass-wizard
+einops

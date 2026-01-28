@@ -16,7 +16,7 @@ from tqdm import tqdm
 from kernel_bench.utils.dtypes.device_context import DeviceContext
 from wave_lang.kernel.wave.compile import wave_compile
 from wave_lang.kernel.wave.compile_options import WaveCompileOptions
-from wave_lang.kernel.wave.wave import LaunchableWave
+from wave_lang.kernel.wave.wave import LaunchableWave, WaveSchedule
 
 from kernel_bench.utils.parallel_utils.isolated_runtime import (
     isolated_validate_numerics,
@@ -31,6 +31,7 @@ from ..utils.bench_utils import (
     redirect_stderr_to_file,
 )
 from kernel_bench.utils.iree_utils import bench_kernel_ireert
+from kernel_bench.utils.torch_utils import get_gpu_count
 from kernel_bench.tuning.hyperparam.parameters import (
     TuningParameter,
     TuningSpec,
@@ -240,6 +241,7 @@ class WaveTemplate:
     launchable: LaunchableWave
     hyperparams: Dict[Symbol, Any]
     dynamic_symbols: List[Symbol] = field(default_factory=list)
+    schedule: Optional[WaveSchedule] = None
 
 
 @dataclass
@@ -486,8 +488,7 @@ def batch_benchmark(
     else:
         validation_results = {id(bench): True for bench in benches}
 
-    # Run benchmarks in parallel across 8 GPUs
-    num_gpus = 8
+    num_gpus = get_gpu_count()
     results = [None] * len(benches)
 
     # Separate benches into those that can run and those that failed
@@ -509,12 +510,17 @@ def batch_benchmark(
             # Mark failed benches immediately
             results[i] = bench.get_bench_result(0, False)
 
+    try:
+        device_id = int(device.split("://")[1])
+    except Exception:
+        device_id = None
+
     # Prepare benchmark arguments with round-robin GPU assignment
     bench_args = [
         (
             original_idx,
             bench,
-            idx % num_gpus,
+            device_id or idx % num_gpus,
             vmfb_path,
             num_iterations,
             timeout,

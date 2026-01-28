@@ -113,3 +113,65 @@ export function filterKernelsByPercentile(
 
   return filteredKernels;
 }
+
+/**
+ * Simplifies a name for use in URLs by converting to lowercase,
+ * replacing spaces and special characters with underscores,
+ * and removing any characters that aren't letters, numbers, or underscores.
+ */
+export function simplifyNameForUrl(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_") // Replace spaces with underscores
+    .replace(/[^a-z0-9_]/g, "_") // Replace any non-alphanumeric (except underscore) with underscore
+    .replace(/_+/g, "_") // Replace multiple consecutive underscores with single underscore
+    .replace(/^_+|_+$/g, ""); // Remove leading and trailing underscores
+}
+
+/**
+ * Converts a date from YYYY-MM-DD format to MM-DD-YYYY format
+ */
+export function toMMDDYYYY(dateStr: string): string {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-");
+  return `${month}-${day}-${year}`;
+}
+
+/**
+ * Converts a date from MM-DD-YYYY format to YYYY-MM-DD format
+ */
+export function toYYYYMMDD(dateStr: string): string {
+  if (!dateStr) return "";
+  const [month, day, year] = dateStr.split("-");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Formats a MM-DD-YYYY date string for display
+ */
+export function formatMMDDYYYY(dateStr: string): string {
+  if (!dateStr) return "";
+  const date = new Date(toYYYYMMDD(dateStr));
+  return date.toLocaleDateString();
+}
+
+/**
+ * Formats elapsed time from a start date to now in a human-readable format
+ */
+export function formatElapsedTime(startTime: Date): string {
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - startTime.getTime()) / 1000); // seconds
+  
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  const seconds = diff % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}

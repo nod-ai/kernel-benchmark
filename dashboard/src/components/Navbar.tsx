@@ -1,12 +1,12 @@
 // Navbar.tsx
 import React, { useState } from "react";
-import { Home, History, Plus, Zap, Lock } from "lucide-react";
+import { Home, History, Plus, Zap, Lock, ListChecks, CalendarDays } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { twMerge } from "tailwind-merge";
 import { useAuth } from "../contexts/AuthContext";
 import PasswordModal from "./PasswordModal";
 
-export type PageName = "dashboard" | "history" | "new" | "tune";
+export type PageName = "dashboard" | "history" | "runs" | "new" | "kernels" | "tracking";
 
 interface NavbarProps {
   activePage: PageName;
@@ -27,10 +27,22 @@ const navItems: NavItemProps[] = [
     icon: <Home className="w-4 h-4" />,
   },
   {
-    name: "tune",
-    label: "Tuning",
+    name: "kernels",
+    label: "Kernels",
     requireAuth: true,
     icon: <Zap className="w-4 h-4" />,
+  },
+  {
+    name: "runs",
+    label: "Runs",
+    requireAuth: true,
+    icon: <ListChecks className="w-4 h-4" />,
+  },
+  {
+    name: "tracking",
+    label: "Tracking",
+    requireAuth: true,
+    icon: <CalendarDays className="w-4 h-4" />,
   },
   {
     name: "history",
@@ -40,7 +52,7 @@ const navItems: NavItemProps[] = [
   },
   {
     name: "new",
-    label: "Add Kernels",
+    label: "New",
     requireAuth: true,
     icon: <Plus className="w-4 h-4" />,
   },

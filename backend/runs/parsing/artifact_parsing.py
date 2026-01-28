@@ -26,18 +26,20 @@ class RunArtifactParser(ABC):
         dir_client = get_blob_client()
         local_path = self._local_tmp_dir / str(uuid4())
         dir_client.download(blob_name, str(local_path))
-        local_path = local_path / blob_name
+
+        if local_path.is_dir():
+            local_path = local_path / blob_name
 
         try:
             parsed_data = self._parse_from_local_path(local_path)
-            shutil.rmtree(local_path)
+            _remove_local_path(local_path)
             return parsed_data
         except Exception as e:
             logger.error(
                 f"Failed to load artifact data: \n"
                 "".join(traceback.format_exception(e))
             )
-            shutil.rmtree(local_path)
+            _remove_local_path(local_path)
             return None
 
     def parse_and_save_artifact(
@@ -53,7 +55,7 @@ class RunArtifactParser(ABC):
                 raise RuntimeError("Failed to save artifact")
 
             logger.debug(f"Successfully saved data for artifact_{gh_artifact.id}")
-            shutil.rmtree(local_path)
+            _remove_local_path(local_path)
             return True, artifact_data
 
         except Exception as e:
@@ -61,7 +63,7 @@ class RunArtifactParser(ABC):
                 f"Failed to save parsed artifact data: \n"
                 "".join(traceback.format_exception(e))
             )
-            shutil.rmtree(local_path)
+            _remove_local_path(local_path)
             return False, artifact_data
 
     def parse_artifact(self, gh_artifact: Artifact) -> Tuple[Any, Path]:
@@ -90,3 +92,10 @@ class RunArtifactParser(ABC):
         self, local_path: Path, artifact_data: Any, run: WorkflowRunState
     ) -> bool:
         pass
+
+
+def _remove_local_path(local_path: Path):
+    if local_path.is_dir():
+        shutil.rmtree(local_path)
+    else:
+        os.remove(local_path)

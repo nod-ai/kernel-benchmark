@@ -1,5 +1,3 @@
-from backend.storage.types import TuningConfigDb, WorkflowRunDb
+from backend.storage.types import TrackerDb
 
-
-WorkflowRunDb.clear_all()
-TuningConfigDb.clear_all()
+TrackerDb.clear_all()

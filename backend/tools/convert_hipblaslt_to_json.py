@@ -56,7 +56,7 @@ def parse_csv(csv_path: str, sizes_path: str, title: Optional[str] = None):
             {
                 "index": i,
                 "machine": "MI350X",
-                "kernel_type": "gemm",
+                "kernelType": "gemm",
                 "backend": title or "hipblaslt",
                 "tag": size_to_cat[shape],
                 "name": f"gemm_{m}_{n}_{k}_{dtype}_{tA}{tB}",
@@ -76,9 +76,9 @@ def parse_csv(csv_path: str, sizes_path: str, title: Optional[str] = None):
                     "tB": tB,
                     "dtype": dtype,
                 },
-                "tuning_config": None,
-                "mean_microseconds": runtime_us,
-                "arithmetic_intensity": arithmetic_intensity,
+                "tuningConfig": None,
+                "meanMicroseconds": runtime_us,
+                "arithmeticIntensity": arithmetic_intensity,
                 "tflops": tflops,
                 "ok": True,
             }
