@@ -37,6 +37,6 @@ __all__ = [
     "WaveVanillaAttentionBenchmark",
     "IREEVanillaAttentionBenchmark",
     "TorchVanillaAttentionBenchmark",
-    # "TritonVanillaAttentionBenchmark",
+    "TritonVanillaAttentionBenchmark",
     "get_default_attention_configs",
 ]

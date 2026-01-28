@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import time
+from typing import TYPE_CHECKING
 from dataclass_wizard import asdict
 from multiprocessing import Process, Queue
 import traceback
@@ -16,8 +17,9 @@ import queue
 import torch
 from tqdm import tqdm
 from rich.console import Console
+if TYPE_CHECKING:
+    from kernel_bench.core.template import KernelBenchmark
 
-from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.print_utils import (
     get_logger,
     set_global_handler,
@@ -75,7 +77,7 @@ class ParallelTuner:
 
     def tune_kernels(
         self,
-        benches: List[KernelBenchmark],
+        benches: List["KernelBenchmark"], 
         tuning_result_path: os.PathLike,
         num_iterations: int = 1,
         num_trials: int = 100,

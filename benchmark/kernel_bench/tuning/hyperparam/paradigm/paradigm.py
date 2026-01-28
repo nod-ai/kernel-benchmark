@@ -13,9 +13,12 @@ from typing import (
     Optional,
     Union,
     Callable,
+    TYPE_CHECKING,
 )
 
-from kernel_bench.core.template import KernelBenchmark
+if TYPE_CHECKING:
+    from kernel_bench.core.template import KernelBenchmark
+
 from kernel_bench.utils.bench_utils import BenchmarkResult
 from kernel_bench.utils.parallel_utils.progress_context import ProgressEvent
 from kernel_bench.tuning.core import (
@@ -32,7 +35,7 @@ from kernel_bench.tuning.core import (
 class TuningContext:
     """Context object containing all necessary information for tuning."""
 
-    bench: KernelBenchmark
+    bench: "KernelBenchmark"
     device_id: int
     num_iterations: int
     num_trials: int

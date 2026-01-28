@@ -3,10 +3,11 @@
 import copy
 import math
 import time
-from typing import List, Optional, Callable, Any
+from typing import List, Optional, Callable, Any, TYPE_CHECKING
 from dataclasses import dataclass
 
-from kernel_bench.core.template import KernelBenchmark, batch_benchmark
+if TYPE_CHECKING:
+    from kernel_bench.core.template import KernelBenchmark, batch_benchmark
 from kernel_bench.utils.bench_utils import BenchmarkResult
 from .candidate import CandidateConfig
 
@@ -144,7 +145,7 @@ class ExecutionEngine:
         self,
         candidates: List[CandidateConfig],
         callback: Optional[Callable[[CandidateConfig], None]] = None
-    ) -> List[KernelBenchmark]:
+    ) -> List["KernelBenchmark"]:
         """
         Compile a batch of candidate configurations.
         

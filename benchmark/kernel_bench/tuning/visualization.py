@@ -1,18 +1,19 @@
 """Visualization utilities for tuning results and summaries."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.tree import Tree
 import statistics
 
-from kernel_bench.core.template import KernelBenchmark
+if TYPE_CHECKING:
+    from kernel_bench.core.template import KernelBenchmark
 from .hyperparam.parameters import IntegerBounds, CategoricalBounds
 
 
 def display_hyperparameters_table(
-    benches: List[KernelBenchmark], console: Optional[Console] = None
+    benches: List["KernelBenchmark"], console: Optional[Console] = None
 ):
     """
     Display all exposed hyperparameters before tuning.

@@ -26,7 +26,7 @@ def get_default_extend_attention_configs(kernel_type: str, backend_name: str):
 
 
 __all__ = [
-    # "TritonExtendAttentionBenchmark",
+    "TritonExtendAttentionBenchmark",
     "TorchExtendAttentionBenchmark",
     "WaveExtendAttentionBenchmark",
     "get_default_extend_attention_configs",
