@@ -70,10 +70,15 @@ The scheduler consists of two parallel systems that coordinate through shared ut
 
 **Machine Availability Check:**
 ```python
-# Check for active runs on this machine
-active_runs = get_active_runs_by_machine(trigger.machine)
+# Check for active runs on this machine (using 24h window)
+active_runs = get_active_runs_by_machine(trigger.machine, cutoff_hours=24)
 if active_runs:
     return False  # Cannot dispatch yet
+
+# Check for dispatched triggers (GitHub pending, using 24h window)
+dispatched_triggers = get_dispatched_triggers_by_machine(trigger.machine, cutoff_hours=24)
+if dispatched_triggers:
+    return False  # GitHub is waiting to start a run
 ```
 
 **Tracker Priority Enforcement:**
@@ -162,9 +167,17 @@ if upcoming_trackers:
 
 #### Machine and Tracker Queries
 
-**`get_active_runs_by_machine(machine)`**
-- Returns all in-progress runs on a specific machine
-- Queries runs with status: `requested`, `in_progress`, `queued`, `pending`
+**`get_active_runs_by_machine(machine, cutoff_hours=None)`**
+- Returns all in-progress runs on a specific machine via LINKED triggers
+- Queries RunTriggers with status=LINKED, then fetches corresponding WorkflowRunStates
+- Filters for active statuses: `requested`, `in_progress`, `queued`, `pending`
+- Optional `cutoff_hours` parameter limits lookback window (e.g., 24 hours)
+
+**`get_dispatched_triggers_by_machine(machine, cutoff_hours=None)`**
+- Returns all DISPATCHED triggers (GitHub-pending runs) on a specific machine
+- These represent workflow runs dispatched to GitHub but not yet started
+- Optional `cutoff_hours` parameter limits lookback window (e.g., 24 hours)
+- Critical for preventing GitHub from cancelling runs (GitHub won't queue more than 1 run)
 
 **`get_upcoming_trackers(machine, hours_ahead=1.0)`**
 - Returns trackers scheduled to run within time window on machine
@@ -379,15 +392,26 @@ is_valid, error_msg = validate_tracker_no_overlap(updated_tracker, tracker_id="t
 ```python
 from backend.runs.scheduling.scheduling_utils import (
     get_active_runs_by_machine,
+    get_dispatched_triggers_by_machine,
     get_upcoming_trackers,
 )
 
 machine = "mi325x"
 
-# Check if machine is busy right now
+# Check if machine has active runs (all time)
 active_runs = get_active_runs_by_machine(machine)
 if active_runs:
     print(f"Machine busy with {len(active_runs)} run(s)")
+
+# Check if machine has active runs (last 24 hours only)
+recent_active = get_active_runs_by_machine(machine, cutoff_hours=24)
+if recent_active:
+    print(f"Machine has {len(recent_active)} active run(s) from last 24h")
+
+# Check if machine has dispatched triggers pending in GitHub
+dispatched = get_dispatched_triggers_by_machine(machine, cutoff_hours=24)
+if dispatched:
+    print(f"Machine has {len(dispatched)} pending dispatch(es) in GitHub")
 
 # Check if trackers scheduled soon
 upcoming = get_upcoming_trackers(machine, hours_ahead=1.0)

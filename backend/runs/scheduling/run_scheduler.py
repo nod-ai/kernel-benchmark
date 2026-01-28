@@ -20,6 +20,7 @@ from backend.globals import BENCH_REPO_BRANCH
 from backend.runs.scheduling.scheduling_utils import (
     is_tracker_due_within,
     get_active_runs_by_machine,
+    get_dispatched_triggers_by_machine,
     get_upcoming_trackers,
 )
 from backend.runs.trigger_service import (
@@ -103,8 +104,9 @@ class RunScheduler:
         Check if trigger can be dispatched now.
         
         Checks:
-        1. No active runs on same machine
-        2. No trackers scheduled within grace period
+        1. No active runs on same machine (from linked triggers)
+        2. No dispatched triggers waiting in GitHub (pending runs)
+        3. No trackers scheduled within grace period
         
         Args:
             trigger: The trigger to check
@@ -112,12 +114,21 @@ class RunScheduler:
         Returns:
             True if trigger can be dispatched safely
         """
-        # Check for active runs on this machine (using shared utility)
-        active_runs = get_active_runs_by_machine(trigger.machine)
+        # Check for active runs on this machine (using 24h window)
+        active_runs = get_active_runs_by_machine(trigger.machine, cutoff_hours=24)
         if active_runs:
             logger.debug(
                 f"Machine {trigger.machine} has {len(active_runs)} active run(s), "
                 f"cannot dispatch trigger {trigger._id}"
+            )
+            return False
+        
+        # Check for dispatched triggers (GitHub pending, using 24h window)
+        dispatched_triggers = get_dispatched_triggers_by_machine(trigger.machine, cutoff_hours=24)
+        if dispatched_triggers:
+            logger.debug(
+                f"Machine {trigger.machine} has {len(dispatched_triggers)} dispatched trigger(s) "
+                f"pending in GitHub, cannot dispatch trigger {trigger._id}"
             )
             return False
 

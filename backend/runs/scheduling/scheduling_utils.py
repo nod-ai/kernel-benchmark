@@ -22,6 +22,7 @@ from backend.storage.types import (
     WorkflowRunDb,
     TrackerDb,
 )
+from backend.storage.triggers import RunTriggerDb, TriggerStatus
 
 logger = logging.getLogger(__name__)
 
@@ -348,10 +349,7 @@ def is_tracker_due_now(tracker: Tracker, now: datetime, grace_minutes: int = 2) 
     logger.debug(
         f"Checking if tracker {tracker.name} is due now with grace window of {grace_minutes} minutes"
     )
-    logger.debug(f"Tracker time: {tracker.schedule.timeOfDay}")
-    logger.debug(f"Now: {now}")
     next_run = calculate_next_run_time(tracker, now - timedelta(minutes=grace_minutes))
-    logger.debug(f"Next run: {next_run}")
     if not next_run:
         return False
 
@@ -438,35 +436,104 @@ def get_tracker_schedule_description(tracker: Tracker) -> str:
 # =============================================================================
 
 
-def get_active_runs_by_machine(machine: str) -> List[WorkflowRunState]:
+def get_active_runs_by_machine(
+    machine: str, cutoff_hours: Optional[float] = None
+) -> List[WorkflowRunState]:
     """
-    Get all in-progress workflow runs for a specific machine.
+    Get all active workflow runs for a specific machine via LINKED triggers.
 
-    Queries the database for runs with active statuses (requested, in_progress,
-    queued, pending) on the specified machine.
+    Queries RunTriggers with status=LINKED on the specified machine, then fetches
+    the corresponding WorkflowRunStates and filters for active statuses.
 
     Args:
         machine: Machine name to check
+        cutoff_hours: Optional time window in hours to look back.
+                     If None, checks all LINKED triggers regardless of age.
+                     If specified, only checks triggers from the last N hours.
 
     Returns:
         List of active workflow runs on this machine (empty list if none or error)
 
     Examples:
+        >>> # Check all active runs on mi325
         >>> runs = get_active_runs_by_machine("mi325")
-        >>> if runs:
-        ...     print(f"Machine mi325 has {len(runs)} active runs")
+
+        >>> # Check only runs from last 24 hours
+        >>> recent_runs = get_active_runs_by_machine("mi325", cutoff_hours=24)
     """
     try:
-        # Query for runs that are active on this machine
-        status_conditions = " or ".join(
-            [f"status eq '{status}'" for status in ACTIVE_RUN_STATUSES]
-        )
-        query = f"machine eq '{machine}' and ({status_conditions})"
+        # Build query for LINKED triggers on this machine
+        query = f"machine eq '{machine}' and status eq '{TriggerStatus.LINKED.value}'"
 
-        active_runs = WorkflowRunDb.query(query)
+        # Add time filter if cutoff specified
+        if cutoff_hours is not None:
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)
+            query += f" and timestamp ge datetime'{cutoff_time.isoformat()}'"
+
+        linked_triggers = RunTriggerDb.query(query)
+
+        # Fetch corresponding WorkflowRunStates and filter for active
+        active_runs = []
+        for trigger in linked_triggers:
+            if not trigger.runId:
+                continue
+
+            run = WorkflowRunDb.find_by_id(trigger.runId)
+            if run and run.status in ACTIVE_RUN_STATUSES:
+                active_runs.append(run)
+
         return active_runs
     except Exception as e:
         logger.error(f"Error querying active runs for machine {machine}: {e}")
+        return []
+
+
+def get_dispatched_triggers_by_machine(
+    machine: str, cutoff_hours: Optional[float] = None
+) -> List:
+    """
+    Get all dispatched (GitHub-pending) triggers for a specific machine.
+
+    Queries RunTriggers with status=DISPATCHED on the specified machine.
+    These represent workflow runs that have been dispatched to GitHub but not
+    yet started (no linked run yet).
+
+    Args:
+        machine: Machine name to check
+        cutoff_hours: Optional time window in hours to look back.
+                     If None, checks all DISPATCHED triggers regardless of age.
+                     If specified, only checks triggers from the last N hours.
+
+    Returns:
+        List of dispatched triggers on this machine (empty list if none or error)
+
+    Examples:
+        >>> # Check all pending dispatches on mi325
+        >>> pending = get_dispatched_triggers_by_machine("mi325")
+
+        >>> # Check only dispatches from last 24 hours
+        >>> recent_pending = get_dispatched_triggers_by_machine("mi325", cutoff_hours=24)
+
+    Note:
+        These triggers indicate GitHub is waiting to start a workflow run.
+        We must not dispatch additional runs while these exist, as GitHub
+        will not queue more than 1 run and will cancel others.
+    """
+    try:
+        # Build query for DISPATCHED triggers on this machine
+        query = (
+            f"machine eq '{machine}' and status eq '{TriggerStatus.DISPATCHED.value}'"
+        )
+
+        # Add time filter if cutoff specified
+        if cutoff_hours is not None:
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)
+            query += f" and timestamp ge datetime'{cutoff_time.isoformat()}'"
+
+        dispatched_triggers = RunTriggerDb.query(query)
+        return dispatched_triggers
+    except Exception as e:
+        logger.error(f"Error querying dispatched triggers for machine {machine}: {e}")
         return []
 
 
