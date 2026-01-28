@@ -218,7 +218,7 @@ class IREEKernelBenchmark(KernelBenchmark):
             num_iterations=1,
             device=device,
             timeout=timeout,
-            # profiler_dump_path=tt_dump_dir,
+            profiler_dump_path=tt_dump_dir,
         )
         return self.get_bench_result(runtime_us, ok)
 
