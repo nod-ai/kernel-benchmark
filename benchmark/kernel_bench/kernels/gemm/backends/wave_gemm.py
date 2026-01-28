@@ -1,16 +1,10 @@
 from dataclasses import replace
 from math import ceil
 import traceback
-from typing import override, Optional
-from os import PathLike
+from typing import override
 import torch
 import warnings
 from torch.testing import assert_close
-import csv
-import re
-import subprocess
-from io import StringIO
-from pathlib import Path
 
 # Import guards for backend-specific dependencies
 WAVE_AVAILABLE = False
@@ -81,11 +75,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                     MMAType.F32_32x32x16_F16,
                     MMAType.F32_16x16x32_F16,
                 ] + mfma_options
-        
-        if self.config.dtype == "bf16":
-            mfma_options = [
-                MMAType.F32_16x16x32_F16,
-            ]
 
         self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
@@ -95,32 +84,32 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
-            IntegerBounds(min=16, max=min(512, self.config.M), step=8),
-            initial_value=64,
+            IntegerBounds(min=1, max=min(512, self.config.M), step=8),
+            initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
-            IntegerBounds(min=16, max=min(512, self.config.N), step=8),
-            initial_value=32,
+            IntegerBounds(min=1, max=min(512, self.config.N), step=8),
+            initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
-            IntegerBounds(min=16, max=min(256, self.config.K), step=8),
-            initial_value=64,
+            IntegerBounds(min=1, max=min(256, self.config.K), step=8),
+            initial_value=128,
             clamp_value=True,
         )
         # Compute max unroll factor: (K // BLOCK_K) - 2
         # Use minimum BLOCK_K to get maximum possible iterations (conservative upper bound)
         # This ensures the unroll factor is valid across all possible BLOCK_K values
         max_unroll = max(
-            1, (self.config.K // 16) - 2
+            1, (self.config.K // 32) - 2
         )  # Assuming 32 is the minimum BLOCK_K
         self.UNROLL_FACTOR = self.add_param(
             "UNROLL_FACTOR",
             IntegerBounds(min=1, max=max_unroll, step=1),
-            initial_value=30,
+            initial_value=14,
             clamp_value=True,
         )
         # self.NUM_WAVES = self.add_param(
@@ -147,7 +136,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         bytes_per_el = dtype_spec.num_bytes()
         shared_memory_constraint = (
             (self.BLOCK_M + 4) * self.BLOCK_K + (self.BLOCK_N + 4) * self.BLOCK_K
-        ) * bytes_per_el * 3 - shared_mem_limit_bytes
+        ) * bytes_per_el - shared_mem_limit_bytes
         self.add_constraint(shared_memory_constraint, "shared_memory_limit")
 
         # num_wg_m = sympy.ceiling(self.config.M / self.BLOCK_M)
@@ -173,11 +162,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             16,  # self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            # input_dtype=input_dtype,
-            # quantized_dtype=quantized_dtype,
-            # tA=config.tA,
-            # tB=config.tB,
-            # num_waves=self.NUM_WAVES.value,
         )
 
         hyperparams.update(get_default_scheduling_params())
@@ -312,7 +296,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             clusters = [
                 tkw.cluster(
                     [
-                        tkw.MemoryCounterWaitBarrier(load=independent_global_count),
+                        tkw.MemoryCounterWait(load=independent_global_count),
+                        tkw.WorkgroupBarrier(),
                         tkw.WorkgroupBarrier(),
                         shared_load_a_0,
                         shared_load_b_0,
@@ -358,8 +343,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
             # Apply staggering waves scheduling
             tkw.stagger(pipeline_loop.KERNEL)
-
-            tkw.unroll(pipeline_loop.KERNEL, self.UNROLL_FACTOR.value)
 
         # Prepare hyperparameters
         hyperparams = {
@@ -474,84 +457,3 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
-
-    @override
-    def bench_vmfb(self, vmfb_filename, device, num_iterations=3, timeout=None):
-        """
-        Run VMFB benchmark and automatically parse rocprof3 CSV stats.
-        
-        This override adds automatic parsing of rocprof3 stats after the benchmark completes.
-        """
-        # Call parent's bench_vmfb to execute the benchmark with profiling
-        result = super().bench_vmfb(vmfb_filename, device, num_iterations, timeout)
-        
-        # If benchmark succeeded and profiling was done, try to parse CSV stats
-        if result.ok:
-            try:
-                stats = self.get_profiling_stats(kernel_name_pattern="gemm_prefetch")
-                if stats and 'mean_duration_us' in stats:
-                    # Use GPU timing from rocprof3 instead of IREE timing
-                    gpu_runtime_us = stats['mean_duration_us']
-                    
-                    # Recalculate performance metrics with GPU timing
-                    result = self.get_bench_result(gpu_runtime_us, True)
-                    
-            except Exception as e:
-                # Fall back to IREE timing if rocprof3 parsing fails
-                self.logger.debug(f"Could not parse rocprof3 stats, using IREE timing: {e}")
-        
-        return result
-    
-    def get_profiling_stats(
-        self,
-        profiler_dump_path: Optional[Path] = None,
-        kernel_name_pattern: Optional[str] = "gemm_prefetch"
-    ) -> dict:
-
-        if profiler_dump_path is None:
-            base_name = self.title or self.config.get_name()
-            profiler_dump_path = (
-                self.path_config.dump_dir_for(self.backend) / "thread_trace" / base_name
-            )
-        
-        try:
-            stats = parse_rocprof3_from_output_dir(profiler_dump_path, kernel_name_pattern)
-            return stats
-        except Exception as e:
-            self.logger.error(f"Error parsing profiling stats: {e}")
-            return {}
-
-def parse_rocprof3_csv(csv_path: Path, kernel_name_pattern: Optional[str] = "gemm_prefetch") -> dict:
-    if not csv_path.exists():
-        raise FileNotFoundError(f"rocprof3 CSV file not found: {csv_path}")
-    
-    with open(csv_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            # Match kernel by name pattern
-            if 'Name' in row and (not kernel_name_pattern or kernel_name_pattern in row['Name']):
-                if 'AverageNs' not in row:
-                    raise ValueError(f"Found kernel but no 'AverageNs' column")
-                
-                average_ns = float(row['AverageNs'])
-                
-                return {
-                    'kernel_name': row['Name'],
-                    'mean_duration_us': average_ns / 1000.0,
-                    'total_calls': int(row.get('Calls', 1)),
-                }
-    
-    raise ValueError(f"No kernel matching '{kernel_name_pattern}' found in {csv_path}")
-
-
-def parse_rocprof3_from_output_dir(
-    output_dir: Path,
-    kernel_name_pattern: Optional[str] = "gemm_prefetch"
-) -> dict:
-    kernel_stats_files = list(output_dir.glob("**/*kernel_stats.csv"))
-    if kernel_stats_files:
-        return parse_rocprof3_csv(kernel_stats_files[0], kernel_name_pattern)
-    
-    raise FileNotFoundError(
-        f"No CSV files found in {output_dir}. "
-    )

@@ -7,7 +7,8 @@ from typing import List, Optional, Callable, Any, TYPE_CHECKING
 from dataclasses import dataclass
 
 if TYPE_CHECKING:
-    from kernel_bench.core.template import KernelBenchmark, batch_benchmark
+    from kernel_bench.core.template import KernelBenchmark
+
 from kernel_bench.utils.bench_utils import BenchmarkResult
 from .candidate import CandidateConfig
 
@@ -217,6 +218,9 @@ class ExecutionEngine:
         
         # Calculate timeout
         timeout = self.base_exec_time * 3 if self.base_exec_time else None
+        
+        # Import batch_benchmark here to avoid circular import
+        from kernel_bench.core.template import batch_benchmark
         
         # Batch benchmark
         start_time = time.time()
