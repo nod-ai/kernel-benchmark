@@ -535,6 +535,7 @@ export interface TrackerData {
   backends: string[];
   machine: string;
   schedule: ScheduleData;
+  branch: string;
   isActive?: boolean;
   createdAt?: string;
 }
@@ -711,5 +712,22 @@ export async function fetchTrackerPerformanceTimeline(
     return await response.json();
   } catch (error) {
     throw new Error(`Failed to fetch tracker performance timeline: ${error}`);
+  }
+}
+
+export async function fetchBranches(): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/branches`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    const branches: string[] = await response.json();
+    return branches;
+  } catch (error) {
+    throw new Error(`Failed to fetch branches: ${error}`);
   }
 }

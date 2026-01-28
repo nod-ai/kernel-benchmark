@@ -132,6 +132,7 @@ class Tracker:
     backends: list[str]
     machine: str
     schedule: Schedule
+    branch: str
     isActive: bool = True
     createdAt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 

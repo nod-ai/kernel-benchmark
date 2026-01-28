@@ -40,6 +40,7 @@ class RunTrigger:
     timestamp: datetime  # When trigger was created
     metadata: dict[str, Any]  # Type-specific metadata
     machine: str  # Machine for this run (required)
+    branch: str  # Branch to run on (required)
 
     # Set after workflow dispatch
     dispatchedAt: Optional[datetime] = None

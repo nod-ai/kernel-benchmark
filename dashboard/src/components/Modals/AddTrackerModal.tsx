@@ -15,6 +15,7 @@ import KernelSelector from "./blocks/KernelSelector";
 import ScheduleSelector, { type Schedule } from "./blocks/ScheduleSelector";
 import MachineSelector from "./blocks/MachineSelector";
 import BackendSelector from "./blocks/BackendSelector";
+import BranchSelector from "./blocks/BranchSelector";
 import { simplifyNameForUrl, toMMDDYYYY, toYYYYMMDD } from "../../utils/utils";
 
 export interface TrackerConfig {
@@ -25,6 +26,7 @@ export interface TrackerConfig {
   backends: string[]; // Array of backends
   machine: string;
   schedule: Schedule;
+  branch: string;
 }
 
 interface AddTrackerModalProps {
@@ -57,6 +59,7 @@ export default function AddTrackerModal({
     timeOfDay: "09:00",
     daysOfWeek: [],
   });
+  const [branch, setBranch] = useState("main");
 
   const isEditing = !!editingTracker;
   const simplifiedName = simplifyNameForUrl(name);
@@ -79,6 +82,7 @@ export default function AddTrackerModal({
       setMachine(editingTracker.machine);
       setKernelSelection(editingTracker.kernelSelection);
       setSelectedBackends(editingTracker.backends);
+      setBranch(editingTracker.branch || "main");
       // Convert dates from MM-DD-YYYY to YYYY-MM-DD for HTML inputs
       const scheduleForForm: Schedule = {
         ...editingTracker.schedule,
@@ -125,6 +129,7 @@ export default function AddTrackerModal({
       timeOfDay: "09:00",
       daysOfWeek: [],
     });
+    setBranch("main");
   };
 
   const handleConfirm = async () => {
@@ -145,6 +150,7 @@ export default function AddTrackerModal({
         backends: selectedBackends,
         machine,
         schedule: scheduleForBackend,
+        branch,
       };
 
       await onConfirm(config);
@@ -269,6 +275,13 @@ export default function AddTrackerModal({
               <MachineSelector
                 machine={machine}
                 onChange={setMachine}
+                disabled={isSubmitting}
+              />
+
+              {/* Branch Selection */}
+              <BranchSelector
+                branch={branch}
+                onChange={setBranch}
                 disabled={isSubmitting}
               />
 

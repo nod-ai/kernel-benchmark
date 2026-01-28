@@ -170,10 +170,10 @@ class RunScheduler:
             # Build workflow inputs
             inputs = _build_workflow_inputs(trigger_type, trigger.metadata, trigger._id)
 
-            # Dispatch to GitHub
+            # Dispatch to GitHub with specified branch
             success = trigger_workflow_dispatch(
                 repo_id="bench",
-                branch_name=BENCH_REPO_BRANCH,
+                branch_name=trigger.branch,
                 workflow_id=workflow_file,
                 inputs=inputs,
             )

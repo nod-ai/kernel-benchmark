@@ -330,6 +330,7 @@ def trigger_pr_workflow():
     # Build metadata for trigger
     metadata = {
         "machine": config_data.get("machine", "mi325"),
+        "branch": config_data.get("branch", "main"),
     }
 
     # Optional PR info for manual runs
@@ -389,6 +390,8 @@ def trigger_manual_workflow():
         return jsonify({"error": "backends must be a non-empty array"}), 400
     if "kernelSelection" not in config_data:
         return jsonify({"error": "Missing required field: kernelSelection"}), 400
+    if "branch" not in config_data or not config_data["branch"]:
+        return jsonify({"error": "Missing required field: branch"}), 400
 
     kernel_selection = config_data["kernelSelection"]
 
@@ -397,6 +400,7 @@ def trigger_manual_workflow():
         "name": config_data["name"],
         "machine": config_data["machine"],
         "backends": config_data["backends"],
+        "branch": config_data["branch"],
     }
 
     # Handle kernel selection
@@ -471,6 +475,8 @@ def tune_kernels():
     # Build metadata for tuning trigger
     metadata = {
         "kernelIds": kernel_ids,
+        "machine": payload.get("machine", "mi325"),
+        "branch": payload.get("branch", "main"),
         "numTrials": payload.get("numTrials", 75),
         "backend": payload.get("backend", "wave"),
     }
@@ -799,6 +805,23 @@ def remove_kernels():
         return f"Error deleting kernel configurations: {str(e)}", 500
 
 
+@app.route("/api/branches", methods=["GET"])
+def get_branches():
+    """Get all branches from kernel-benchmark repository, excluding dependabot branches."""
+    try:
+        repo = get_repo("bench")
+        branches = repo.get_branches()
+        # Filter out dependabot branches
+        branch_names = [
+            branch.name for branch in branches 
+            if not branch.name.startswith("dependabot/")
+        ]
+        return jsonify(branch_names), 200
+    except Exception as e:
+        logger.error(f"Failed to fetch branches: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/trackers", methods=["GET"])
 def get_trackers():
     """Get all trackers."""
@@ -828,6 +851,7 @@ def create_tracker():
             "tags",
             "backends",
             "machine",
+            "branch",
             "schedule",
         ]
         for field in required_fields:
@@ -859,6 +883,7 @@ def create_tracker():
             "backends": data["backends"],
             "machine": data["machine"],
             "schedule": schedule_data,
+            "branch": data["branch"],
             "isActive": data.get("isActive", True),
             "createdAt": datetime.now(timezone.utc),
             "dashboardName": data.get("dashboardName"),
@@ -917,6 +942,7 @@ def update_tracker(tracker_id):
             "backends": data.get("backends", existing_tracker.backends),
             "machine": data.get("machine", existing_tracker.machine),
             "schedule": schedule_data,
+            "branch": data.get("branch", existing_tracker.branch),
             "isActive": data.get("isActive", existing_tracker.isActive),
             "createdAt": existing_tracker.createdAt,
             "dashboardName": data.get("dashboardName", existing_tracker.dashboardName),
@@ -997,6 +1023,7 @@ def trigger_tracker_manually(tracker_id):
             "backends": tracker.backends,
             "machine": tracker.machine,
             "blobName": tracker.blobName,
+            "branch": tracker.branch,
         }
 
         # Use MANUAL_BENCHMARK type so it's treated like a manual run in scheduling

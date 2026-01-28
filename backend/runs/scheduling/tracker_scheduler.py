@@ -104,6 +104,7 @@ class TrackerScheduler:
             "tags": tracker.tags,
             "backends": tracker.backends,
             "machine": tracker.machine,
+            "branch": tracker.branch,
             "blobName": tracker.blobName,
         }
 

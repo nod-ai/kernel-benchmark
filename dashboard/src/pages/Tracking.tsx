@@ -27,6 +27,7 @@ import {
   Cpu,
   Play,
   ExternalLink,
+  GitBranch,
 } from "lucide-react";
 
 interface Tracker {
@@ -38,6 +39,7 @@ interface Tracker {
   backends: string[];
   machine: string;
   schedule: ScheduleData;
+  branch: string;
   isActive: boolean;
   createdAt: Date;
 }
@@ -72,6 +74,7 @@ export default function Tracking() {
           ...t.schedule,
           // Dates are stored as MM-DD-YYYY in backend, keep them as-is for display
         },
+        branch: t.branch,
         isActive: t.isActive ?? true,
         createdAt: t.createdAt ? new Date(t.createdAt) : new Date(),
       }));
@@ -94,6 +97,7 @@ export default function Tracking() {
         backends: config.backends,
         machine: config.machine,
         schedule: config.schedule,
+        branch: config.branch,
         isActive: true,
       };
 
@@ -178,6 +182,7 @@ export default function Tracking() {
       backends: tracker.backends,
       machine: tracker.machine,
       schedule: tracker.schedule,
+      branch: tracker.branch,
     };
     setEditingTracker(trackerConfig);
     setIsModalOpen(true);
@@ -311,28 +316,25 @@ export default function Tracking() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={(e) => handleEditTracker(tracker, e)}
-                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit tracker"
-                      >
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleTriggerTracker(tracker);
                         }}
-                        className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                        className="p-2 bg-green-100 text-green-700 hover:bg-green-200 hover:text-green-800 rounded-lg transition-colors"
                         title="Run now"
                       >
-                        <Play className="w-5 h-5" />
+                        <Play className="w-5 h-5 fill-current" />
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleTrackerStatus(tracker.id);
                         }}
-                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className={`p-2 rounded-lg transition-colors ${
+                          tracker.isActive
+                            ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                            : "text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        }`}
                         title={tracker.isActive ? "Pause tracker" : "Resume tracker"}
                       >
                         {tracker.isActive ? (
@@ -340,6 +342,13 @@ export default function Tracking() {
                         ) : (
                           <PlayCircle className="w-5 h-5" />
                         )}
+                      </button>
+                      <button
+                        onClick={(e) => handleEditTracker(tracker, e)}
+                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit tracker"
+                      >
+                        <Edit className="w-5 h-5" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -405,6 +414,19 @@ export default function Tracking() {
                         </p>
                         <p className="text-sm font-medium text-gray-900">
                           {tracker.machine}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Branch */}
+                    <div className="flex items-start gap-3">
+                      <GitBranch className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-gray-500 mb-1">
+                          BRANCH
+                        </p>
+                        <p className="text-sm font-medium text-gray-900 font-mono">
+                          {tracker.branch}
                         </p>
                       </div>
                     </div>

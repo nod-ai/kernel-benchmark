@@ -17,12 +17,14 @@ import {
 import KernelSelector from "./blocks/KernelSelector";
 import MachineSelector from "./blocks/MachineSelector";
 import BackendSelector from "./blocks/BackendSelector";
+import BranchSelector from "./blocks/BranchSelector";
 
 export interface ManualBenchmarkConfig {
   name: string;
   machine: string;
   backends: string[];
   kernelSelection: KernelSelection;
+  branch: string;
 }
 
 interface ManualBenchmarkModalProps {
@@ -46,6 +48,7 @@ export default function ManualBenchmarkModal({
   const [kernelSelection, setKernelSelection] = useState<KernelSelection>({
     type: "all-quick",
   });
+  const [branch, setBranch] = useState("main");
 
   // Load kernels data when modal opens
   useEffect(() => {
@@ -61,6 +64,7 @@ export default function ManualBenchmarkModal({
       setMachine("mi325");
       setSelectedBackends([]);
       setKernelSelection({ type: "all-quick" });
+      setBranch("main");
     }
   }, [isOpen]);
 
@@ -90,6 +94,7 @@ export default function ManualBenchmarkModal({
         machine,
         backends: selectedBackends,
         kernelSelection,
+        branch,
       };
       await onConfirm(config);
       onClose();
@@ -186,6 +191,13 @@ export default function ManualBenchmarkModal({
               <BackendSelector
                 selectedBackends={selectedBackends}
                 onChange={setSelectedBackends}
+                disabled={isSubmitting}
+              />
+
+              {/* Branch Selection */}
+              <BranchSelector
+                branch={branch}
+                onChange={setBranch}
                 disabled={isSubmitting}
               />
 

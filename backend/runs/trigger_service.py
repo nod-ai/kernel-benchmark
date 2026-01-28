@@ -60,7 +60,7 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
 
     Args:
         trigger_type: Type of trigger (PR_UPDATE, MANUAL_BENCHMARK, etc.)
-        metadata: Type-specific metadata dictionary (MUST include "machine")
+        metadata: Type-specific metadata dictionary (MUST include "machine" and "branch")
 
     Returns:
         Trigger ID if successful, None if failed
@@ -73,13 +73,15 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
             "branchName": "feature/opt",
             "headSha": "abc123",
             "commits": 5,
-            "machine": "mi325"  # REQUIRED
+            "machine": "mi325",  # REQUIRED
+            "branch": "main"  # REQUIRED
         })
 
         # Manual benchmark
         trigger_run(TriggerType.MANUAL_BENCHMARK, {
             "tags": ["validation"],
-            "machine": "mi325x"  # REQUIRED
+            "machine": "mi325x",  # REQUIRED
+            "branch": "main"  # REQUIRED
         })
     """
     trigger_id = str(uuid4())
@@ -90,20 +92,26 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
         if not machine:
             raise ValueError("machine is required in metadata")
 
+        # Extract branch from metadata (REQUIRED)
+        branch = metadata.get("branch")
+        if not branch:
+            raise ValueError("branch is required in metadata")
+
         # Create trigger in database with status=QUEUED
         # RunScheduler will dispatch it when machine is available
         trigger = RunTrigger(
             _id=trigger_id,
             type=trigger_type.value,
-            status=TriggerStatus.QUEUED.value,  # Changed from PENDING
+            status=TriggerStatus.QUEUED.value,
             timestamp=datetime.now(timezone.utc),
             metadata=metadata,
-            machine=machine,  # Required field
+            machine=machine,
+            branch=branch,
         )
         RunTriggerDb.upsert(trigger)
         logger.info(
             f"Queued trigger {trigger_id} of type {trigger_type.value} "
-            f"for machine {machine}"
+            f"for machine {machine} on branch {branch}"
         )
 
         return trigger_id
@@ -327,21 +335,23 @@ def _find_latest_tuned_configs(problems: list[KernelConfig]) -> list[TuningConfi
     return [config for config in problem_configs.values() if config]
 
 
-def _dispatch_workflow(workflow_file: str, inputs: dict[str, Any]) -> bool:
+def _dispatch_workflow(workflow_file: str, inputs: dict[str, Any], branch_name: Optional[str] = None) -> bool:
     """
     Dispatches a workflow to GitHub Actions.
 
     Args:
         workflow_file: Workflow filename (e.g., "short_bench.yml")
         inputs: Workflow inputs dictionary
+        branch_name: Optional branch name to use (defaults to BENCH_REPO_BRANCH)
 
     Returns:
         True if dispatch succeeded, False otherwise
     """
     try:
+        target_branch = branch_name or BENCH_REPO_BRANCH
         return trigger_workflow_dispatch(
             repo_id="bench",
-            branch_name=BENCH_REPO_BRANCH,
+            branch_name=target_branch,
             workflow_id=workflow_file,
             inputs=inputs,
         )
