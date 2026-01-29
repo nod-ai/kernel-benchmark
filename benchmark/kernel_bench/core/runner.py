@@ -6,10 +6,7 @@ import json
 from os import PathLike
 from typing import List, Optional
 from kernel_bench.config.base import OpConfig
-from kernel_bench.tuning.hyperparam.paradigm.constrained_random import (
-    ConstrainedRandomTuner,
-)
-from kernel_bench.tuning.hyperparam.paradigm.tree import MultiPassTreeTuner
+from kernel_bench.tuning import get_paradigm
 from kernel_bench.tuning.hyperparam.parallel_tuning import ParallelTuner
 from kernel_bench.tuning.loaders import load_tuning_configs_from_json
 from kernel_bench.utils.print_utils import get_logger
@@ -155,8 +152,15 @@ class BenchmarkRunner:
     def tune_kernels(
         self,
         num_trials: int = 100,
+        paradigm_name: str = "grid",
     ):
-        """Runs benchmarks sequentially after parallel compilation."""
+        """
+        Run parallel tuning using specified paradigm.
+
+        Args:
+            num_trials: Number of tuning trials per configuration
+            paradigm_name: Name of tuning paradigm to use (e.g., 'grid', 'bayesian', 'random', 'adaptive')
+        """
         self._load_benches()
 
         tuning_result_basename = f"{self.kernel_type}_{self.backend}_tuned_results.json"
@@ -164,7 +168,16 @@ class BenchmarkRunner:
             self.path_config.tuning_for(self.kernel_type) / tuning_result_basename
         )
 
-        tuning_paradigm = ConstrainedRandomTuner()
+        # Get paradigm from registry
+        try:
+            tuning_paradigm = get_paradigm(paradigm_name)
+            self.logger.info(
+                f"Using tuning paradigm: {paradigm_name} ({tuning_paradigm.get_name()})"
+            )
+        except ValueError as e:
+            self.logger.error(str(e))
+            raise
+
         tuner = ParallelTuner(tuning_paradigm)
         tuner.tune_kernels(
             benches=self._benches,

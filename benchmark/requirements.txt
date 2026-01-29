@@ -11,3 +11,4 @@ triton
 setuptools
 dataclass-wizard
 einops
+rich

@@ -10,6 +10,7 @@ from kernel_bench.core.runner import BenchmarkRunner
 from kernel_bench.core.base import LOAD_PROBLEMS, BENCHMARKS, CONFIG_CLASSES
 from kernel_bench.utils.paths import PathConfig
 from kernel_bench.utils.print_utils import get_logger
+from kernel_bench.tuning import get_paradigm_help
 
 if __name__ == "__main__":
     os.environ["WAVE_CACHE_ON"] = "0"
@@ -84,6 +85,17 @@ if __name__ == "__main__":
         help="Number of tuning trials.",
     )
     parser.add_argument(
+        "--tuning_paradigm",
+        type=str,
+        default="grid",
+        help="Tuning paradigm to use (bayesian, random, grid, adaptive). Use --list_paradigms to see all available.",
+    )
+    parser.add_argument(
+        "--list_paradigms",
+        action="store_true",
+        help="List all available tuning paradigms and exit.",
+    )
+    parser.add_argument(
         "--use_tuned",
         type=str,
         default=None,
@@ -108,6 +120,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    # Handle --list_paradigms flag
+    if args.list_paradigms:
+        print(get_paradigm_help())
+        exit(0)
 
     logger = get_logger()
 
@@ -208,6 +225,7 @@ if __name__ == "__main__":
             if args.tune:
                 bench.tune_kernels(
                     num_trials=args.num_trials,
+                    paradigm_name=args.tuning_paradigm,
                 )
                 # bench.tune_scheduling(max_iterations=args.num_trials)
 

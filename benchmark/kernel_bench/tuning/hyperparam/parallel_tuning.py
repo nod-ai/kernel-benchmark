@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import time
+from typing import TYPE_CHECKING
 from dataclass_wizard import asdict
 from multiprocessing import Process, Queue
 import traceback
@@ -15,8 +16,10 @@ from typing import (
 import queue
 import torch
 from tqdm import tqdm
+from rich.console import Console
+if TYPE_CHECKING:
+    from kernel_bench.core.template import KernelBenchmark
 
-from kernel_bench.core.template import KernelBenchmark
 from kernel_bench.utils.print_utils import (
     get_logger,
     set_global_handler,
@@ -24,10 +27,11 @@ from kernel_bench.utils.print_utils import (
 )
 from .paradigm import TuningContext, TuningParadigm, TuningResult
 from kernel_bench.utils.parallel_utils.progress_visualizer import (
-    ParallelProgressManager,
+    RichParallelProgressManager,
+    WorkerMessage,
 )
-from kernel_bench.utils.parallel_utils.progress_visualizer import WorkerMessage
 from kernel_bench.utils.parallel_utils.progress_context import ProgressEvent
+from ..visualization import display_hyperparameters_table, display_tuning_summary
 
 
 def worker_process(
@@ -37,8 +41,6 @@ def worker_process(
 
     def progress_callback(event: ProgressEvent):
         message_queue.put(WorkerMessage(type="progress", data=event))
-
-    set_tqdm_handler()
 
     try:
         result = tuning_paradigm.tune(context, progress_callback)
@@ -71,10 +73,11 @@ class ParallelTuner:
         self.results = {}
         self.results_lock = threading.Lock()
         self.logger = get_logger()
+        self.console = Console()
 
     def tune_kernels(
         self,
-        benches: List[KernelBenchmark],
+        benches: List["KernelBenchmark"], 
         tuning_result_path: os.PathLike,
         num_iterations: int = 1,
         num_trials: int = 100,
@@ -82,6 +85,9 @@ class ParallelTuner:
         save_results: bool = True,
     ) -> Dict[str, Any]:
         """Run parallel tuning for multiple kernel configurations."""
+        # Display hyperparameters before tuning
+        display_hyperparameters_table(benches, self.console)
+
         try:
             torch.multiprocessing.set_start_method("spawn", force=True)
         except RuntimeError:
@@ -92,8 +98,8 @@ class ParallelTuner:
         total_configs = len(benches)
         num_workers = min(self.num_gpus, total_configs)
 
-        # Setup progress manager
-        progress_manager = ParallelProgressManager(total_configs, num_workers)
+        # Setup progress manager (Rich-based)
+        progress_manager = RichParallelProgressManager(total_configs, num_workers)
         progress_manager.start_main_progress()
 
         # Create message queue for worker communication
@@ -253,6 +259,9 @@ class ParallelTuner:
         if save_results:
             with open(tuning_result_path, "w") as file:
                 json.dump(self.results, file, indent=4)
+
+        # Display detailed summary
+        display_tuning_summary(self.results, self.console)
 
         return self.results
 
