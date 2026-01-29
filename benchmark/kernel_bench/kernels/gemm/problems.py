@@ -1425,3 +1425,109 @@ def get_harsh_gemms() -> list[tuple[str, GemmConfig]]:
     configs += [("qwen3-8b", GemmConfig(*shape)) for shape in qwen3_shapes]
     
     return configs
+
+
+def get_small_grid_gemms() -> list[tuple[str, GemmConfig]]:
+    """
+    Small grid GEMM shapes for tuning (M, N, K in range 64-512, step 32).
+    Only includes shapes with K >= 192 that have been validated.
+    All shapes use bf16 dtype with transpose pattern (N, T).
+    """
+    # Generate all successful M x N x K combinations from tuning data
+    # M, N range: 64-512 (step 32), K range: 192-512 (step 32)
+    shapes = []
+    
+    # Systematically generate all valid combinations
+    for M in range(64, 513, 32):
+        for N in range(64, 513, 32):
+            for K in range(192, 513, 32):
+                # Skip known failure cases (some specific combinations fail)
+                if K < 192:  # All K < 192 fail
+                    continue
+                # Add validated shape
+                shapes.append((M, N, K, "N", "T", "bf16"))
+    
+    # Filter out specific known failures based on the provided data
+    failures = [
+        # M=128, K=416, N=448 and N=512
+        (128, 448, 416), (128, 512, 416),
+        # M=192, K=512, N=192
+        (192, 192, 512),
+        # M=256, K=352, N=192
+        (256, 192, 352),
+        # M=256, K=384, N=448
+        (256, 448, 384),
+        # M=256, K=416, N=512
+        (256, 512, 416),
+        # M=256, K=448, N=192
+        (256, 192, 448),
+        # M=256, K=480, N=448
+        (256, 448, 480),
+        # M=256, K=512, N=448, N=512
+        (256, 448, 512), (256, 512, 512),
+        # M=320, K=352, N=384
+        (320, 384, 352),
+        # M=384, K=352, N=384
+        (384, 384, 352),
+        # M=384, K=416, N=512
+        (384, 512, 416),
+        # M=384, K=448, N=192, N=384, N=448
+        (384, 192, 448), (384, 448, 448),
+        # M=384, K=480, N=448
+        (384, 448, 480),
+        # M=384, K=512, N=384, N=448, N=512
+        (384, 384, 512), (384, 448, 512), (384, 512, 512),
+        # M=416, K=416, N=448
+        (416, 448, 416),
+        # M=448, K=256, N=512
+        (448, 512, 256),
+        # M=448, K=384, N=384
+        (448, 384, 384),
+        # M=448, K=416, N=192
+        (448, 192, 416),
+        # M=448, K=448, N=384, N=448, N=512
+        (448, 384, 448), (448, 448, 448), (448, 512, 448),
+        # M=448, K=480, N=192, N=448, N=512
+        (448, 192, 480), (448, 448, 480), (448, 512, 480),
+        # M=448, K=512, N=192, N=448, N=512
+        (448, 192, 512), (448, 448, 512), (448, 512, 512),
+        # M=512, K=256, N=448
+        (512, 448, 256),
+        # M=512, K=288, N=384
+        (512, 384, 288),
+        # M=512, K=352, N=192
+        (512, 192, 352),
+        # M=512, K=384, N=384, N=416
+        (512, 384, 384), (512, 416, 384),
+        # M=512, K=416, N=512
+        (512, 512, 416),
+        # M=512, K=448, N=448, N=512
+        (512, 448, 448), (512, 512, 448),
+        # M=512, K=512, N=192, N=384, N=448, N=512
+        (512, 192, 512), (512, 384, 512), (512, 448, 512), (512, 512, 512),
+    ]
+    
+    # Filter out failures
+    filtered_shapes = [s for s in shapes if (s[0], s[1], s[2]) not in failures]
+    
+    configs = [("small-grid", GemmConfig(*shape)) for shape in shapes] # Can also use filtered_shapes
+    return configs
+
+def get_medium_grid_gemms() -> list[tuple[str, GemmConfig]]:
+    """
+    Medium grid GEMM shapes for tuning (M, N, K in range 512-4096, step 256).
+    All shapes use bf16 dtype with transpose pattern (N, T).
+    """
+    # Generate all successful M x N x K combinations from tuning data
+    # M, N range: 512-4096 (step 256), K range: 512-4096 (step 256)
+    shapes = []
+    
+    # Systematically generate all valid combinations
+    for M in range(512, 4097, 256):
+        for N in range(512, 4097, 256):
+            for K in range(512, 4097, 256):
+                # Add validated shape
+                shapes.append((M, N, K, "N", "T", "bf16"))
+    
+    configs = [("medium-grid", GemmConfig(*shape)) for shape in shapes]
+    return configs

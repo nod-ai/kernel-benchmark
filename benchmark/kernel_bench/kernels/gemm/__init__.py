@@ -52,6 +52,8 @@ from .problems import (
     get_gemm_configs,
     get_meta_gemms,
     get_paper_gemms,
+    get_small_grid_gemms,
+    get_medium_grid_gemms,
     get_tk_gemm_configs,
     get_b200_gemm_configs,
     get_trial_configs,
@@ -60,13 +62,14 @@ from .problems import (
 
 def get_default_gemm_configs(kernel_type: str, backend_name: str):
     configs = []
-    configs += get_meta_gemms()
-    configs += get_gemm_configs("f16")
-    configs += get_gemm_configs("bf16")
-    configs += get_trial_configs()
-    configs += get_gemm_configs("f8")
-    configs += get_paper_gemms()
-    configs += get_80k_gemm_configs(100)
+    # configs += get_meta_gemms()
+    # configs += get_gemm_configs("f16")
+    # configs += get_gemm_configs("bf16")
+    # configs += get_trial_configs()
+    # configs += get_gemm_configs("f8")
+    # configs += get_paper_gemms()
+    # configs += get_80k_gemm_configs(100)
+    configs += get_medium_grid_gemms()
     return configs
 
 
