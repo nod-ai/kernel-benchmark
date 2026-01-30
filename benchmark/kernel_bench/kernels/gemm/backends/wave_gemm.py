@@ -1,16 +1,9 @@
-from dataclasses import replace
 from math import ceil
 import traceback
-from typing import override, Optional
-from os import PathLike
+from typing import override
 import torch
 import warnings
 from torch.testing import assert_close
-import csv
-import re
-import subprocess
-from io import StringIO
-from pathlib import Path
 
 # Import guards for backend-specific dependencies
 WAVE_AVAILABLE = False
@@ -40,6 +33,7 @@ from ..gemm_utils import GemmConfig
 
 class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
+    kernel_regex = "gemm_prefetch"
 
     def validate_config(self):
         if not WAVE_AVAILABLE:
@@ -81,11 +75,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                     MMAType.F32_32x32x16_F16,
                     MMAType.F32_16x16x32_F16,
                 ] + mfma_options
-        
-        if self.config.dtype == "bf16":
-            mfma_options = [
-                MMAType.F32_16x16x32_F16,
-            ]
 
         self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
@@ -95,32 +84,20 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         )
         self.BLOCK_M = self.add_param(
             "BLOCK_M",
-            IntegerBounds(min=32, max=min(256, self.config.M), step=32),
-            initial_value=64,
+            IntegerBounds(min=1, max=min(512, self.config.M), step=8),
+            initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_N = self.add_param(
             "BLOCK_N",
-            IntegerBounds(min=32, max=min(256, self.config.N), step=32),
-            initial_value=64,
+            IntegerBounds(min=1, max=min(512, self.config.N), step=8),
+            initial_value=256,
             clamp_value=True,
         )
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
-            IntegerBounds(min=32, max=min(512, self.config.K), step=32),
-            initial_value=64,
-            clamp_value=True,
-        )
-        # Compute max unroll factor: (K // BLOCK_K) - 2
-        # Use minimum BLOCK_K to get maximum possible iterations (conservative upper bound)
-        # This ensures the unroll factor is valid across all possible BLOCK_K values
-        max_unroll = max(
-            1, (self.config.K // 32) - 2
-        )  # Assuming 32 is the minimum BLOCK_K
-        self.UNROLL_FACTOR = self.add_param(
-            "UNROLL_FACTOR",
-            IntegerBounds(min=1, max=max_unroll, step=1),
-            initial_value=30,
+            IntegerBounds(min=1, max=min(256, self.config.K), step=8),
+            initial_value=128,
             clamp_value=True,
         )
         # self.NUM_WAVES = self.add_param(
@@ -129,11 +106,11 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         #     initial_value=4,
         #     clamp_value=True,
         # )
-        # self.USE_GATHER_TO_LDS = self.add_param(
-        #     "USE_GATHER_TO_LDS",
-        #     CategoricalBounds([False, True]),
-        #     initial_value=0,
-        # )
+        self.USE_GATHER_TO_LDS = self.add_param(
+            "USE_GATHER_TO_LDS",
+            CategoricalBounds([False, True]),
+            initial_value=0,
+        )
 
         # max_wg_m = ceil(self.config.M / 16) - 1
         # self.GROUP_SIZE_M = self.add_param(
@@ -146,9 +123,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         shared_mem_limit_bytes = get_shared_memory_limit(self.device_ctx.hip_target)
         bytes_per_el = dtype_spec.num_bytes()
         shared_memory_constraint = (
-            (self.BLOCK_M * self.BLOCK_K + self.BLOCK_N * self.BLOCK_K)
-        * bytes_per_el * 3 - shared_mem_limit_bytes
-        )
+            (self.BLOCK_M + 4) * self.BLOCK_K + (self.BLOCK_N + 4) * self.BLOCK_K
+        ) * bytes_per_el - shared_mem_limit_bytes
         self.add_constraint(shared_memory_constraint, "shared_memory_limit")
 
         # num_wg_m = sympy.ceiling(self.config.M / self.BLOCK_M)
@@ -157,14 +133,14 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
 
     @override
     def load_wave_kernel(self):
-        if self.config.dtype == "bf16":
-            return self._load_triple_buffer_kernel()
-        elif self.config.dtype == "f16":
-            return self._load_reordered_gemm_kernel()
+        config = self.config
+        if config.dtype == "f8":
+            input_dtype = self.device_ctx.dtype_to_torch("f16")
+            quantized_dtype = self.device_ctx.dtype_to_torch(config.dtype)
         else:
-            raise ValueError(f"Unsupported dtype: {self.config.dtype}")
+            input_dtype = self.device_ctx.dtype_to_torch(config.dtype)
+            quantized_dtype = None
 
-    def _load_reordered_gemm_kernel(self):
         base_gemm, hyperparams = get_reordered_matmul(
             self.config.M,
             self.config.N,
@@ -184,230 +160,11 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
 
-    def _load_triple_buffer_kernel(self):
-        """Load custom GEMM kernel with manual scheduling"""
-        config = self.config
-        mfma_variant = MMAType.F32_16x16x32_F16
-
-        # Determine dtype for kernel
-        if config.dtype == "f8":
-            kernel_dtype = tkl.f16
-        elif config.dtype == "bf16":
-            kernel_dtype = tkl.bf16
-        else:
-            kernel_dtype = tkl.f16
-
-        # Symbol definitions
-        M = tkl.sym.M
-        N = tkl.sym.N
-        K = tkl.sym.K
-        BLOCK_M = tkl.sym.BLOCK_M
-        BLOCK_N = tkl.sym.BLOCK_N
-        BLOCK_K = tkl.sym.BLOCK_K
-        ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-        ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
-        UNROLL_FACTOR = tkl.sym.UNROLL_FACTOR
-
-        # Basic constraints needed for compilation
-        constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
-        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 1)]
-        constraints += [tkw.TilingConstraint(K, BLOCK_K)]
-        constraints += [tkw.WaveConstraint(M, BLOCK_M / 4)]
-        constraints += [tkw.WaveConstraint(N, BLOCK_N / 2)]
-
-        constraints += [
-            tkw.HardwareConstraint(
-                threads_per_wave=64,
-                mma_type=mfma_variant,
-            )
-        ]
-
-        # Define the kernel
-        @tkw.wave(constraints)
-        def gemm_prefetch(
-            a: tkl.Memory[M, K, ADDRESS_SPACE, kernel_dtype],
-            b: tkl.Memory[N, K, ADDRESS_SPACE, kernel_dtype],
-            c: tkl.Memory[M, N, ADDRESS_SPACE_0, tkl.f32],
-        ):
-            c_reg = tkl.Register[M, N, tkl.f32](0.0)
-
-            @tkw.iterate(K, init_args=[c_reg], tag="k_loop")
-            def repeat(
-                acc: tkl.Register[M, N, tkl.f32],
-            ) -> tkl.Register[M, N, tkl.f32]:
-                a_reg = tkw.read(a, tag="read_a")
-                b_reg = tkw.read(b, tag="read_b")
-                acc = tkw.mma(a_reg, b_reg, acc, tag="mma")
-                return acc
-
-            tkw.write(repeat, c)
-
-        # Define the schedule
-        @wave_schedule.wave_schedule()
-        def async_gemm_schedule_triple_buffering():
-            """
-            Scheduling with cluster-based reordering and ping-pong buffering.
-            """
-            # Get nodes to be manipulated in the schedule.
-            k_loop = tkw.get_node_by_tag("k_loop")
-
-            # Get all nodes with tag "read_a" - includes both Read and GatherToLDS nodes
-            all_read_a = tkw.get_node_by_tag("read_a")
-            global_to_shared_a = tkw.filter_nodes(all_read_a, node_type=tkw.GatherToLDS)
-            shared_load_a = tkw.filter_nodes(all_read_a, node_type=tkw.Read)
-
-            # Get all nodes with tag "read_b" - includes both Read and GatherToLDS nodes
-            all_read_b = tkw.get_node_by_tag("read_b")
-            global_to_shared_b = tkw.filter_nodes(all_read_b, node_type=tkw.GatherToLDS)
-            shared_load_b = tkw.filter_nodes(all_read_b, node_type=tkw.Read)
-
-            mma = tkw.get_node_by_tag("mma")
-
-            pipeline_loop = tkw.pipeline(k_loop)
-            # First, create the basic 3-stage pipeline
-            with pipeline_loop as pl:
-                pl.set_stage(
-                    [
-                        (global_to_shared_a, global_to_shared_b),
-                        (),
-                    ],
-                )
-                pl.set_stage(
-                    [
-                        (),
-                        (),
-                    ],
-                )
-                pl.set_stage(
-                    [
-                        (shared_load_a, shared_load_b),
-                        (mma,),
-                    ],
-                )
-
-            # Now apply advanced scheduling to the KERNEL stage
-            global_to_shared_a = tkw.filter_nodes(
-                global_to_shared_a, subgraph=pipeline_loop.KERNEL
-            )
-            shared_load_a = tkw.filter_nodes(
-                shared_load_a, subgraph=pipeline_loop.KERNEL
-            )
-            global_to_shared_b = tkw.filter_nodes(
-                global_to_shared_b, subgraph=pipeline_loop.KERNEL
-            )
-            shared_load_b = tkw.filter_nodes(
-                shared_load_b, subgraph=pipeline_loop.KERNEL
-            )
-            mma = tkw.filter_nodes(mma, subgraph=pipeline_loop.KERNEL)
-
-            mma_0, mma_1 = tkw.partition_by_dim(mma, dim=K, num_partitions=2)
-            shared_load_a_0, shared_load_a_1 = tkw.partition_by_dim(
-                shared_load_a, dim=K, num_partitions=2
-            )
-            shared_load_b_0, shared_load_b_1 = tkw.partition_by_dim(
-                shared_load_b, dim=K, num_partitions=2
-            )
-
-            independent_global_count = len(global_to_shared_a) + len(global_to_shared_b)
-
-            clusters = [
-                tkw.cluster(
-                    [
-                        tkw.MemoryCounterWaitBarrier(load=independent_global_count),
-                        tkw.WorkgroupBarrier(),
-                        shared_load_a_0,
-                        shared_load_b_0,
-                        tkw.SchedulingBarrier([]),
-                        global_to_shared_a,
-                        global_to_shared_b,
-                        tkw.SchedulingBarrier([]),
-                        tkw.WorkgroupBarrier(),
-                        tkw.SchedulingBarrier([]),
-                    ],
-                ),
-                tkw.cluster(
-                    [
-                        tkw.SetWavePrio(1),
-                        mma_0,
-                        tkw.SetWavePrio(0),
-                        tkw.SchedulingBarrier([]),
-                        tkw.WorkgroupBarrier(),
-                        tkw.SchedulingBarrier([]),
-                    ],
-                ),
-                tkw.cluster(
-                    [
-                        shared_load_a_1,
-                        shared_load_b_1,
-                        tkw.SchedulingBarrier([]),
-                        tkw.WorkgroupBarrier(),
-                        tkw.SchedulingBarrier([]),
-                    ],
-                ),
-                tkw.cluster(
-                    [
-                        tkw.SetWavePrio(1),
-                        mma_1,
-                        tkw.SetWavePrio(0),
-                        tkw.SchedulingBarrier([]),
-                    ],
-                ),
-            ]
-
-            # Apply the cluster-based reordering to the KERNEL stage
-            tkw.reorder_graph(pipeline_loop.KERNEL, clusters)
-
-            # Apply staggering waves scheduling
-            tkw.stagger(pipeline_loop.KERNEL)
-
-            tkw.unroll(pipeline_loop.KERNEL, self.UNROLL_FACTOR.value)
-
-        # Prepare hyperparameters
-        hyperparams = {
-            M: config.M,
-            N: config.N,
-            K: config.K,
-            BLOCK_M: self.BLOCK_M.value,
-            BLOCK_N: self.BLOCK_N.value,
-            BLOCK_K: self.BLOCK_K.value,
-            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-            ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
-            UNROLL_FACTOR: self.UNROLL_FACTOR.value,
-        }
-
-        return WaveTemplate(
-            launchable=gemm_prefetch,
-            hyperparams=hyperparams,
-            schedule=async_gemm_schedule_triple_buffering,
-        )
-
     @override
     def extra_compile_options(self):
         use_scheduling = SchedulingType.NONE
         supports_g2s = self.device_ctx.hip_target.startswith("gfx95")
-        use_g2s = supports_g2s #and self.USE_GATHER_TO_LDS.value
-
-        if self.config.dtype == "bf16":
-            options = WaveCompileOptions(
-                canonicalize=True,
-                schedule=use_scheduling,
-                use_buffer_ops=True,
-                use_global_to_shared=use_g2s,
-                waves_per_eu=1,
-                minimize_shared_allocs=False,
-            )
-
-            options.postprocess = """
-            module attributes {transform.with_named_sequence} {
-                transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
-                    %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
-                    transform.loop.unroll %0 { factor = %%UNROLL_FACTOR%% } : !transform.any_op
-                    transform.yield
-                }
-            }
-            """
-
-            return options
+        use_g2s = supports_g2s and self.USE_GATHER_TO_LDS.value
 
         return WaveCompileOptions(
             canonicalize=True,
@@ -475,84 +232,4 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
-
-    @override
-    def bench_vmfb(self, vmfb_filename, device, num_iterations=3, timeout=None):
-        """
-        Run VMFB benchmark and automatically parse rocprof3 CSV stats.
         
-        This override adds automatic parsing of rocprof3 stats after the benchmark completes.
-        """
-        # Call parent's bench_vmfb to execute the benchmark with profiling
-        result = super().bench_vmfb(vmfb_filename, device, num_iterations, timeout)
-        
-        # If benchmark succeeded and profiling was done, try to parse CSV stats
-        if result.ok:
-            try:
-                stats = self.get_profiling_stats(kernel_name_pattern="gemm_prefetch")
-                if stats and 'mean_duration_us' in stats:
-                    # Use GPU timing from rocprof3 instead of IREE timing
-                    gpu_runtime_us = stats['mean_duration_us']
-                    
-                    # Recalculate performance metrics with GPU timing
-                    result = self.get_bench_result(gpu_runtime_us, True)
-                    
-            except Exception as e:
-                # Fall back to IREE timing if rocprof3 parsing fails
-                self.logger.debug(f"Could not parse rocprof3 stats, using IREE timing: {e}")
-        
-        return result
-    
-    def get_profiling_stats(
-        self,
-        profiler_dump_path: Optional[Path] = None,
-        kernel_name_pattern: Optional[str] = "gemm_prefetch"
-    ) -> dict:
-
-        if profiler_dump_path is None:
-            base_name = self.title or self.config.get_name()
-            profiler_dump_path = (
-                self.path_config.dump_dir_for(self.backend) / "thread_trace" / base_name
-            )
-        
-        try:
-            stats = parse_rocprof3_from_output_dir(profiler_dump_path, kernel_name_pattern)
-            return stats
-        except Exception as e:
-            self.logger.error(f"Error parsing profiling stats: {e}")
-            return {}
-
-def parse_rocprof3_csv(csv_path: Path, kernel_name_pattern: Optional[str] = "gemm_prefetch") -> dict:
-    if not csv_path.exists():
-        raise FileNotFoundError(f"rocprof3 CSV file not found: {csv_path}")
-    
-    with open(csv_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            # Match kernel by name pattern
-            if 'Name' in row and (not kernel_name_pattern or kernel_name_pattern in row['Name']):
-                if 'AverageNs' not in row:
-                    raise ValueError(f"Found kernel but no 'AverageNs' column")
-                
-                average_ns = float(row['AverageNs'])
-                
-                return {
-                    'kernel_name': row['Name'],
-                    'mean_duration_us': average_ns / 1000.0,
-                    'total_calls': int(row.get('Calls', 1)),
-                }
-    
-    raise ValueError(f"No kernel matching '{kernel_name_pattern}' found in {csv_path}")
-
-
-def parse_rocprof3_from_output_dir(
-    output_dir: Path,
-    kernel_name_pattern: Optional[str] = "gemm_prefetch"
-) -> dict:
-    kernel_stats_files = list(output_dir.glob("**/*kernel_stats.csv"))
-    if kernel_stats_files:
-        return parse_rocprof3_csv(kernel_stats_files[0], kernel_name_pattern)
-    
-    raise FileNotFoundError(
-        f"No CSV files found in {output_dir}. "
-    )

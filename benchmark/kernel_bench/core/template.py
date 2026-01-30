@@ -84,6 +84,7 @@ class KernelBenchmark(ABC):
     machine: str
     config: OpConfig
     path_config: PathConfig
+    kernel_regex: str
     title: Optional[str] = None
 
     def __post_init__(self):
@@ -219,6 +220,7 @@ class IREEKernelBenchmark(KernelBenchmark):
             device=device,
             timeout=timeout,
             profiler_dump_path=tt_dump_dir,
+            kernel_regex=self.kernel_regex
         )
         return self.get_bench_result(runtime_us, ok)
 

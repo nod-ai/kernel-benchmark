@@ -4,7 +4,8 @@ from typing import Any, Optional, Sequence
 from typing import List, Tuple
 import iree.runtime as ireert
 import torch
-from kernel_bench.utils.bench_utils import get_rocprofv3_cmd, unit_to_microseconds
+from kernel_bench.utils.bench_utils import unit_to_microseconds
+from kernel_bench.utils.rocprof_utils import *
 from kernel_bench.utils.dtypes.device_context import DeviceContext
 from kernel_bench.utils.paths import clear_dir
 from kernel_bench.utils.print_utils import get_logger
@@ -83,6 +84,7 @@ def bench_kernel_ireert(
     device: Optional[str] = None,
     timeout: Optional[float] = None,
     profiler_dump_path: Optional[os.PathLike] = None,
+    kernel_regex: Optional[str] = None
 ) -> Tuple[float, bool]:
     logger = get_logger()
 
@@ -121,7 +123,21 @@ def bench_kernel_ireert(
         return 0, False
     # logger.info(f"Rocprofv3 for {vmfb_filename}: \n{proc.stderr}")
 
-    return decode_iree_benchmark_output(stdout)
+    runtime_us, ok = decode_iree_benchmark_output(stdout)
+    if ok:
+        try:
+            rocprof_stats = parse_rocprof_us(profiler_dump_path) # TODO: make kernel_name_pattern configurable
+            if rocprof_stats and 'mean_duration_us' in rocprof_stats:
+                runtime_us = rocprof_stats['mean_duration_us']
+        except Exception as e:
+            # Fall back to IREE timing if rocprof3 parsing fails
+            logger.debug(f"Could not parse rocprof3 stats, using IREE timing: {e}")
+
+        return runtime_us, ok
+    else:
+        return 0, False
+
+
 
 
 def decode_iree_benchmark_output(output: str):

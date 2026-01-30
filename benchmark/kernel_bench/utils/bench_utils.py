@@ -198,22 +198,3 @@ def redirect_stderr_to_file(filepath):
             yield
         finally:
             sys.stderr = original_stderr
-
-
-def get_rocprofv3_cmd(dump_path: os.PathLike):
-    return [
-        "rocprofv3",
-        "--kernel-trace",
-        "--kernel-include-regex",
-        "gemm_prefetch",
-        "--att",
-        "--att-library-path",
-        "/root/rocprof-trace-decoder-ubuntu-22.04-0.1.6-Linux/opt/rocm/lib/",
-        "--stats",
-        "TRUE",
-        "-d",
-        f"{dump_path}",
-        "--output-format",
-        "csv",
-        "--",
-    ]
