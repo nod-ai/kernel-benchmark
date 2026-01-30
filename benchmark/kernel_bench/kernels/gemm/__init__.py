@@ -52,7 +52,7 @@ from .problems import (
     get_gemm_configs,
     get_meta_gemms,
     get_paper_gemms,
-    get_harsh_gemms,
+    get_model_gemms,
     get_small_grid_gemms,
     get_medium_grid_gemms,
     get_tk_gemm_configs,
