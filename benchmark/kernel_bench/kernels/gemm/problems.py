@@ -1384,7 +1384,7 @@ def get_meta_gemms() -> list[tuple[str, GemmConfig]]:
     configs += [("meta-4-shapes", GemmConfig(*shape)) for shape in sample_shapes]
     return configs
 
-def get_harsh_gemms() -> list[tuple[str, GemmConfig]]:
+def get_model_gemms() -> list[tuple[str, GemmConfig]]:
     """
     GEMM shapes from various challenging models:
     - Whisper Large v3 (batch=1, seq=256)
