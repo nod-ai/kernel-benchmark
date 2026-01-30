@@ -5,7 +5,7 @@ from typing import Optional
 import logging
 
 
-def get_rocprofv3_cmd(dump_path: os.PathLike, kernel_regex: str):
+def get_rocprofv3_cmd(dump_path: os.PathLike, kernel_regex: str = ""):
     return [
         "rocprofv3",
         "--kernel-trace",
@@ -26,7 +26,7 @@ def get_rocprofv3_cmd(dump_path: os.PathLike, kernel_regex: str):
 
 def parse_rocprof_us(
     path: Path,
-    kernel_regex: str, 
+    kernel_regex: str = "", 
     logger: Optional[logging.Logger] = None
 ) -> dict:
     try:

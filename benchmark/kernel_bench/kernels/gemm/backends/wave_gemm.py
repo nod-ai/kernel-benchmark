@@ -50,7 +50,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         if config.tA != "N" or config.tB != "T":
             return False
 
-        if config.dtype not in ["f16", "bf16"]:
+        if config.dtype != "f16":
             return False
 
         return True
