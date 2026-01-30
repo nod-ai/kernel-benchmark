@@ -33,7 +33,10 @@ from ..gemm_utils import GemmConfig
 
 class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
-    kernel_regex = "gemm_prefetch"
+    
+    def __post_init__(self):
+        self.kernel_regex = "gemm" # NOT SURE IF NEEDED - WORKS WITH "" AS WELL
+        super().__post_init__()
 
     def validate_config(self):
         if not WAVE_AVAILABLE:
@@ -232,4 +235,15 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
+
+def get_unroll_pipeline(unroll_factor: int):
+    return f"""
+    module attributes {{transform.with_named_sequence}} {{
+        transform.named_sequence @__transform_main(%arg0: !transform.any_op {{transform.readonly}}) {{
+            %0 = transform.structured.match ops{{["scf.for"]}} in %arg0 : (!transform.any_op) -> !transform.any_op
+            transform.loop.unroll %0 {{ factor = {unroll_factor} }} : !transform.any_op
+            transform.yield
+        }}
+    }}
+    """
         

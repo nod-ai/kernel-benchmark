@@ -101,7 +101,7 @@ def bench_kernel_ireert(
     ]
     if profiler_dump_path:
         clear_dir(profiler_dump_path)
-        profile_prefix = get_rocprofv3_cmd(profiler_dump_path)
+        profile_prefix = get_rocprofv3_cmd(profiler_dump_path, kernel_regex)
         iree_bench_cmd = profile_prefix + iree_bench_cmd
 
     try:
@@ -126,7 +126,7 @@ def bench_kernel_ireert(
     runtime_us, ok = decode_iree_benchmark_output(stdout)
     if ok:
         try:
-            rocprof_stats = parse_rocprof_us(profiler_dump_path) # TODO: make kernel_name_pattern configurable
+            rocprof_stats = parse_rocprof_us(profiler_dump_path, kernel_regex)
             if rocprof_stats and 'mean_duration_us' in rocprof_stats:
                 runtime_us = rocprof_stats['mean_duration_us']
         except Exception as e:

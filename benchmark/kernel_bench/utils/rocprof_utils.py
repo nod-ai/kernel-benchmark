@@ -51,7 +51,6 @@ def parse_rocprof_us(
                 if 'Name' in row and (not kernel_regex or kernel_regex in row['Name']):
                     if 'AverageNs' not in row:
                         raise ValueError(f"Found kernel but no 'AverageNs' column")
-                    
                     average_ns = float(row['AverageNs'])
                     
                     return {

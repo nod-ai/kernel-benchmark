@@ -84,7 +84,7 @@ class KernelBenchmark(ABC):
     machine: str
     config: OpConfig
     path_config: PathConfig
-    kernel_regex: str
+    kernel_regex: str = ""
     title: Optional[str] = None
 
     def __post_init__(self):
