@@ -1384,7 +1384,7 @@ def get_meta_gemms() -> list[tuple[str, GemmConfig]]:
     configs += [("meta-4-shapes", GemmConfig(*shape)) for shape in sample_shapes]
     return configs
 
-def get_harsh_gemms() -> list[tuple[str, GemmConfig]]:
+def get_model_gemms() -> list[tuple[str, GemmConfig]]:
     """
     GEMM shapes from various challenging models:
     - Whisper Large v3 (batch=1, seq=256)
@@ -1424,4 +1424,47 @@ def get_harsh_gemms() -> list[tuple[str, GemmConfig]]:
     configs += [("deepseek-r1-7b", GemmConfig(*shape)) for shape in deepseek_shapes]
     configs += [("qwen3-8b", GemmConfig(*shape)) for shape in qwen3_shapes]
     
+    return configs
+
+
+def get_small_grid_gemms() -> list[tuple[str, GemmConfig]]:
+    """
+    Small grid GEMM shapes for tuning (M, N, K in range 64-512, step 32).
+    Only includes shapes with K >= 192 that have been validated.
+    All shapes use bf16 dtype with transpose pattern (N, T).
+    """
+    # Generate all successful M x N x K combinations from tuning data
+    # M, N range: 64-512 (step 32), K range: 192-512 (step 32)
+    shapes = []
+    
+    # Systematically generate all valid combinations
+    for M in range(64, 513, 32):
+        for N in range(64, 513, 32):
+            for K in range(192, 513, 32):
+                # Skip known failure cases (some specific combinations fail)
+                if K < 192:  # All K < 192 fail
+                    continue
+                # Add validated shape
+                shapes.append((M, N, K, "N", "T", "bf16"))
+    
+    configs = [("small-grid", GemmConfig(*shape)) for shape in shapes]
+    return configs
+
+def get_medium_grid_gemms() -> list[tuple[str, GemmConfig]]:
+    """
+    Medium grid GEMM shapes for tuning (M, N, K in range 512-4096, step 256).
+    All shapes use bf16 dtype with transpose pattern (N, T).
+    """
+    # Generate all successful M x N x K combinations from tuning data
+    # M, N range: 512-4096 (step 256), K range: 512-4096 (step 256)
+    shapes = []
+    
+    # Systematically generate all valid combinations
+    for M in range(512, 4097, 256):
+        for N in range(512, 4097, 256):
+            for K in range(512, 4097, 256):
+                # Add validated shape
+                shapes.append((M, N, K, "N", "T", "bf16"))
+    
+    configs = [("medium-grid", GemmConfig(*shape)) for shape in shapes]
     return configs

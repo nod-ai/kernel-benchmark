@@ -1,51 +1,56 @@
-from dataclasses import replace
 from math import ceil
 import traceback
 from typing import override
+import torch
+import warnings
+from torch.testing import assert_close
 
 # Import guards for backend-specific dependencies
 WAVE_AVAILABLE = False
 try:
-    import torch
-    from torch.testing import assert_close
     from wave_lang.kernel.wave.constraints import MMAType
     from wave_lang.kernel.lang.global_symbols import *
     from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
-    from wave_lang.kernel.wave.utils.general_utils import (
-        get_default_scheduling_params,
-    )
+    from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
     from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
     from wave_lang.kernel.wave.templates.reordered_gemm import get_reordered_matmul
-    from wave_lang.kernel.wave.utils.torch_utils import (
-        device_randn,
-        device_zeros,
-    )
+    from wave_lang.kernel.wave.utils.torch_utils import device_randn, device_zeros
     from wave_lang.kernel.wave.iree_utils import generate_iree_ref
+    import wave_lang.kernel.wave as tkw
+    import wave_lang.kernel.lang as tkl
+    from wave_lang.kernel.wave import wave_schedule
+
     WAVE_AVAILABLE = True
-except ImportError as e:
-    import warnings
+except Exception as e:
     warnings.warn(f"Wave backend dependencies not available: {e}")
 
 from kernel_bench.utils.dtypes.device_context import get_shared_memory_limit
 from kernel_bench.utils.iree_utils import shape_to_iree
-from kernel_bench.tuning.hyperparam import (
-    CategoricalBounds,
-    IntegerBounds,
-)
+from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from ..gemm_utils import GemmConfig
 
 
 class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
+    
+    def __post_init__(self):
+        self.kernel_regex = "gemm" # NOT SURE IF NEEDED - WORKS WITH "" AS WELL
+        super().__post_init__()
 
     def validate_config(self):
         if not WAVE_AVAILABLE:
             return False
-            
+
         config = self.config
 
         if config.M < 4 or config.N < 4 or config.K < 4:
+            return False
+
+        if config.tA != "N" or config.tB != "T":
+            return False
+
+        if config.dtype != "f16":
             return False
 
         return True
@@ -148,12 +153,13 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             self.BLOCK_K.value,
             16,  # self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            input_dtype=input_dtype,
-            #quantized_dtype=quantized_dtype,
-            #tA=config.tA,
-            #tB=config.tB,
-            #num_waves=self.NUM_WAVES.value,
+            # input_dtype=input_dtype,
+            # quantized_dtype=quantized_dtype,
+            # tA=config.tA,
+            # tB=config.tB,
+            # num_waves=self.NUM_WAVES.value,
         )
+
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
 
@@ -169,9 +175,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             use_buffer_ops=True,
             use_global_to_shared=use_g2s,
             waves_per_eu=1,
-            # use_fast_math=True,
-            # multi_buffer_count=1,
-            # postprocess=get_unroll_pipeline(1),
         )
 
     @override
@@ -233,7 +236,6 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         ]
         return runtime_args
 
-
 def get_unroll_pipeline(unroll_factor: int):
     return f"""
     module attributes {{transform.with_named_sequence}} {{
@@ -244,3 +246,4 @@ def get_unroll_pipeline(unroll_factor: int):
         }}
     }}
     """
+        

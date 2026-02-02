@@ -25,6 +25,10 @@ from ..gemm_utils import GemmConfig
 class IREEGemmBenchmark(IREEKernelBenchmark):
     config: GemmConfig
 
+    def __post_init__(self):
+        self.kernel_regex = "matmul" # NOT SURE IF NEEDED - WORKS WITH "" AS WELL
+        super().__post_init__()
+
     @override
     def validate_config(self):
         if not IREE_AVAILABLE or self.config.tA + self.config.tB == "TT":

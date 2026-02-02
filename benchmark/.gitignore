@@ -17,3 +17,6 @@ test_venv*/
 results/
 dump/
 .dockerignore
+gpucore.*
+benchmark_results/
+.rocprofv3/
