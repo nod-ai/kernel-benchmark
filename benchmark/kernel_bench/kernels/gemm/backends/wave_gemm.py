@@ -112,7 +112,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         # Use minimum BLOCK_K to get maximum possible iterations (conservative upper bound)
         # This ensures the unroll factor is valid across all possible BLOCK_K values
         max_unroll = max(
-            1, (self.config.K // 32) - 2
+            1, (self.config.K // 16) - 2
         )  # Assuming 32 is the minimum BLOCK_K
         self.UNROLL_FACTOR = self.add_param(
             "UNROLL_FACTOR",
