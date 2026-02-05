@@ -25,6 +25,7 @@ __all__ = [
 # Simple display name -> byte count mapping for configs
 # This is machine-independent and used for arithmetic intensity calculations
 _DTYPE_BYTES = {
+    "mxfp4": 1,
     "f8": 1,
     "f16": 2,
     "bf16": 2,

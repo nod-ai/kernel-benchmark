@@ -1384,6 +1384,7 @@ def get_meta_gemms() -> list[tuple[str, GemmConfig]]:
     configs += [("meta-4-shapes", GemmConfig(*shape)) for shape in sample_shapes]
     return configs
 
+
 def get_model_gemms() -> list[tuple[str, GemmConfig]]:
     """
     GEMM shapes from various challenging models:
@@ -1391,39 +1392,39 @@ def get_model_gemms() -> list[tuple[str, GemmConfig]]:
     - DeepSeek-R1-Distill-Qwen-7B (batch=1, seq=512)
     - Qwen3-8B (batch=1, seq=512)
     """
-    
+
     # Whisper Large v3 shapes (batch=1, seq=256)
     whisper_shapes = [
         (256, 1280, 1280, "N", "T", "bf16"),  # Q/K/V projection
         (256, 1280, 1280, "N", "T", "bf16"),  # Attention output
         (256, 5120, 1280, "N", "T", "bf16"),  # FFN up
         (256, 1280, 5120, "N", "T", "bf16"),  # FFN down
-        (256, 256, 64, "N", "T", "bf16"),     # Attention scores per-head
+        (256, 256, 64, "N", "T", "bf16"),  # Attention scores per-head
     ]
-    
+
     # DeepSeek-R1-Distill-Qwen-7B shapes (batch=1, seq=512)
     deepseek_shapes = [
         (512, 3584, 3584, "N", "T", "bf16"),  # Q projection
-        (512, 512, 3584, "N", "T", "bf16"),   # K/V projection (GQA, 4 KV heads × 128)
+        (512, 512, 3584, "N", "T", "bf16"),  # K/V projection (GQA, 4 KV heads × 128)
         (512, 3584, 3584, "N", "T", "bf16"),  # Attention output
-        (512, 18944, 3584, "N", "T", "bf16"), # FFN gate/up (SwiGLU)
-        (512, 3584, 18944, "N", "T", "bf16"), # FFN down
+        (512, 18944, 3584, "N", "T", "bf16"),  # FFN gate/up (SwiGLU)
+        (512, 3584, 18944, "N", "T", "bf16"),  # FFN down
     ]
-    
+
     # Qwen3-8B shapes (batch=1, seq=512)
     qwen3_shapes = [
         (512, 4096, 4096, "N", "T", "bf16"),  # Q projection
         (512, 1024, 4096, "N", "T", "bf16"),  # K/V projection (GQA, 8 KV heads × 128)
         (512, 4096, 4096, "N", "T", "bf16"),  # Attention output
-        (512, 12288, 4096, "N", "T", "bf16"), # FFN gate/up (SwiGLU)
-        (512, 4096, 12288, "N", "T", "bf16"), # FFN down
+        (512, 12288, 4096, "N", "T", "bf16"),  # FFN gate/up (SwiGLU)
+        (512, 4096, 12288, "N", "T", "bf16"),  # FFN down
     ]
-    
+
     configs = []
     configs += [("whisper-v3", GemmConfig(*shape)) for shape in whisper_shapes]
     configs += [("deepseek-r1-7b", GemmConfig(*shape)) for shape in deepseek_shapes]
     configs += [("qwen3-8b", GemmConfig(*shape)) for shape in qwen3_shapes]
-    
+
     return configs
 
 
@@ -1436,7 +1437,7 @@ def get_small_grid_gemms() -> list[tuple[str, GemmConfig]]:
     # Generate all successful M x N x K combinations from tuning data
     # M, N range: 64-512 (step 32), K range: 192-512 (step 32)
     shapes = []
-    
+
     # Systematically generate all valid combinations
     for M in range(64, 513, 32):
         for N in range(64, 513, 32):
@@ -1446,9 +1447,10 @@ def get_small_grid_gemms() -> list[tuple[str, GemmConfig]]:
                     continue
                 # Add validated shape
                 shapes.append((M, N, K, "N", "T", "bf16"))
-    
+
     configs = [("small-grid", GemmConfig(*shape)) for shape in shapes]
     return configs
+
 
 def get_medium_grid_gemms() -> list[tuple[str, GemmConfig]]:
     """
@@ -1458,13 +1460,32 @@ def get_medium_grid_gemms() -> list[tuple[str, GemmConfig]]:
     # Generate all successful M x N x K combinations from tuning data
     # M, N range: 512-4096 (step 256), K range: 512-4096 (step 256)
     shapes = []
-    
+
     # Systematically generate all valid combinations
     for M in range(512, 4097, 256):
         for N in range(512, 4097, 256):
             for K in range(512, 4097, 256):
                 # Add validated shape
                 shapes.append((M, N, K, "N", "T", "bf16"))
-    
+
     configs = [("medium-grid", GemmConfig(*shape)) for shape in shapes]
     return configs
+
+
+def get_mxfp4_gemms() -> list[tuple[str, GemmConfig]]:
+    """
+    MXFP4 GEMM shapes for tuning (M, N, K in range 64-512, step 32).
+    All shapes use mxfp4 dtype with transpose pattern (N, T).
+    """
+    shapes = [
+        (64, 64, 64, "N", "T", "mxfp4"),
+        (128, 128, 128, "N", "T", "mxfp4"),
+        (256, 256, 256, "N", "T", "mxfp4"),
+        (512, 512, 512, "N", "T", "mxfp4"),
+        (1024, 1024, 1024, "N", "T", "mxfp4"),
+        (2048, 2048, 2048, "N", "T", "mxfp4"),
+        (4096, 4096, 4096, "N", "T", "mxfp4"),
+        (8192, 8192, 8192, "N", "T", "mxfp4"),
+    ]
+
+    return [("mxfp4-square", GemmConfig(*shape)) for shape in shapes]

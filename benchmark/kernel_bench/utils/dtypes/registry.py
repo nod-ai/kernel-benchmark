@@ -115,6 +115,18 @@ class DTypeRegistry:
                 )
             )
 
+        # MXFP4 type
+        self._register(
+            DTypeSpec(
+                display_name="mxfp4",
+                canonical_name="f4e2m1fn",
+                bits=4,
+                is_float=True,
+                torch_dtype=torch.int8,
+                iree_string="f4e2m1fn",
+            )
+        )
+
         # Integer types
         self._register(
             DTypeSpec(

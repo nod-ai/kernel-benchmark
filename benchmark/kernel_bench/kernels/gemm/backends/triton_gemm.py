@@ -7,9 +7,11 @@ try:
     from aiter.ops.triton.gemm_a16w16 import gemm_a16w16
     from aiter.ops.triton.gemm_a8w8 import gemm_a8w8
     from kernel_bench.utils.torch_utils import benchmark_function_torch
+
     TRITON_AVAILABLE = True
 except Exception as e:
     import warnings
+
     warnings.warn(f"Triton backend dependencies not available: {e}")
 
 from kernel_bench.core.template import KernelBenchmark
@@ -22,9 +24,9 @@ class TritonGemmBenchmark(KernelBenchmark):
     def validate_config(self):
         if not TRITON_AVAILABLE:
             return False
-            
+
         input_dtype = self.config.dtype
-        if input_dtype not in ["f16", "bf16"]:
+        if input_dtype != "mxfp4":
             return False
 
         variant = self.config.tA + self.config.tB
