@@ -1,7 +1,15 @@
 import os
 from typing import override
-from iree.compiler import ir
-from iree.compiler.dialects import arith, func, linalg, tensor
+
+# Import guards for backend-specific dependencies
+IREE_AVAILABLE = False
+try:
+    from iree.compiler import ir
+    from iree.compiler.dialects import arith, func, linalg, tensor
+    IREE_AVAILABLE = True
+except ImportError as e:
+    import warnings
+    warnings.warn(f"IREE backend dependencies not available: {e}")
 
 from kernel_bench.core.template import IREEKernelBenchmark
 from kernel_bench.utils.dtypes.device_context import DeviceContext
@@ -19,7 +27,7 @@ class IREEGemmBenchmark(IREEKernelBenchmark):
 
     @override
     def validate_config(self):
-        if self.config.tA + self.config.tB == "TT":
+        if not IREE_AVAILABLE or self.config.tA + self.config.tB == "TT":
             return False
         return True
 

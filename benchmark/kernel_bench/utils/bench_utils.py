@@ -205,7 +205,7 @@ def get_rocprofv3_cmd(dump_path: os.PathLike):
         "rocprofv3",
         "--att",
         "--att-library-path",
-        "/root/rocprof-trace-decoder-ubuntu-22.04-0.1.4-Linux/opt/rocm/lib/",
+        "/root/rocprof-trace-decoder-ubuntu-22.04-0.1.6-Linux/opt/rocm/lib/",
         "-d",
         f"{dump_path}",
         "--output-format",

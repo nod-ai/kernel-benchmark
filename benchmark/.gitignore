@@ -16,3 +16,4 @@ test_venv*/
 # Bench Artifacts
 results/
 dump/
+.dockerignore

@@ -57,23 +57,10 @@ class RunTracker:
         db_run_update = {
             "status": gh_run.status,
             "conclusion": gh_run.conclusion,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        if self._identifier:
-            try:
-                gh_id_job = self._get_gh_job(gh_run, job_name="Identifier")
-                if gh_id_job:
-                    for job_step in gh_id_job.steps:
-                        if job_step.name.startswith(f"{self._identifier}_"):
-                            mapping_id = job_step.name.split(f"{self._identifier}_")[1]
-                            db_run_update.update({"mappingId": mapping_id})
-                            break
-            except:
-                logger.warning(
-                    f"Failed to load identifier {self._identifier} for run_{self._run_id}"
-                )
-                pass
+        # Note: Identifier extraction is now handled by webhook listener
+        # which extracts triggerId from the new standardized identifier job
 
         if gh_main_job:
             job_steps = [

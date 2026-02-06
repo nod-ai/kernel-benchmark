@@ -217,18 +217,26 @@ class DatabaseRepository(Generic[T]):
                 else:
                     filter_parts.append(f"{key} eq {value}")
             query_filter = " and ".join(filter_parts)
-            entities = list(
-                table_client.query_entities(
-                    query_filter,
-                    headers={"Accept": "application/json;odata=nometadata"},
+            try:
+                entities = list(
+                    table_client.query_entities(
+                        query_filter,
+                        headers={"Accept": "application/json;odata=nometadata"},
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"Error querying entities: {e}")
+                return []
         else:
-            entities = list(
-                table_client.list_entities(
-                    headers={"Accept": "application/json;odata=nometadata"}
+            try:
+                entities = list(
+                    table_client.list_entities(
+                        headers={"Accept": "application/json;odata=nometadata"}
+                    )
                 )
-            )
+            except Exception as e:
+                print(f"Error listing entities: {e}")
+                return []
 
         results = []
         for entity in entities:
@@ -429,12 +437,13 @@ class DatabaseRepository(Generic[T]):
         return self.find_by_id(id) is not None
 
     def clear_all(self) -> bool:
-        """Clear all entities from the table by deleting and recreating it."""
+        """Clear all entities from the table by deleting them."""
         try:
-            service_client, _ = self._get_clients()
-            service_client.delete_table(self.table)
-            self._table_client = service_client.create_table_if_not_exists(self.table)
-            return True
+            entities = self.find_all()
+            if not entities:
+                return True
+            ids = [entity._id for entity in entities]
+            return self.delete_many_by_ids(ids)
         except Exception as e:
             print(f"Error clearing all entities: {e}")
             return False

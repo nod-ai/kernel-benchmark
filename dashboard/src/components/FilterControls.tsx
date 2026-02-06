@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getBackendColor } from "../utils/color";
 import {
   FILTER_CONFIGS,
@@ -27,15 +28,15 @@ export function SingleSelectFilter({
   onInput,
 }: SingleSelectProps) {
   return (
-    <div className="select-none flex gap-3 items-center">
-      <span className="font-medium text-gray-700 text-sm min-w-fit">
+    <div className="select-none flex gap-3 items-center flex-shrink-0">
+      <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
         {title}:
       </span>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2">
         {options.map((option) => (
           <button
             key={option}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border ${
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border whitespace-nowrap ${
               option === selectedOption
                 ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                 : "bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
@@ -122,16 +123,16 @@ export function MultiSelectFilter({
   if (options.length > 10) {
     return (
       <div
-        className="select-none flex gap-3 items-center relative"
+        className="select-none flex gap-3 items-center relative flex-shrink-0"
         ref={dropdownRef}
       >
-        <span className="font-medium text-gray-700 text-sm min-w-fit">
+        <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
           {title}:
         </span>
         <div className="relative">
           <button
             ref={buttonRef}
-            className="px-4 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-all duration-200"
+            className="px-4 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm transition-all duration-200 whitespace-nowrap"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
           >
             {allSelected
@@ -203,15 +204,15 @@ export function MultiSelectFilter({
 
   // Original row layout for 10 or fewer options
   return (
-    <div className="select-none flex gap-3 items-center">
-      <span className="font-medium text-gray-700 text-sm min-w-fit">
+    <div className="select-none flex gap-3 items-center flex-shrink-0">
+      <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
         {title}:
       </span>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2">
         {options.map((option) => (
           <button
             key={option}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
             style={{
               backgroundColor:
                 selectedOptions.includes(option) && distinctColors
@@ -252,20 +253,99 @@ interface FilterControlsProps {
 }
 
 export default function FilterControls({ filters }: FilterControlsProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftScroll, setShowLeftScroll] = useState(false);
+  const [showRightScroll, setShowRightScroll] = useState(false);
+
+  const checkScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    setShowLeftScroll(scrollLeft > 10);
+    setShowRightScroll(scrollLeft < scrollWidth - clientWidth - 10);
+  };
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    checkScroll();
+    const observer = new ResizeObserver(checkScroll);
+    observer.observe(container);
+
+    return () => observer.disconnect();
+  }, [filters]);
+
+  const scroll = (direction: "left" | "right") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const scrollAmount = 300;
+    const newScrollLeft =
+      direction === "left"
+        ? container.scrollLeft - scrollAmount
+        : container.scrollLeft + scrollAmount;
+
+    container.scrollTo({
+      left: newScrollLeft,
+      behavior: "smooth",
+    });
+  };
+
   return (
-    <div className="flex flex-wrap gap-6 items-start">
-      {filters.map((filter, index) =>
-        filter.type === "single" ? (
-          <SingleSelectFilter
-            key={index}
-            {...(filter.props as SingleSelectProps)}
-          />
-        ) : (
-          <MultiSelectFilter
-            key={index}
-            {...(filter.props as MultiSelectProps)}
-          />
-        )
+    <div className="relative">
+      {/* Left fade and scroll button */}
+      {showLeftScroll && (
+        <>
+          <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
+          <button
+            onClick={() => scroll("left")}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 p-1.5 bg-white border border-gray-300 rounded-full shadow-md hover:bg-gray-50 transition-colors"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          </button>
+        </>
+      )}
+
+      {/* Scrollable container */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={checkScroll}
+        className="flex gap-6 items-start overflow-x-auto scrollbar-hide pb-2"
+        style={{
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        {filters.map((filter, index) =>
+          filter.type === "single" ? (
+            <SingleSelectFilter
+              key={index}
+              {...(filter.props as SingleSelectProps)}
+            />
+          ) : (
+            <MultiSelectFilter
+              key={index}
+              {...(filter.props as MultiSelectProps)}
+            />
+          )
+        )}
+      </div>
+
+      {/* Right fade and scroll button */}
+      {showRightScroll && (
+        <>
+          <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
+          <button
+            onClick={() => scroll("right")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 p-1.5 bg-white border border-gray-300 rounded-full shadow-md hover:bg-gray-50 transition-colors"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          </button>
+        </>
       )}
     </div>
   );

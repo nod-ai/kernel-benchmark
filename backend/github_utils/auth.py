@@ -12,7 +12,7 @@ INSTALLATION_IDS = {
 
 REPO_NAMES = {
     "wave": "iree-org/wave",
-    "bench": "nod-ai/iree-kernel-benchmark",
+    "bench": "nod-ai/kernel-benchmark",
     "test": "suryajasper/github-api-test",
 }
 

@@ -47,3 +47,18 @@ def benchmark_function_torch(
     delta_time_us = delta_time_ms * 1e3
     mean_time_us = delta_time_us / iterations
     return mean_time_us
+
+
+def get_gpu_count() -> int:
+    """
+    Get the number of available GPUs using torch.
+    
+    Returns:
+        int: Number of CUDA devices available, or 1 if CUDA is unavailable or an error occurs.
+    """
+    try:
+        if torch.cuda.is_available():
+            return torch.cuda.device_count()
+        return 1
+    except Exception:
+        return 1
