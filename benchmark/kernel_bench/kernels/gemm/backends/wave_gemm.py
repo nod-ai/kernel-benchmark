@@ -5,6 +5,8 @@ import torch
 import warnings
 from torch.testing import assert_close
 
+from wave_lang.kernel.wave.compile_options import CoalescingType
+
 # Import guards for backend-specific dependencies
 WAVE_AVAILABLE = False
 try:
@@ -33,9 +35,9 @@ from ..gemm_utils import GemmConfig
 
 class WaveGemmBenchmark(WaveKernelBenchmark):
     config: GemmConfig
-    
+
     def __post_init__(self):
-        self.kernel_regex = "gemm" # NOT SURE IF NEEDED - WORKS WITH "" AS WELL
+        self.kernel_regex = "gemm"  # NOT SURE IF NEEDED - WORKS WITH "" AS WELL
         super().__post_init__()
 
     def validate_config(self):
@@ -60,24 +62,16 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         bitwidth = dtype_spec.bitwidth()
         target = self.device_ctx.hip_target
 
-        if bitwidth == 8:
-            mfma_options = [(MMAType.F32_32x32x16_F8, MMAType.F32_32x32x16_K8_F16)]
-        elif dtype_spec.to_torch() == torch.bfloat16 and target == "gfx950":
+        mfma_options = [
+            MMAType.F32_16x16x16_F16,
+            MMAType.F32_32x32x8_F16,
+            MMAType.F32_32x32x16_K8_F16,
+        ]
+        if target == "gfx950":
             mfma_options = [
-                MMAType.F32_32x32x16_BF16,
-                MMAType.F32_16x16x32_BF16,
-            ]
-        else:
-            mfma_options = [
-                MMAType.F32_16x16x16_F16,
-                MMAType.F32_32x32x8_F16,
-                MMAType.F32_32x32x16_K8_F16,
-            ]
-            if target == "gfx950":
-                mfma_options = [
-                    MMAType.F32_32x32x16_F16,
-                    MMAType.F32_16x16x32_F16,
-                ] + mfma_options
+                MMAType.F32_16x16x32_F16,
+                MMAType.F32_32x32x16_F16,
+            ] + mfma_options
 
         self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
@@ -100,28 +94,23 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         self.BLOCK_K = self.add_param(
             "BLOCK_K",
             IntegerBounds(min=1, max=min(256, self.config.K), step=8),
-            initial_value=128,
+            initial_value=64,
             clamp_value=True,
         )
-        # self.NUM_WAVES = self.add_param(
-        #     "NUM_WAVES",
-        #     IntegerBounds(min=4, max=8, step=4),
-        #     initial_value=4,
-        #     clamp_value=True,
-        # )
+
         self.USE_GATHER_TO_LDS = self.add_param(
             "USE_GATHER_TO_LDS",
-            CategoricalBounds([False, True]),
-            initial_value=0,
+            CategoricalBounds([False, True] if target == "gfx950" else [False]),
+            initial_value=1 if target == "gfx950" else 0,
         )
 
-        # max_wg_m = ceil(self.config.M / 16) - 1
-        # self.GROUP_SIZE_M = self.add_param(
-        #     "GROUP_SIZE_M",
-        #     IntegerBounds(min=1, max=max_wg_m, step=1),
-        #     initial_value=16,
-        #     clamp_value=True,
-        # )
+        max_wg_m = ceil(self.config.M / 16) - 1
+        self.GROUP_SIZE_M = self.add_param(
+            "GROUP_SIZE_M",
+            IntegerBounds(min=1, max=max_wg_m, step=1),
+            initial_value=4,
+            clamp_value=True,
+        )
 
         shared_mem_limit_bytes = get_shared_memory_limit(self.device_ctx.hip_target)
         bytes_per_el = dtype_spec.num_bytes()
@@ -130,52 +119,57 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
         ) * bytes_per_el - shared_mem_limit_bytes
         self.add_constraint(shared_memory_constraint, "shared_memory_limit")
 
-        # num_wg_m = sympy.ceiling(self.config.M / self.BLOCK_M)
-        # group_size_constraint = self.GROUP_SIZE_M - num_wg_m
-        # self.add_constraint(group_size_constraint, "group_size_limit")
+        num_wg_m = sympy.ceiling(self.config.M / self.BLOCK_M)
+        group_size_constraint = self.GROUP_SIZE_M - num_wg_m
+        self.add_constraint(group_size_constraint, "group_size_limit")
 
     @override
     def load_wave_kernel(self):
         config = self.config
-        if config.dtype == "f8":
-            input_dtype = self.device_ctx.dtype_to_torch("f16")
-            quantized_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-        else:
-            input_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-            quantized_dtype = None
 
         base_gemm, hyperparams = get_reordered_matmul(
-            self.config.M,
-            self.config.N,
-            self.config.K,
+            config.M,
+            config.N,
+            config.K,
             self.BLOCK_M.value,
             self.BLOCK_N.value,
             self.BLOCK_K.value,
-            16,  # self.GROUP_SIZE_M.value,
+            self.GROUP_SIZE_M.value,
             mfma_variant=self.mfma_variant.value,
-            # input_dtype=input_dtype,
-            # quantized_dtype=quantized_dtype,
-            # tA=config.tA,
-            # tB=config.tB,
-            # num_waves=self.NUM_WAVES.value,
         )
+
+        UNROLL_FACTOR = tkl.sym.UNROLL_FACTOR
+        hyperparams[UNROLL_FACTOR] = 2
 
         hyperparams.update(get_default_scheduling_params())
         return WaveTemplate(launchable=base_gemm, hyperparams=hyperparams)
 
     @override
     def extra_compile_options(self):
-        use_scheduling = SchedulingType.NONE
+
+        use_scheduling = SchedulingType.PREFETCH
         supports_g2s = self.device_ctx.hip_target.startswith("gfx95")
         use_g2s = supports_g2s and self.USE_GATHER_TO_LDS.value
 
-        return WaveCompileOptions(
+        options = WaveCompileOptions(
             canonicalize=True,
             schedule=use_scheduling,
             use_buffer_ops=True,
             use_global_to_shared=use_g2s,
-            waves_per_eu=1,
+            multi_buffer_count=2,
+            minimize_shared_allocs=False,
+            coalescing_strategy_hint=CoalescingType.WAVE_TILE_ALIGNED,
         )
+        options.postprocess = """
+    module attributes {transform.with_named_sequence} {
+        transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+            %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+            transform.loop.unroll %0 { factor = %%UNROLL_FACTOR%% } : !transform.any_op
+            transform.yield
+        }
+    }
+    """
+        return options
 
     @override
     def validate_numerics(self, device):
@@ -235,15 +229,3 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             "--function=isolated_benchmark",
         ]
         return runtime_args
-
-def get_unroll_pipeline(unroll_factor: int):
-    return f"""
-    module attributes {{transform.with_named_sequence}} {{
-        transform.named_sequence @__transform_main(%arg0: !transform.any_op {{transform.readonly}}) {{
-            %0 = transform.structured.match ops{{["scf.for"]}} in %arg0 : (!transform.any_op) -> !transform.any_op
-            transform.loop.unroll %0 {{ factor = {unroll_factor} }} : !transform.any_op
-            transform.yield
-        }}
-    }}
-    """
-        

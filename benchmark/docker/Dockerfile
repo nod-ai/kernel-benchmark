@@ -1,7 +1,7 @@
 # Syntax allowing for build arguments before FROM
 ARG BASE_IMAGE=rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
-ARG WAVE_REPO=iree-org/wave
-ARG WAVE_BRANCH=main
+ARG WAVE_REPO=nithinsubbiah/wave
+ARG WAVE_BRANCH=4_pp_cluster
 ARG BACKENDS=all
 ARG GPU_ARCH
 
