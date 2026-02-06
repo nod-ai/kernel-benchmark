@@ -20,7 +20,7 @@ export const validateAttributeValue = (
   attribute: KernelTypeAttribute
 ): ValidationResult => {
   // Handle required validation
-  if (attribute.required && (!value || value === "")) {
+  if (attribute.required && (value === undefined || value === null || value === "")) {
     return { isValid: false, message: `${attribute.name} is required` };
   }
 
