@@ -117,4 +117,6 @@ ENV DISABLE_LLVM_OPT="disable-vector-combine"
 ENV TRITON_HIP_USE_ASYNC_COPY=1 
 ENV AMDGCN_SCALARIZE_PACKED_FOPS=1 
 
+ENV PYTHONPATH="/workspace/triton:/workspace/triton/python:${PYTHONPATH}"
+
 CMD ["/bin/bash"]

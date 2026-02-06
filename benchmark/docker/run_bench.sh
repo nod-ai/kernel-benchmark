@@ -136,6 +136,7 @@ if [ -n '$TUNED_CONFIGS_URL' ]; then
     python -m json.tool /data/tuned_config.json > /dev/null || { echo 'Error: Invalid JSON format in tuned_config.json'; exit 1; }
 fi
 
+
 # Run benchmarks
 python3 -m kernel_bench.cli.bench \
     --backend=$BACKENDS \
