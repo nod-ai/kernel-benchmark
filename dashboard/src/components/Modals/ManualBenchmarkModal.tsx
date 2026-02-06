@@ -5,6 +5,7 @@ import { fetchKernels } from "../../utils/github";
 import {
   type KernelConfig,
   type KernelSelection,
+  type BackendSpec,
 } from "../../types";
 import {
   Settings,
@@ -22,7 +23,8 @@ import BranchSelector from "./blocks/BranchSelector";
 export interface ManualBenchmarkConfig {
   name: string;
   machine: string;
-  backends: string[];
+  backends: string[]; // For backward compatibility
+  backendSpecs: BackendSpec[];
   kernelSelection: KernelSelection;
   branch: string;
 }
@@ -44,7 +46,7 @@ export default function ManualBenchmarkModal({
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [machine, setMachine] = useState("mi325");
-  const [selectedBackends, setSelectedBackends] = useState<string[]>([]);
+  const [selectedBackendSpecs, setSelectedBackendSpecs] = useState<BackendSpec[]>([]);
   const [kernelSelection, setKernelSelection] = useState<KernelSelection>({
     type: "all-quick",
   });
@@ -62,7 +64,7 @@ export default function ManualBenchmarkModal({
     if (isOpen) {
       setName("");
       setMachine("mi325");
-      setSelectedBackends([]);
+      setSelectedBackendSpecs([]);
       setKernelSelection({ type: "all-quick" });
       setBranch("main");
     }
@@ -92,7 +94,8 @@ export default function ManualBenchmarkModal({
       const config: ManualBenchmarkConfig = {
         name: name.trim(),
         machine,
-        backends: selectedBackends,
+        backends: selectedBackendSpecs.map((spec) => spec.backend), // For backward compatibility
+        backendSpecs: selectedBackendSpecs,
         kernelSelection,
         branch,
       };
@@ -123,7 +126,7 @@ export default function ManualBenchmarkModal({
 
   const isFormValid =
     name.trim() !== "" &&
-    selectedBackends.length > 0 &&
+    selectedBackendSpecs.length > 0 &&
     totalSelectedKernels > 0;
 
   return (
@@ -189,8 +192,8 @@ export default function ManualBenchmarkModal({
 
               {/* Backend Selection */}
               <BackendSelector
-                selectedBackends={selectedBackends}
-                onChange={setSelectedBackends}
+                selectedBackendSpecs={selectedBackendSpecs}
+                onChange={setSelectedBackendSpecs}
                 disabled={isSubmitting}
               />
 
@@ -223,11 +226,11 @@ export default function ManualBenchmarkModal({
                     <p className="text-sm text-blue-800">
                       {totalSelectedKernels} kernels will be benchmarked on{" "}
                       {machine}
-                      {selectedBackends.length > 0 && (
+                      {selectedBackendSpecs.length > 0 && (
                         <span className="ml-1">
-                          using {selectedBackends.join(", ")}
-                          {selectedBackends.length > 1 && " backends"}
-                          {selectedBackends.length === 1 && " backend"}
+                          using {selectedBackendSpecs.map((spec) => spec.name).join(", ")}
+                          {selectedBackendSpecs.length > 1 && " backends"}
+                          {selectedBackendSpecs.length === 1 && " backend"}
                         </span>
                       )}
                       {totalSelectedKernels > 0 && (
