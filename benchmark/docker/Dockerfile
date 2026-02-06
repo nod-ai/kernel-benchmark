@@ -113,5 +113,8 @@ RUN SETUP_CMD="bash setup.sh"; \
 # Set environment variables for backends
 ENV PATH="/workspace/rocm-libraries/projects/hipblaslt/build/release/clients:${PATH}"
 ENV WAVE_CACHE_ON=0
+ENV DISABLE_LLVM_OPT="disable-vector-combine" 
+ENV TRITON_HIP_USE_ASYNC_COPY=1 
+ENV AMDGCN_SCALARIZE_PACKED_FOPS=1 
 
 CMD ["/bin/bash"]
