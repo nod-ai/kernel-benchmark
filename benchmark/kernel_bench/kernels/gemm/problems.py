@@ -1472,12 +1472,19 @@ def get_medium_grid_gemms() -> list[tuple[str, GemmConfig]]:
     return configs
 
 
-def get_mxfp4_gemms() -> list[tuple[str, GemmConfig]]:
+def get_seeded_subset(
+    problems: list[tuple[str, GemmConfig]], max_problems: int, seed: int = 42
+) -> list[tuple[str, GemmConfig]]:
+    random.seed(seed)
+    return random.sample(problems, max_problems)
+
+
+def get_mxfp4_gemms(max_per_tag: int = None) -> list[tuple[str, GemmConfig]]:
     """
     MXFP4 GEMM shapes for tuning (M, N, K in range 64-512, step 32).
     All shapes use mxfp4 dtype with transpose pattern (N, T).
     """
-    shapes = [
+    square_shapes = [
         (64, 64, 64, "N", "T", "mxfp4"),
         (128, 128, 128, "N", "T", "mxfp4"),
         (256, 256, 256, "N", "T", "mxfp4"),
@@ -1489,4 +1496,33 @@ def get_mxfp4_gemms() -> list[tuple[str, GemmConfig]]:
         (16384, 16384, 16384, "N", "T", "mxfp4"),
     ]
 
-    return [("mxfp4-square", GemmConfig(*shape)) for shape in shapes]
+    small_shapes = []
+    for M in range(64, 513, 32):
+        for N in range(64, 513, 32):
+            for K in range(64, 513, 32):
+                small_shapes.append((M, N, K, "N", "T", "mxfp4"))
+    if max_per_tag is not None:
+        small_shapes = get_seeded_subset(small_shapes, max_per_tag)
+
+    medium_shapes = []
+    for M in range(512, 4097, 256):
+        for N in range(512, 4097, 256):
+            for K in range(512, 4097, 256):
+                medium_shapes.append((M, N, K, "N", "T", "mxfp4"))
+    if max_per_tag is not None:
+        medium_shapes = get_seeded_subset(medium_shapes, max_per_tag)
+
+    large_shapes = []
+    for M in range(1024, 16385, 512):
+        for N in range(1024, 16385, 512):
+            for K in range(1024, 16385, 512):
+                large_shapes.append((M, N, K, "N", "T", "mxfp4"))
+    if max_per_tag is not None:
+        large_shapes = get_seeded_subset(large_shapes, max_per_tag)
+        
+    configs = []
+    configs += [("mxfp4-square", GemmConfig(*shape)) for shape in square_shapes]
+    configs += [("mxfp4-small", GemmConfig(*shape)) for shape in small_shapes]
+    configs += [("mxfp4-medium", GemmConfig(*shape)) for shape in medium_shapes]
+    configs += [("mxfp4-large", GemmConfig(*shape)) for shape in large_shapes]
+    return configs
