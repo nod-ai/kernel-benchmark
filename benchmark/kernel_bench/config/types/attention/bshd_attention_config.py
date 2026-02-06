@@ -14,9 +14,11 @@ class AttentionConfigBSHD(OpConfig):
     D_Q: int  # head_size
     N_KV: int  # kv_seq_len
     dtype: str
+    causal: bool = False  # causal masking flag
 
     def get_name(self) -> str:
-        return f"attention_bshd_{self.B}x{self.H}x{self.H_KV}x{self.N_Q}x{self.D_KV}x{self.D_Q}x{self.N_KV}x{self.dtype}"
+        causal_str = "causal" if self.causal else "non_causal"
+        return f"attention_bshd_{self.B}x{self.H}x{self.H_KV}x{self.N_Q}x{self.D_KV}x{self.D_Q}x{self.N_KV}x{self.dtype}_{causal_str}"
 
     def get_byte_count(self) -> int:
         bytes_per_element = dtype_to_bytes(self.dtype)
@@ -51,6 +53,7 @@ class AttentionConfigBSHD(OpConfig):
             "D_Q": self.D_Q,
             "N_KV": self.N_KV,
             "dtype": self.dtype,
+            "causal": self.causal,
         }
 
 

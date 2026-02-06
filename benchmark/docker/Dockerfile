@@ -1,5 +1,5 @@
 # Syntax allowing for build arguments before FROM
-ARG BASE_IMAGE=rocm/pytorch:rocm7.1.1_ubuntu24.04_py3.12_pytorch_release_2.8.0
+ARG BASE_IMAGE=rocm/pytorch:latest
 ARG WAVE_REPO=iree-org/wave
 ARG WAVE_BRANCH=main
 ARG BACKENDS=all

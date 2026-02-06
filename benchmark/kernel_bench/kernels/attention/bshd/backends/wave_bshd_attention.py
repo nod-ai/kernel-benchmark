@@ -14,97 +14,95 @@ from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.constraints import MMAType
 from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
 from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
-from wave_lang.kernel.wave.templates.gqa_vanilla_attention import (
-    get_gqa_bshd_attention_kernel,
+from wave_lang.kernel.wave.templates.attention_common import AttentionShape
+from wave_lang.kernel.wave.templates.tagged_attention import (
+    get_tagged_bshd_attention_kernel,
 )
+from wave_lang.kernel.wave.schedules.attention_prefetch import (
+    get_attention_prefetch_schedule,
+)
+import wave_lang.kernel.lang as tkl
 from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+from wave_lang.kernel.wave.utils.run_utils import set_default_run_config
 
 
 class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
     config: AttentionConfigBSHD
 
     def setup_parameters(self):
-        config = self.config
-
-        mfma_val = 2
-        BLOCK_B_val = 1
-        BLOCK_H_val = min(2, config.H)
-        BLOCK_N_Q_val = min(64, config.N_Q)
-        BLOCK_D_KV_val = min(64, config.D_KV)
-        BLOCK_N_KV_val = min(32, config.N_KV)
-
+        """
+        Setup parameters for 4-cluster ping-pong schedule.
+        
+        Uses fixed configuration optimized for the schedule:
+        - MMA variant: F32_16x16x16_F16
+        - num_waves: 8 (required for ping-pong)
+        - UNROLL_FACTOR: 4
+        """
+        # Fixed MMA configuration for ping-pong schedule
         self.mfma_variant = self.add_param(
             "MFMA_VARIANT",
             CategoricalBounds(
                 [
-                    (MMAType.F32_32x32x16_K8_F16, MMAType.F32_32x32x8_F16),
-                    (MMAType.F32_16x16x32_K8_F16, MMAType.F32_16x16x16_F16),
                     (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
-                    (MMAType.F32_32x32x8_F16, MMAType.F32_32x32x8_F16),
                 ]
             ),
-            initial_value=mfma_val,
+            initial_value=0,
             include_hyperparam=False,
         )
-        self.BLOCK_B = self.add_param(
-            "BLOCK_B",
-            IntegerBounds(min=1, max=config.B, step=1),
-            initial_value=BLOCK_B_val,
-        )
-        self.BLOCK_H = self.add_param(
-            "BLOCK_H",
-            IntegerBounds(min=1, max=config.H, step=2),
-            initial_value=BLOCK_H_val,
-        )
-        self.BLOCK_N_Q = self.add_param(
-            "BLOCK_N_Q",
-            IntegerBounds(min=16, max=self.config.N_Q, step=4),
-            initial_value=BLOCK_N_Q_val,
-        )
-        self.BLOCK_D_KV = self.add_param(
-            "BLOCK_D_KV",
-            IntegerBounds(min=16, max=self.config.D_KV, step=4),
-            initial_value=BLOCK_D_KV_val,
-        )
-        self.BLOCK_N_KV = self.add_param(
-            "BLOCK_N_KV",
-            IntegerBounds(min=16, max=self.config.N_KV, step=4),
-            initial_value=BLOCK_N_KV_val,
-        )
-
-        # bytes_per_el = self.device_ctx.resolve_dtype(config.dtype).num_bytes()
-        # memory_constraint = (
-        #     self.BLOCK_B * self.BLOCK_H * (self.BLOCK_N_Q + 4) * bytes_per_el
-        #     + self.BLOCK_B * self.BLOCK_H * (self.BLOCK_N_KV + 4) * bytes_per_el
-        # ) - 65536
-        # self.add_constraint(memory_constraint, "memory_limit")
 
     @override
     def load_wave_kernel(self):
+        """
+        Load Wave attention kernel with 4-cluster ping-pong schedule.
+        
+        Uses tagged BSHD attention kernel with custom prefetch schedule that
+        implements a 4-cluster ping-pong pattern:
+        - Cluster 0: QK computation + softmax1
+        - Cluster 1: K data movement + V shared load
+        - Cluster 2: PV computation + softmax0
+        - Cluster 3: V data movement + K shared load
+        
+        Requires num_waves=8 for ping-pong scheduling with wave staggering.
+        """
         config = self.config
-        shape = bshd_to_attention_attributes(config)
-
-        use_fp8 = config.dtype == "f8"
-        if use_fp8:
-            in_dtype = self.device_ctx.dtype_to_torch("f16")
-        else:
-            in_dtype = self.device_ctx.dtype_to_torch(config.dtype)
-
-        base_attention, hyperparams, dynamic_symbols = get_gqa_bshd_attention_kernel(
-            shape=shape,
-            mfma_variant=self.mfma_variant.value,
-            input_dtype=in_dtype,
-            output_dtype=self.device_ctx.dtype_to_torch("f32"),
-            use_fp8=use_fp8,
+        
+        # Create AttentionShape from config
+        shape = AttentionShape(
+            num_query_heads=config.H,
+            num_kv_heads=config.H_KV,
+            query_seq_len=config.N_Q,
+            head_size_kv=config.D_KV,
+            head_size=config.D_Q,
+            kv_seq_len=config.N_KV,
         )
-
-        hyperparams.update(self.tuning_spec.hyperparams())
+        
+        # MMA variant configuration
+        mfma_variant = (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16)
+        
+        # Get the tagged BSHD attention kernel with 8 waves for ping-pong
+        tagged_attention, hyperparams, dynamic_symbols = get_tagged_bshd_attention_kernel(
+            shape,
+            mfma_variant,
+            dynamic_dims=False,
+            is_causal=config.causal,
+            num_waves=8,  # Required for ping-pong scheduling
+        )
+        
+        # Update with default scheduling parameters
         hyperparams.update(get_default_scheduling_params())
-
+        
+        # Set unroll factor
+        UNROLL_FACTOR = tkl.sym.UNROLL_FACTOR
+        hyperparams[UNROLL_FACTOR] = 4
+        
+        # Update with tuning parameters
+        hyperparams.update(self.tuning_spec.hyperparams())
+        
         return WaveTemplate(
-            launchable=base_attention,
+            launchable=tagged_attention,
             hyperparams=hyperparams,
             dynamic_symbols=dynamic_symbols,
+            schedule=get_attention_prefetch_schedule(),  # 4-cluster ping-pong schedule
         )
 
     # def validate_numerics(self, device):
@@ -136,10 +134,31 @@ class WaveBSHDAttentionBenchmark(WaveKernelBenchmark):
 
     @override
     def extra_compile_options(self):
+        """
+        Compile options for 4-cluster ping-pong schedule.
+        
+        Uses MANUAL scheduling with:
+        - GatherToLDS for data movement (global -> shared)
+        - Buffer ops for memory operations
+        - Loop unrolling with UNROLL_FACTOR=4
+        - Linearized shared access disabled to reduce VGPR spills
+        """
         return WaveCompileOptions(
-            schedule=SchedulingType.NONE,
+            schedule=SchedulingType.MANUAL,  # Use manual schedule with prefetch pattern
             canonicalize=True,
+            use_global_to_shared=True,  # Enable GatherToLDS
+            use_buffer_ops=True,
+            linearize_shared_access=False,  # Reduce VGPR spills
             iree_launch_async=False,
+            postprocess="""
+            module attributes {transform.with_named_sequence} {
+                transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+                    %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+                    transform.loop.unroll %0 { factor = %%UNROLL_FACTOR%% } : !transform.any_op
+                    transform.yield
+                }
+            }
+            """,
         )
 
     @override

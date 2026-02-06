@@ -2,6 +2,7 @@ import os
 import logging
 from pathlib import Path
 import argparse
+import multiprocessing as mp
 from kernel_bench.config.types.attention.bshd_attention_config import (
     AttentionConfigBSHD,
 )
@@ -148,6 +149,10 @@ def create_bshd_attention_plot(
 
 
 if __name__ == "__main__":
+    # Set multiprocessing start method to 'spawn' for CUDA/Triton compatibility
+    # This must be done before any CUDA initialization
+    mp.set_start_method('spawn', force=True)
+    
     os.environ["WAVE_CACHE_ON"] = "0"
 
     parser = argparse.ArgumentParser(description="Benchmarking BSHD Attention.")
