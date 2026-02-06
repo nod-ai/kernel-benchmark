@@ -1,0 +1,70 @@
+diff --git a/fa/flash-attention.py b/fa/flash-attention.py
+index 51ece7929..eb3822f19 100644
+--- a/fa/flash-attention.py
++++ b/fa/flash-attention.py
+@@ -413,7 +413,8 @@ def get_cdna_autotune_configs():
+     return [
+         # triton.Config({'BLOCK_M': 64, 'BLOCK_N': 64, 'waves_per_eu': 0, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2},
+         #               num_stages=2, num_warps=4),
+-        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2},
++        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2,
++                       'matrix_instr_nonkdim': 16, 'kpack': 2,},
+                       num_stages=4, num_warps=8),
+         # triton.Config({'BLOCK_M': 128, 'BLOCK_N': 64, 'waves_per_eu': 3, 'PRE_LOAD_V': False, 'GRID_CU_MULTIP': 2},
+         #               num_stages=2, num_warps=4),
+diff --git a/third_party/amd/backend/compiler.py b/third_party/amd/backend/compiler.py
+index cd53de396..7b107fab7 100644
+--- a/third_party/amd/backend/compiler.py
++++ b/third_party/amd/backend/compiler.py
+@@ -208,7 +208,7 @@ class HIPOptions:
+             warnings.warn(
+                 f"kpack is deprecated starting from gfx950 and will be removed in later releases. So for now kpack = {self.kpack} will be overwritten to 1 to make transitioning easier."
+             )
+-            object.__setattr__(self, 'kpack', 1)
++            object.__setattr__(self, 'kpack', 2)
+ 
+         default_libdir = Path(__file__).parent / 'lib'
+         extern_libs = {} if self.extern_libs is None else dict(self.extern_libs)
+diff --git a/third_party/amd/lib/TritonAMDGPUTransforms/MfmaGroup.cpp b/third_party/amd/lib/TritonAMDGPUTransforms/MfmaGroup.cpp
+index 880250e91..94a05d707 100644
+--- a/third_party/amd/lib/TritonAMDGPUTransforms/MfmaGroup.cpp
++++ b/third_party/amd/lib/TritonAMDGPUTransforms/MfmaGroup.cpp
+@@ -3,6 +3,9 @@
+ #include "mlir/IR/BuiltinTypes.h"
+ #include "mlir/IR/Diagnostics.h"
+ #include "llvm/ADT/DenseMap.h"
++#include "llvm/Support/raw_ostream.h"
++#include <cstdlib>
++#include <string>
+ #include <tuple>
+ 
+ namespace mlir {
+@@ -289,7 +292,27 @@ MfmaIntrinsic::selectFor(Location loc, int version, unsigned mDim,
+ 
+   const SmallVector<MfmaMapValue, 2> &values = it->second;
+ 
+-  // If We have more than one instrinsics, prefer those with a larger K.
++  // For testing, prefer smallest K instruction
++  // Set environment variable TRITON_FORCE_SMALLEST_MFMA_K=1 to enable
++  const char* forceSmallestK = std::getenv("TRITON_FORCE_SMALLEST_MFMA_K");
++
++  // Check if environment variable is set
++  static bool debugPrinted = false;
++  if (!debugPrinted && forceSmallestK != nullptr) {
++    llvm::errs() << "TRITON_FORCE_SMALLEST_MFMA_K=" << forceSmallestK << "\n";
++    debugPrinted = true;
++  }
++
++  if (forceSmallestK != nullptr && std::string(forceSmallestK) == "1") {
++    // Return the smallest-K intrinsic (last in the list)
++    auto [symbol, k, kBase] = values.back();
++    if (!debugPrinted) {
++      llvm::errs() << "Forcing smallest K: mDim=" << mDim << " nDim=" << nDim << " k=" << k << "\n";
++    }
++    return MfmaIntrinsic(symbol, mDim, nDim, k, kBase, aElemType, bElemType);
++  }
++
++  // Original behavior- prefer those with a larger K.
+   for (const auto [symbol, k, kBase] : llvm::drop_end(values)) {
+     if (inputKDim >= k)
+       return MfmaIntrinsic(symbol, mDim, nDim, k, kBase, aElemType, bElemType);

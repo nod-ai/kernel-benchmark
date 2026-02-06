@@ -12,20 +12,28 @@ if python -c "import triton" &> /dev/null; then
 fi
 
 echo "Installing triton from source..."
-git clone -b fav3_padded https://github.com/ROCm/triton
+cd /workspace
+rm -rf triton
+git clone https://github.com/ROCm/triton.git
 cd triton
+git checkout 45bff12
 
-# Comment out IglpOpt line in BlockPingpong.cpp
-FILE_PATH="./third_party/amd/lib/TritonAMDGPUTransforms/BlockPingpong.cpp"
-TARGET_LINE="prependOp(builder.create<ROCDL::IglpOpt>(loc, 10), true);"
-if ! grep -qF "$TARGET_LINE" "$FILE_PATH"; then
-    echo "Error: Target line not found in $FILE_PATH"
-    echo "Expected: $TARGET_LINE"
+echo "Applying IglpOpt patch..."
+if [ ! -f /workspace/backends/triton_iglpopt.patch ]; then
+    echo "Error: triton_iglpopt.patch not found in /workspace/backends/"
     exit 1
 fi
-sed -i "\|$TARGET_LINE|s|^[[:space:]]*|&//|" "$FILE_PATH"
+git apply /workspace/backends/triton_iglpopt.patch
+
+echo "Applying MFMA F32 16x16x16 patch..."
+if [ ! -f /workspace/backends/triton_mfma_f32_16x16x16.patch ]; then
+    echo "Error: triton_mfma_f32_16x16x16.patch not found in /workspace/backends/"
+    exit 1
+fi
+git apply /workspace/backends/triton_mfma_f32_16x16x16.patch
 
 pip install -r python/requirements.txt # build-time dependencies
 pip install -e .
 
 echo "Triton (fav3_padded) backend setup complete!"
+ 

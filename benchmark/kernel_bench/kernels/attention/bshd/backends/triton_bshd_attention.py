@@ -53,8 +53,8 @@ def is_cdna():
 
 def get_fwd_config():
     return [
-        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False},
-                      num_stages=4, num_warps=8),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 64, 'waves_per_eu': 2, 'PRE_LOAD_V': False, 'matrix_instr_nonkdim': 16, 'kpack': 2,},
+                      num_stages=4, num_warps=8, ),
     ]
 
 

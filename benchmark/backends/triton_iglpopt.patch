@@ -1,0 +1,22 @@
+diff --git a/third_party/amd/lib/TritonAMDGPUTransforms/BlockPingpong.cpp b/third_party/amd/lib/TritonAMDGPUTransforms/BlockPingpong.cpp
+index 1111111..2222222 100644
+--- a/third_party/amd/lib/TritonAMDGPUTransforms/BlockPingpong.cpp
++++ b/third_party/amd/lib/TritonAMDGPUTransforms/BlockPingpong.cpp
+@@ -697,7 +697,7 @@
+   builder.setInsertionPointToStart(forOp.getBody());
+   // ComputeCluster 1
+   updateOpInsertion(dotOps[0]);
+-  prependOp(builder.create<ROCDL::IglpOpt>(loc, 10), true);
++  //prependOp(builder.create<ROCDL::IglpOpt>(loc, 10), true);
+   prependOp(builder.create<ROCDL::SBarrierOp>(loc), false);
+   prependOp(builder.create<ROCDL::SchedBarrier>(loc, 0), false);
+ 
+@@ -736,7 +736,7 @@
+   //    Therefore, we won't see s_waitcnt inside the compute cluster.
+   constexpr int32_t ldsOnlyBits = ~(0x1f << 8);
+   updateOpInsertion(dotOps[1]);
+-  prependOp(builder.create<ROCDL::IglpOpt>(loc, 10), true);
++  //prependOp(builder.create<ROCDL::IglpOpt>(loc, 10), true);
+   prependOp(builder.create<ROCDL::SchedBarrier>(loc, 0), false);
+   prependOp(builder.create<ROCDL::SetPrioOp>(loc, lowPriority), false);
+   prependOp(builder.create<ROCDL::SWaitcntOp>(loc, ldsOnlyBits), false);
