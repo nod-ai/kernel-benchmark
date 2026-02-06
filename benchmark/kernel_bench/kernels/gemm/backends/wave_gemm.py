@@ -31,7 +31,7 @@ from kernel_bench.utils.dtypes.device_context import get_shared_memory_limit
 from kernel_bench.utils.iree_utils import shape_to_iree
 from kernel_bench.tuning.hyperparam import CategoricalBounds, IntegerBounds
 from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
-from ..gemm_utils import GemmConfig, get_torch_reference
+from ..gemm_utils import GemmConfig, get_mxfp4_inputs, get_torch_reference
 
 
 class WaveGemmBenchmark(WaveKernelBenchmark):
@@ -130,20 +130,10 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
     @override
     def validate_numerics(self, device):
         config = self.config
+        M, N, K = config.M, config.N, config.K
 
         try:
-            x = torch.randn((config.M, config.K), device="cuda", dtype=torch.bfloat16)
-            w = torch.randn((config.N, config.K), device="cuda", dtype=torch.bfloat16)
-
-            quant_func = aiter.get_triton_quant(aiter.QuantType.per_1x32)
-            _, x_scale = quant_func(x, shuffle=False)
-            _, w_scale = quant_func(w, shuffle=False)
-            x_scale = x_scale[: config.M, : config.K // 32]
-            w_scale = w_scale[: config.N, : config.K // 32]
-
-            wave_out = torch.empty(
-                config.M, config.N, device=x.device, dtype=torch.bfloat16
-            )
+            x, w, x_scale, w_scale, wave_out = get_mxfp4_inputs(M, N, K)
 
         except Exception as e:
             self.logger.warn(
@@ -153,10 +143,13 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
             return True
 
         try:
+            # Compile Wave kernel
             kernel = self.load_wave_kernel()
             options = self.get_compile_options(kernel)
-            gemm = wave_compile(options, kernel.launchable)
-            gemm(
+            wave_gemm = wave_compile(options, kernel.launchable)
+
+            # Run Wave kernel
+            wave_gemm(
                 x,
                 x_scale.view(torch.uint8),
                 w,
@@ -164,6 +157,7 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                 wave_out,
             )
 
+            # Run Torch reference
             torch_ref = get_torch_reference(
                 x,
                 w,
@@ -171,6 +165,8 @@ class WaveGemmBenchmark(WaveKernelBenchmark):
                 w_scale.view(torch.uint8),
                 torch.bfloat16,
             )
+
+            # Compare wave with torch reference
             assert_close(wave_out, torch_ref, check_device=False)
             return True
 

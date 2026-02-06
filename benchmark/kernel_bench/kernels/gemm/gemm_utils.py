@@ -27,6 +27,46 @@ def get_torch_reference(x, w, x_scales, w_scales, dtype):
     return torch.mm(x_f32, w_f32.T).to(dtype)[:m, :n]
 
 
+def get_mxfp4_inputs(M, N, K, slice_scales=True):
+    try:
+        import aiter
+        from aiter.ops.shuffle import shuffle_weight
+    except Exception as e:
+        import warnings
+
+        warnings.warn(f"Aiter not available: {e}")
+        return None, None, None, None
+
+    c_dtype = torch.bfloat16
+
+    x = torch.randn((M, K), device="cuda", dtype=c_dtype)
+    w = torch.randn((N, K), device="cuda", dtype=c_dtype)
+    quant_func = aiter.get_triton_quant(aiter.QuantType.per_1x32)
+    _, x_scale = quant_func(x, shuffle=False)
+    _, w_scale = quant_func(w, shuffle=False)
+    x, x_scales_shuffle = quant_func(x, shuffle=True)
+    w, w_scales_shuffle = quant_func(w, shuffle=True)
+
+    wshuffle = shuffle_weight(w, layout=(16, 16))
+    # flops
+    flops = 2.0 * M * N * K
+    # memory transfer
+    mem_read = x.numel() * x.element_size() + w.numel() * w.element_size()
+    mem_read += (
+        x_scale.numel() * x_scale.element_size()
+        + w_scale.numel() * w_scale.element_size()
+    )
+    mem_write = (M * N) * 2  # TODO: Fix for c_dtype != bf16
+    mem = mem_read + mem_write
+    out = torch.empty(x.shape[0], w.shape[1], device=x.device, dtype=c_dtype)
+
+    if slice_scales:
+        x_scale = x_scale[:M, : K // 32]
+        w_scale = w_scale[:N, : K // 32]
+
+    return x, w, x_scale, w_scale, out
+
+
 def mxfp4_to_f32(x):
     # 2 because we pack fp4 in uint8.
     x = x.repeat_interleave(2, dim=-1)

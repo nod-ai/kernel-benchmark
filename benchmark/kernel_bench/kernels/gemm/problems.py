@@ -1486,6 +1486,7 @@ def get_mxfp4_gemms() -> list[tuple[str, GemmConfig]]:
         (2048, 2048, 2048, "N", "T", "mxfp4"),
         (4096, 4096, 4096, "N", "T", "mxfp4"),
         (8192, 8192, 8192, "N", "T", "mxfp4"),
+        (16384, 16384, 16384, "N", "T", "mxfp4"),
     ]
 
     return [("mxfp4-square", GemmConfig(*shape)) for shape in shapes]

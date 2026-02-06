@@ -17,9 +17,11 @@ if [[ -d "aiter" ]]; then
     rm -rf aiter
 fi
 
-git clone --recursive https://github.com/ROCm/aiter.git
-cd aiter
-python setup.py develop
-cd ..
+git clone https://github.com/ROCm/aiter.git && \
+    cd aiter && \
+    git checkout cf29be372d2ecd20102cc22b74a64d75f0c99512 && \
+    git submodule sync && \
+    git submodule update --init --recursive && \
+    python setup.py develop
 
 echo "Triton (aiter) backend setup complete!"
