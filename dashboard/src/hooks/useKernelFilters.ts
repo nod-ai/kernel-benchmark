@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Kernel } from "../types";
-import { KERNEL_DIMS } from "../utils/utils";
+import { useKernelDims } from "../contexts/KernelTypesContext";
 
 // Filter state interface
 export interface FilterState {
@@ -81,65 +81,71 @@ function getUniqueVariants(kernels: Kernel[], filters: FilterState): string[] {
   return [];
 }
 
-// Filter configuration definitions
-export const FILTER_CONFIGS: FilterDefinition[] = [
-  {
-    key: "kernelType",
-    type: "single",
-    title: "Kernel Type",
-    getOptions: () => Object.keys(KERNEL_DIMS),
-    cascades: ["machine", "backends", "dtypes", "tags", "variants"],
-  },
-  {
-    key: "machine",
-    type: "single",
-    title: "Machine",
-    getOptions: getUniqueMachines,
-    cascades: ["backends", "dtypes", "tags", "variants"],
-  },
-  {
-    key: "backends",
-    type: "multi",
-    title: "Backends",
-    getOptions: getUniqueBackends,
-  },
-  {
-    key: "dtypes",
-    type: "multi",
-    title: "Data Types",
-    getOptions: getUniqueDtypes,
-  },
-  {
-    key: "tags",
-    type: "multi",
-    title: "Tags",
-    getOptions: getUniqueTags,
-  },
-  {
-    key: "variants",
-    type: "multi",
-    title: "Transpose",
-    getOptions: getUniqueVariants,
-    condition: (filters) => filters.kernelType === "gemm",
-  },
-];
+// Build filter configs that depend on kernelDims (kernel type options from API or derived from kernels)
+function getFilterConfigs(
+  kernelDims: Record<string, string[]>,
+  getUniqueKernelTypesFromKernels: (kernels: Kernel[]) => string[]
+): FilterDefinition[] {
+  return [
+    {
+      key: "kernelType",
+      type: "single",
+      title: "Kernel Type",
+      getOptions: (kernels) => getUniqueKernelTypesFromKernels(kernels),
+      cascades: ["machine", "backends", "dtypes", "tags", "variants"],
+    },
+    {
+      key: "machine",
+      type: "single",
+      title: "Machine",
+      getOptions: getUniqueMachines,
+      cascades: ["backends", "dtypes", "tags", "variants"],
+    },
+    {
+      key: "backends",
+      type: "multi",
+      title: "Backends",
+      getOptions: getUniqueBackends,
+    },
+    {
+      key: "dtypes",
+      type: "multi",
+      title: "Data Types",
+      getOptions: getUniqueDtypes,
+    },
+    {
+      key: "tags",
+      type: "multi",
+      title: "Tags",
+      getOptions: getUniqueTags,
+    },
+    {
+      key: "variants",
+      type: "multi",
+      title: "Transpose",
+      getOptions: getUniqueVariants,
+      condition: (filters) => filters.kernelType === "gemm",
+    },
+  ];
+}
 
 // Compute new filter state with cascading updates
 function computeNewFilterState(
   currentFilters: FilterState,
   changedKey: keyof FilterState,
   newValue: any,
-  kernels: Kernel[]
+  kernels: Kernel[],
+  filterConfigs: FilterDefinition[]
 ): FilterState {
   const newFilters = { ...currentFilters, [changedKey]: newValue };
 
   // Find the configuration for the changed filter
-  const config = FILTER_CONFIGS.find((c) => c.key === changedKey);
+  const config = filterConfigs.find((c) => c.key === changedKey);
 
   if (config?.cascades) {
     // Reset dependent filters to "all available" when parent changes
     config.cascades.forEach((dependentKey) => {
-      const dependentConfig = FILTER_CONFIGS.find(
+      const dependentConfig = filterConfigs.find(
         (c) => c.key === dependentKey
       );
       if (dependentConfig) {
@@ -164,10 +170,23 @@ function computeNewFilterState(
 }
 
 // Initialize filter state from kernels
-function initializeFilters(kernels: Kernel[]): FilterState {
+function initializeFilters(
+  kernels: Kernel[],
+  filterConfigs: FilterDefinition[]
+): FilterState {
   if (kernels.length === 0) {
+    const emptyFilters: FilterState = {
+      kernelType: "",
+      machine: "",
+      backends: [],
+      dtypes: [],
+      tags: [],
+      variants: [],
+    };
+    const kernelTypeOptions =
+      filterConfigs[0]?.getOptions([], emptyFilters) ?? [];
     return {
-      kernelType: "gemm",
+      kernelType: kernelTypeOptions[0] ?? "",
       machine: "",
       backends: [],
       dtypes: [],
@@ -177,7 +196,7 @@ function initializeFilters(kernels: Kernel[]): FilterState {
   }
 
   const uniqueKernelTypes = getUniqueKernelTypes(kernels);
-  const kernelType = uniqueKernelTypes[0] || "gemm";
+  const kernelType = uniqueKernelTypes[0] ?? "";
 
   const initialFilters: FilterState = {
     kernelType,
@@ -189,7 +208,7 @@ function initializeFilters(kernels: Kernel[]): FilterState {
   };
 
   // Set initial values for all filters
-  FILTER_CONFIGS.forEach((config) => {
+  filterConfigs.forEach((config) => {
     const options = config.getOptions(kernels, initialFilters);
     if (config.type === "single") {
       (initialFilters as any)[config.key] = options[0] || "";
@@ -203,29 +222,34 @@ function initializeFilters(kernels: Kernel[]): FilterState {
 
 // Main hook
 export function useKernelFilters(kernels: Kernel[]) {
-  const [filters, setFilters] = useState<FilterState>(() =>
-    initializeFilters(kernels)
+  const kernelDims = useKernelDims();
+  const filterConfigs = useMemo(
+    () => getFilterConfigs(kernelDims, getUniqueKernelTypes),
+    [kernelDims]
   );
 
-  // Update filters when kernels change
-  useMemo(() => {
-    if (kernels.length > 0) {
-      const newFilters = initializeFilters(kernels);
-      setFilters(newFilters);
+  const [filters, setFilters] = useState<FilterState>(() =>
+    initializeFilters(kernels, filterConfigs)
+  );
+
+  // Update filters when kernels or filter configs change
+  useEffect(() => {
+    if (kernels.length > 0 || Object.keys(kernelDims).length > 0) {
+      setFilters(initializeFilters(kernels, filterConfigs));
     }
-  }, [kernels]);
+  }, [kernels, filterConfigs, kernelDims]);
 
   // Compute available options based on current filter state
   const availableOptions: AvailableFilterOptions = useMemo(
     () => ({
-      kernelTypes: FILTER_CONFIGS[0].getOptions(kernels, filters),
-      machines: FILTER_CONFIGS[1].getOptions(kernels, filters),
-      backends: FILTER_CONFIGS[2].getOptions(kernels, filters),
-      dtypes: FILTER_CONFIGS[3].getOptions(kernels, filters),
-      tags: FILTER_CONFIGS[4].getOptions(kernels, filters),
-      variants: FILTER_CONFIGS[5].getOptions(kernels, filters),
+      kernelTypes: filterConfigs[0].getOptions(kernels, filters),
+      machines: filterConfigs[1].getOptions(kernels, filters),
+      backends: filterConfigs[2].getOptions(kernels, filters),
+      dtypes: filterConfigs[3].getOptions(kernels, filters),
+      tags: filterConfigs[4].getOptions(kernels, filters),
+      variants: filterConfigs[5].getOptions(kernels, filters),
     }),
-    [kernels, filters]
+    [kernels, filters, filterConfigs]
   );
 
   // Filter kernels based on current filter state
@@ -249,7 +273,7 @@ export function useKernelFilters(kernels: Kernel[]) {
   // Update function with cascading logic
   const updateFilter = (key: keyof FilterState, value: any) => {
     setFilters((prevFilters) =>
-      computeNewFilterState(prevFilters, key, value, kernels)
+      computeNewFilterState(prevFilters, key, value, kernels, filterConfigs)
     );
   };
 
@@ -258,5 +282,6 @@ export function useKernelFilters(kernels: Kernel[]) {
     availableOptions,
     filteredKernels,
     updateFilter,
+    filterConfigs,
   };
 }
