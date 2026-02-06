@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
 import type { Kernel } from "../types";
-import { useKernelDims } from "../contexts/KernelTypesContext";
 
 // Filter state interface
 export interface FilterState {
@@ -81,9 +80,8 @@ function getUniqueVariants(kernels: Kernel[], filters: FilterState): string[] {
   return [];
 }
 
-// Build filter configs that depend on kernelDims (kernel type options from API or derived from kernels)
+// Build filter configs (kernel type options come from the kernels list only)
 function getFilterConfigs(
-  kernelDims: Record<string, string[]>,
   getUniqueKernelTypesFromKernels: (kernels: Kernel[]) => string[]
 ): FilterDefinition[] {
   return [
@@ -222,10 +220,9 @@ function initializeFilters(
 
 // Main hook
 export function useKernelFilters(kernels: Kernel[]) {
-  const kernelDims = useKernelDims();
   const filterConfigs = useMemo(
-    () => getFilterConfigs(kernelDims, getUniqueKernelTypes),
-    [kernelDims]
+    () => getFilterConfigs(getUniqueKernelTypes),
+    []
   );
 
   const [filters, setFilters] = useState<FilterState>(() =>
@@ -234,10 +231,10 @@ export function useKernelFilters(kernels: Kernel[]) {
 
   // Update filters when kernels or filter configs change
   useEffect(() => {
-    if (kernels.length > 0 || Object.keys(kernelDims).length > 0) {
+    if (kernels.length > 0) {
       setFilters(initializeFilters(kernels, filterConfigs));
     }
-  }, [kernels, filterConfigs, kernelDims]);
+  }, [kernels, filterConfigs]);
 
   // Compute available options based on current filter state
   const availableOptions: AvailableFilterOptions = useMemo(
