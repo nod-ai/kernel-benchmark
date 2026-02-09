@@ -77,17 +77,25 @@ class BenchmarkArtifactParser(RunArtifactParser):
         # Check if this is a tracker run
         tracker_id = None
         tracker_name = None
+        backend_specs = None
         if run.triggerId:
             try:
                 trigger = RunTriggerDb.find_by_id(run.triggerId)
-                if trigger and "trackerId" in trigger.metadata:
-                    tracker_id = trigger.metadata.get("trackerId")
-                    tracker_name = trigger.metadata.get(
-                        "trackerName", "Unknown Tracker"
-                    )
-                    logger.debug(
-                        f"Run {run_id} is linked to tracker {tracker_name} ({tracker_id})"
-                    )
+                if trigger:
+                    if "trackerId" in trigger.metadata:
+                        tracker_id = trigger.metadata.get("trackerId")
+                        tracker_name = trigger.metadata.get(
+                            "trackerName", "Unknown Tracker"
+                        )
+                        logger.debug(
+                            f"Run {run_id} is linked to tracker {tracker_name} ({tracker_id})"
+                        )
+                    # Get backend specs from trigger metadata
+                    if "backendSpecs" in trigger.metadata:
+                        backend_specs = trigger.metadata.get("backendSpecs")
+                        logger.debug(
+                            f"Run {run_id} has {len(backend_specs)} backend specifications"
+                        )
             except Exception as e:
                 logger.warning(f"Failed to check trigger for tracker info: {e}")
 
@@ -101,6 +109,7 @@ class BenchmarkArtifactParser(RunArtifactParser):
                 performance=performance,
                 trackerId=tracker_id,
                 trackerName=tracker_name,
+                backendSpecs=backend_specs,
             )
             BenchmarkRunStatsDb.upsert(stats)
             logger.info(f"Saved performance statistics for run {run_id}")

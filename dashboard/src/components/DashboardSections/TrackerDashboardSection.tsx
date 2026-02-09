@@ -98,6 +98,8 @@ export default function TrackerDashboardSection({
       const dataPoint: any = {
         timestamp: new Date(point.timestamp).toLocaleDateString(),
         fullTimestamp: point.timestamp,
+        runId: point.runId,
+        backendSpecs: point.backendSpecs || [],
       };
 
       // Add each backend's data
@@ -184,6 +186,29 @@ export default function TrackerDashboardSection({
                 const label = context.dataset.label || "";
                 const value = context.parsed.y;
                 return `${label}: ${value.toFixed(2)}`;
+              },
+              afterBody: (tooltipItems) => {
+                if (tooltipItems.length === 0) return [];
+                
+                const dataIndex = tooltipItems[0].dataIndex;
+                const point = chartData[dataIndex];
+                
+                if (!point?.backendSpecs || point.backendSpecs.length === 0) {
+                  return [];
+                }
+                
+                // Build backend spec info lines
+                const lines: string[] = ["\nBackend Specifications:"];
+                point.backendSpecs.forEach((spec: any) => {
+                  lines.push(`\n${spec.name}:`);
+                  lines.push(`  Repo: ${spec.remoteRepository}`);
+                  lines.push(`  Branch: ${spec.branch}`);
+                  if (spec.commitHash) {
+                    lines.push(`  Commit: ${spec.commitHash.substring(0, 8)}`);
+                  }
+                });
+                
+                return lines;
               },
             },
           },
@@ -320,6 +345,47 @@ export default function TrackerDashboardSection({
             </div>
           </div>
         </div>
+
+        {/* Backend Specifications Info */}
+        {chartData.length > 0 && chartData[chartData.length - 1]?.backendSpecs && chartData[chartData.length - 1].backendSpecs.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-medium text-gray-700 mb-3 text-sm">
+              Backend Specifications (Latest Run)
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {chartData[chartData.length - 1].backendSpecs.map((spec: any) => (
+                <div
+                  key={spec.id}
+                  className="bg-white border border-gray-200 rounded-lg p-3 text-xs"
+                >
+                  <div className="font-semibold text-gray-800 mb-2">
+                    {spec.name}
+                  </div>
+                  <div className="space-y-1 text-gray-600">
+                    <div className="flex gap-1">
+                      <span className="font-medium min-w-[60px]">Repo:</span>
+                      <span className="font-mono text-xs break-all">
+                        {spec.remoteRepository}
+                      </span>
+                    </div>
+                    <div className="flex gap-1">
+                      <span className="font-medium min-w-[60px]">Branch:</span>
+                      <span className="font-mono text-xs">{spec.branch}</span>
+                    </div>
+                    {spec.commitHash && (
+                      <div className="flex gap-1">
+                        <span className="font-medium min-w-[60px]">Commit:</span>
+                        <span className="font-mono text-xs" title={spec.commitHash}>
+                          {spec.commitHash.substring(0, 8)}...
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Chart */}
         {chartData.length === 0 ? (

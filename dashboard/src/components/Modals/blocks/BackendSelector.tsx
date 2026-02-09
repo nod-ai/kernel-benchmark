@@ -69,7 +69,7 @@ export default function BackendSelector({
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {SUPPORTED_BACKENDS.map((backend) => {
           const isSelected = isBackendTypeSelected(backend);
           const selectedSpec = getSelectedSpec(backend);

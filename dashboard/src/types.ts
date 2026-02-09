@@ -249,6 +249,7 @@ export interface TrackerPerformancePoint {
     };
     numKernels: number;
   }>;
+  backendSpecs?: BackendSpec[]; // Backend specifications with commit hashes
 }
 
 export interface Tracker {

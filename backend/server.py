@@ -402,6 +402,10 @@ def trigger_manual_workflow():
         "backends": config_data["backends"],
         "branch": config_data["branch"],
     }
+    
+    # Include backendSpecs if provided
+    if "backendSpecs" in config_data and config_data["backendSpecs"]:
+        metadata["backendSpecs"] = config_data["backendSpecs"]
 
     # Handle kernel selection
     if kernel_selection["type"] == "all-quick":
@@ -888,6 +892,10 @@ def create_tracker():
             "createdAt": datetime.now(timezone.utc),
             "dashboardName": data.get("dashboardName"),
         }
+        
+        # Include backendSpecs if provided
+        if "backendSpecs" in data and data["backendSpecs"]:
+            tracker_data["backendSpecs"] = data["backendSpecs"]
 
         tracker = fromdict(Tracker, tracker_data)
 
@@ -1025,6 +1033,10 @@ def trigger_tracker_manually(tracker_id):
             "blobName": tracker.blobName,
             "branch": tracker.branch,
         }
+        
+        # Include backendSpecs if available
+        if tracker.backendSpecs:
+            metadata["backendSpecs"] = tracker.backendSpecs
 
         # Use MANUAL_BENCHMARK type so it's treated like a manual run in scheduling
         # but include trackerId to maintain association
@@ -1138,7 +1150,8 @@ def get_tracker_performance_timeline(tracker_id):
             timeline.append({
                 "timestamp": stat.timestamp.isoformat(),
                 "runId": stat.runId,
-                "backends": backends_data
+                "backends": backends_data,
+                "backendSpecs": stat.backendSpecs if stat.backendSpecs else None
             })
         
         return jsonify(timeline)

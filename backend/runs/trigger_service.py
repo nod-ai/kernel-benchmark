@@ -23,6 +23,7 @@ from uuid import uuid4
 from dataclass_wizard import asdict
 
 from backend.github_utils.actions import trigger_workflow_dispatch
+from backend.github_utils.commits import resolve_backend_specs_commits
 from backend.github_utils.gist import create_gist
 from backend.globals import BENCH_REPO_BRANCH
 from backend.runs import RunType
@@ -96,6 +97,13 @@ def trigger_run(trigger_type: TriggerType, metadata: dict[str, Any]) -> Optional
         branch = metadata.get("branch")
         if not branch:
             raise ValueError("branch is required in metadata")
+
+        # Resolve commit hashes for backend specs if provided
+        if "backendSpecs" in metadata and metadata["backendSpecs"]:
+            logger.info("Resolving commit hashes for backend specs...")
+            metadata["backendSpecs"] = resolve_backend_specs_commits(
+                metadata["backendSpecs"]
+            )
 
         # Create trigger in database with status=QUEUED
         # RunScheduler will dispatch it when machine is available
@@ -280,6 +288,14 @@ def _build_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
             inputs["selected_backend"] = ",".join(metadata["backends"])
         else:
             inputs["selected_backend"] = metadata["backends"]
+
+    # Backend specifications with commit hashes
+    if "backendSpecs" in metadata and metadata["backendSpecs"]:
+        backend_specs_gist = create_gist(metadata["backendSpecs"])
+        inputs["backend_specs_url"] = backend_specs_gist.raw_url
+        logger.info(
+            f"Created backend specs gist with {len(metadata['backendSpecs'])} specs"
+        )
 
     # Optional PR info (for manual runs)
     if "repoName" in metadata:

@@ -107,6 +107,10 @@ class TrackerScheduler:
             "branch": tracker.branch,
             "blobName": tracker.blobName,
         }
+        
+        # Include backendSpecs if available
+        if tracker.backendSpecs:
+            metadata["backendSpecs"] = tracker.backendSpecs
 
         trigger_id = trigger_run(TriggerType.SCHEDULED, metadata)
 
