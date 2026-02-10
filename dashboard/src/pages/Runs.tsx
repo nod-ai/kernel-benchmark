@@ -254,6 +254,28 @@ function RunCard({ item, onDelete, onCancel, onNavigate }: RunCardProps) {
               </span>
             </div>
           )}
+          
+          {/* Backend Specs - shown when available */}
+          {trigger?.metadata?.backendSpecs && Array.isArray(trigger.metadata.backendSpecs) && trigger.metadata.backendSpecs.length > 0 && (
+            <div className="mb-2 space-y-1">
+              <div className="text-xs font-medium text-gray-700 mb-1">Backend Specifications:</div>
+              <div className="space-y-1">
+                {trigger.metadata.backendSpecs.map((spec: any, idx: number) => (
+                  <div key={spec.id || idx} className="text-xs text-gray-600 pl-2 border-l-2 border-gray-300">
+                    <div className="font-medium text-gray-700">{spec.name}</div>
+                    <div className="text-gray-500">
+                      {spec.remoteRepository} @ {spec.branch}
+                      {spec.commitHash && (
+                        <span className="ml-1 font-mono" title={spec.commitHash}>
+                          ({spec.commitHash.substring(0, 7)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Timestamp */}
           <p className="text-xs text-gray-500 mb-3">
