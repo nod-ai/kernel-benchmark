@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getBackendColor } from "../utils/color";
+import { getDefaultBackendSpec } from "../utils/backendSpecs";
 import {
   FILTER_CONFIGS,
   type FilterState,
@@ -62,8 +63,12 @@ export function MultiSelectFilter({
   const [dropdownPosition, setDropdownPosition] = useState<"left" | "right">(
     "left"
   );
+  const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  
+  // Check if this is the Backends filter to show backend spec tooltips
+  const isBackendsFilter = title === "Backends";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -169,32 +174,68 @@ export function MultiSelectFilter({
                   Clear All
                 </button>
               </div>
-              {options.map((option) => (
-                <label
-                  key={option}
-                  className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={(e) => handleOptionClick(option, e)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedOptions.includes(option)}
-                    onChange={() => {}} // Handled by label onClick
-                    className="mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <span
-                    className="text-sm"
-                    style={{
-                      color:
-                        selectedOptions.includes(option) && distinctColors
-                          ? getBackendColor(option).darken(0.2).string()
-                          : undefined,
-                    }}
-                  >
-                    {option}
-                  </span>
-                </label>
-              ))}
+              {options.map((option) => {
+                const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
+                
+                return (
+                  <div key={option} className="relative group">
+                    <label
+                      className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors"
+                      onClick={(e) => handleOptionClick(option, e)}
+                      onMouseEnter={() => setHoveredBackend(option)}
+                      onMouseLeave={() => setHoveredBackend(null)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedOptions.includes(option)}
+                        onChange={() => {}} // Handled by label onClick
+                        className="mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span
+                        className="text-sm"
+                        style={{
+                          color:
+                            selectedOptions.includes(option) && distinctColors
+                              ? getBackendColor(option).darken(0.2).string()
+                              : undefined,
+                        }}
+                      >
+                        {option}
+                      </span>
+                    </label>
+                    
+                    {/* Backend spec tooltip */}
+                    {isBackendsFilter && backendSpec && hoveredBackend === option && (
+                      <div className="absolute z-50 left-full top-0 ml-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+                        <div className="font-semibold mb-2">{backendSpec.name}</div>
+                        <div className="space-y-1 text-gray-300">
+                          <div className="flex gap-2">
+                            <span className="font-medium min-w-[60px]">Repo:</span>
+                            <span className="font-mono break-all">
+                              {backendSpec.remoteRepository}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="font-medium min-w-[60px]">Branch:</span>
+                            <span className="font-mono">{backendSpec.branch}</span>
+                          </div>
+                          {backendSpec.commitHash && (
+                            <div className="flex gap-2">
+                              <span className="font-medium min-w-[60px]">Commit:</span>
+                              <span className="font-mono">{backendSpec.commitHash.substring(0, 8)}</span>
+                            </div>
+                          )}
+                        </div>
+                        {/* Arrow pointing left */}
+                        <div className="absolute right-full top-1/2 -translate-y-1/2 mr-px">
+                          <div className="border-4 border-transparent border-r-gray-900"></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -209,35 +250,71 @@ export function MultiSelectFilter({
         {title}:
       </span>
       <div className="flex gap-2">
-        {options.map((option) => (
-          <button
-            key={option}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
-            style={{
-              backgroundColor:
-                selectedOptions.includes(option) && distinctColors
-                  ? getBackendColor(option).lighten(0.4).string()
-                  : selectedOptions.includes(option)
-                    ? "#3b82f6" // blue-600
-                    : "#ffffff",
-              borderColor:
-                selectedOptions.includes(option) && distinctColors
-                  ? getBackendColor(option).string()
-                  : selectedOptions.includes(option)
-                    ? "#3b82f6" // blue-600
-                    : "#d1d5db", // gray-300
-              color:
-                selectedOptions.includes(option) && distinctColors
-                  ? getBackendColor(option).darken(0.3).string()
-                  : selectedOptions.includes(option)
-                    ? "#ffffff"
-                    : "#374151", // gray-700
-            }}
-            onClick={(e) => handleOptionClick(option, e)}
-          >
-            {option}
-          </button>
-        ))}
+        {options.map((option) => {
+          const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
+          
+          return (
+            <div key={option} className="relative group">
+              <button
+                className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
+                style={{
+                  backgroundColor:
+                    selectedOptions.includes(option) && distinctColors
+                      ? getBackendColor(option).lighten(0.4).string()
+                      : selectedOptions.includes(option)
+                        ? "#3b82f6" // blue-600
+                        : "#ffffff",
+                  borderColor:
+                    selectedOptions.includes(option) && distinctColors
+                      ? getBackendColor(option).string()
+                      : selectedOptions.includes(option)
+                        ? "#3b82f6" // blue-600
+                        : "#d1d5db", // gray-300
+                  color:
+                    selectedOptions.includes(option) && distinctColors
+                      ? getBackendColor(option).darken(0.3).string()
+                      : selectedOptions.includes(option)
+                        ? "#ffffff"
+                        : "#374151", // gray-700
+                }}
+                onClick={(e) => handleOptionClick(option, e)}
+                onMouseEnter={() => setHoveredBackend(option)}
+                onMouseLeave={() => setHoveredBackend(null)}
+              >
+                {option}
+              </button>
+              
+              {/* Backend spec tooltip */}
+              {isBackendsFilter && backendSpec && hoveredBackend === option && (
+                <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+                  <div className="font-semibold mb-2">{backendSpec.name}</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div className="flex gap-2">
+                      <span className="font-medium min-w-[60px]">Repo:</span>
+                      <span className="font-mono break-all">
+                        {backendSpec.remoteRepository}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="font-medium min-w-[60px]">Branch:</span>
+                      <span className="font-mono">{backendSpec.branch}</span>
+                    </div>
+                    {backendSpec.commitHash && (
+                      <div className="flex gap-2">
+                        <span className="font-medium min-w-[60px]">Commit:</span>
+                        <span className="font-mono">{backendSpec.commitHash.substring(0, 8)}</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* Arrow pointing down */}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
+                    <div className="border-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
