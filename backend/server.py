@@ -73,6 +73,22 @@ def _generate_default_backend_specs(backends: list[str]) -> list[dict]:
             "branch": "main",
             "isDefault": True,
         },
+        "torch": {
+            "id": "torch-default",
+            "name": "Torch (Default)",
+            "backend": "torch",
+            "remoteRepository": "ROCm/pytorch",
+            "branch": "develop",
+            "isDefault": True,
+        },
+        "hipblaslt": {
+            "id": "hipblaslt-default",
+            "name": "hipBLASLt (Default)",
+            "backend": "hipblaslt",
+            "remoteRepository": "ROCm/rocm-libraries",
+            "branch": "develop",
+            "isDefault": True,
+        },
     }
     
     specs = []
