@@ -38,7 +38,7 @@ export const DEFAULT_BACKEND_SPECS: Record<string, BackendSpec> = {
     id: "hipblaslt-default",
     name: "hipBLASLt (Default)",
     backend: "hipblaslt",
-    remoteRepository: "ROCm/hipBLASLt",
+    remoteRepository: "ROCm/rocm-libraries",
     branch: "develop",
     isDefault: true,
   },
