@@ -182,6 +182,14 @@ export default function TrackerDashboardSection({
           },
           tooltip: {
             callbacks: {
+              title: (tooltipItems) => {
+                if (tooltipItems.length === 0) return "";
+                const dataIndex = tooltipItems[0].dataIndex;
+                const point = chartData[dataIndex];
+                return point?.fullTimestamp 
+                  ? new Date(point.fullTimestamp).toLocaleString()
+                  : "";
+              },
               label: (context) => {
                 const label = context.dataset.label || "";
                 const value = context.parsed.y;
@@ -194,23 +202,38 @@ export default function TrackerDashboardSection({
                 const point = chartData[dataIndex];
                 
                 if (!point?.backendSpecs || point.backendSpecs.length === 0) {
-                  return [];
+                  return ["", "No backend specs available"];
                 }
                 
                 // Build backend spec info lines
-                const lines: string[] = ["\nBackend Specifications:"];
+                const lines: string[] = ["", "━━━ Backend Specifications ━━━"];
                 point.backendSpecs.forEach((spec: any) => {
-                  lines.push(`\n${spec.name}:`);
-                  lines.push(`  Repo: ${spec.remoteRepository}`);
-                  lines.push(`  Branch: ${spec.branch}`);
+                  lines.push("");
+                  lines.push(`${spec.name || spec.backend}:`);
+                  if (spec.remoteRepository) {
+                    lines.push(`  Repository: ${spec.remoteRepository}`);
+                  }
+                  if (spec.branch) {
+                    lines.push(`  Branch: ${spec.branch}`);
+                  }
                   if (spec.commitHash) {
-                    lines.push(`  Commit: ${spec.commitHash.substring(0, 8)}`);
+                    lines.push(`  Commit: latest (${spec.commitHash.substring(0, 8)})`);
+                  } else {
+                    lines.push(`  Commit: will use latest from branch`);
                   }
                 });
                 
                 return lines;
               },
             },
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            borderWidth: 1,
+            padding: 12,
+            displayColors: true,
+            boxPadding: 4,
           },
         },
       },
@@ -345,47 +368,6 @@ export default function TrackerDashboardSection({
             </div>
           </div>
         </div>
-
-        {/* Backend Specifications Info */}
-        {chartData.length > 0 && chartData[chartData.length - 1]?.backendSpecs && chartData[chartData.length - 1].backendSpecs.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-medium text-gray-700 mb-3 text-sm">
-              Backend Specifications (Latest Run)
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {chartData[chartData.length - 1].backendSpecs.map((spec: any) => (
-                <div
-                  key={spec.id}
-                  className="bg-white border border-gray-200 rounded-lg p-3 text-xs"
-                >
-                  <div className="font-semibold text-gray-800 mb-2">
-                    {spec.name}
-                  </div>
-                  <div className="space-y-1 text-gray-600">
-                    <div className="flex gap-1">
-                      <span className="font-medium min-w-[60px]">Repo:</span>
-                      <span className="font-mono text-xs break-all">
-                        {spec.remoteRepository}
-                      </span>
-                    </div>
-                    <div className="flex gap-1">
-                      <span className="font-medium min-w-[60px]">Branch:</span>
-                      <span className="font-mono text-xs">{spec.branch}</span>
-                    </div>
-                    {spec.commitHash && (
-                      <div className="flex gap-1">
-                        <span className="font-medium min-w-[60px]">Commit:</span>
-                        <span className="font-mono text-xs" title={spec.commitHash}>
-                          {spec.commitHash.substring(0, 8)}...
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Chart */}
         {chartData.length === 0 ? (

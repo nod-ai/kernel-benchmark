@@ -267,7 +267,7 @@ function RunCard({ item, onDelete, onCancel, onNavigate }: RunCardProps) {
                       {spec.remoteRepository} @ {spec.branch}
                       {spec.commitHash && (
                         <span className="ml-1 font-mono" title={spec.commitHash}>
-                          ({spec.commitHash.substring(0, 7)})
+                          (latest: {spec.commitHash.substring(0, 7)})
                         </span>
                       )}
                     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { getBackendColor } from "../utils/color";
 import { getDefaultBackendSpec } from "../utils/backendSpecs";
 import {
@@ -20,6 +20,7 @@ interface MultiSelectProps extends SelectProps {
   selectedOptions: string[];
   distinctColors?: boolean;
   onInput: (selectedOptions: string[]) => void;
+  latestBackendSpecs?: Record<string, any>; // Backend specs from latest run
 }
 
 export function SingleSelectFilter({
@@ -58,16 +59,17 @@ export function MultiSelectFilter({
   selectedOptions,
   distinctColors,
   onInput,
+  latestBackendSpecs,
 }: MultiSelectProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<"left" | "right">(
     "left"
   );
-  const [hoveredBackend, setHoveredBackend] = useState<string | null>(null);
+  const [expandedBackend, setExpandedBackend] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   
-  // Check if this is the Backends filter to show backend spec tooltips
+  // Check if this is the Backends filter to show backend spec info buttons
   const isBackendsFilter = title === "Backends";
 
   useEffect(() => {
@@ -174,68 +176,32 @@ export function MultiSelectFilter({
                   Clear All
                 </button>
               </div>
-              {options.map((option) => {
-                const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
-                
-                return (
-                  <div key={option} className="relative group">
-                    <label
-                      className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors"
-                      onClick={(e) => handleOptionClick(option, e)}
-                      onMouseEnter={() => setHoveredBackend(option)}
-                      onMouseLeave={() => setHoveredBackend(null)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedOptions.includes(option)}
-                        onChange={() => {}} // Handled by label onClick
-                        className="mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span
-                        className="text-sm"
-                        style={{
-                          color:
-                            selectedOptions.includes(option) && distinctColors
-                              ? getBackendColor(option).darken(0.2).string()
-                              : undefined,
-                        }}
-                      >
-                        {option}
-                      </span>
-                    </label>
-                    
-                    {/* Backend spec tooltip */}
-                    {isBackendsFilter && backendSpec && hoveredBackend === option && (
-                      <div className="absolute z-50 left-full top-0 ml-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
-                        <div className="font-semibold mb-2">{backendSpec.name}</div>
-                        <div className="space-y-1 text-gray-300">
-                          <div className="flex gap-2">
-                            <span className="font-medium min-w-[60px]">Repo:</span>
-                            <span className="font-mono break-all">
-                              {backendSpec.remoteRepository}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <span className="font-medium min-w-[60px]">Branch:</span>
-                            <span className="font-mono">{backendSpec.branch}</span>
-                          </div>
-                          {backendSpec.commitHash && (
-                            <div className="flex gap-2">
-                              <span className="font-medium min-w-[60px]">Commit:</span>
-                              <span className="font-mono">{backendSpec.commitHash.substring(0, 8)}</span>
-                            </div>
-                          )}
-                        </div>
-                        {/* Arrow pointing left */}
-                        <div className="absolute right-full top-1/2 -translate-y-1/2 mr-px">
-                          <div className="border-4 border-transparent border-r-gray-900"></div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {options.map((option) => (
+                <label
+                  key={option}
+                  className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={(e) => handleOptionClick(option, e)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedOptions.includes(option)}
+                    onChange={() => {}} // Handled by label onClick
+                    className="mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <span
+                    className="text-sm"
+                    style={{
+                      color:
+                        selectedOptions.includes(option) && distinctColors
+                          ? getBackendColor(option).darken(0.2).string()
+                          : undefined,
+                    }}
+                  >
+                    {option}
+                  </span>
+                </label>
+              ))}
             </div>
           )}
         </div>
@@ -245,77 +211,131 @@ export function MultiSelectFilter({
 
   // Original row layout for 10 or fewer options
   return (
-    <div className="select-none flex gap-3 items-center flex-shrink-0">
-      <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
-        {title}:
-      </span>
-      <div className="flex gap-2">
-        {options.map((option) => {
-          const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
+    <div className="select-none flex flex-col gap-3 flex-shrink-0">
+      <div className="flex gap-3 items-center">
+        <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
+          {title}:
+        </span>
+        <div className="flex gap-2">
+          {options.map((option) => {
+            const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
+            const isSelected = selectedOptions.includes(option);
+            
+            return (
+              <div key={option} className="flex items-center gap-1">
+                <button
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
+                  style={{
+                    backgroundColor:
+                      isSelected && distinctColors
+                        ? getBackendColor(option).lighten(0.4).string()
+                        : isSelected
+                          ? "#3b82f6" // blue-600
+                          : "#ffffff",
+                    borderColor:
+                      isSelected && distinctColors
+                        ? getBackendColor(option).string()
+                        : isSelected
+                          ? "#3b82f6" // blue-600
+                          : "#d1d5db", // gray-300
+                    color:
+                      isSelected && distinctColors
+                        ? getBackendColor(option).darken(0.3).string()
+                        : isSelected
+                          ? "#ffffff"
+                          : "#374151", // gray-700
+                  }}
+                  onClick={(e) => handleOptionClick(option, e)}
+                >
+                  {option}
+                </button>
+                
+                {/* Info button for backends */}
+                {isBackendsFilter && isSelected && backendSpec && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedBackend(expandedBackend === option ? null : option);
+                    }}
+                    className="p-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                    title="Show backend details"
+                  >
+                    <Info className="w-3.5 h-3.5 text-gray-600" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      
+      {/* Expanded backend specs */}
+      {isBackendsFilter && expandedBackend && (
+        (() => {
+          // Try to get spec from latest run first, fall back to default
+          const backendSpec = (latestBackendSpecs && latestBackendSpecs[expandedBackend]) 
+            || getDefaultBackendSpec(expandedBackend);
           
-          return (
-            <div key={option} className="relative group">
-              <button
-                className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
-                style={{
-                  backgroundColor:
-                    selectedOptions.includes(option) && distinctColors
-                      ? getBackendColor(option).lighten(0.4).string()
-                      : selectedOptions.includes(option)
-                        ? "#3b82f6" // blue-600
-                        : "#ffffff",
-                  borderColor:
-                    selectedOptions.includes(option) && distinctColors
-                      ? getBackendColor(option).string()
-                      : selectedOptions.includes(option)
-                        ? "#3b82f6" // blue-600
-                        : "#d1d5db", // gray-300
-                  color:
-                    selectedOptions.includes(option) && distinctColors
-                      ? getBackendColor(option).darken(0.3).string()
-                      : selectedOptions.includes(option)
-                        ? "#ffffff"
-                        : "#374151", // gray-700
-                }}
-                onClick={(e) => handleOptionClick(option, e)}
-                onMouseEnter={() => setHoveredBackend(option)}
-                onMouseLeave={() => setHoveredBackend(null)}
-              >
-                {option}
-              </button>
-              
-              {/* Backend spec tooltip */}
-              {isBackendsFilter && backendSpec && hoveredBackend === option && (
-                <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
-                  <div className="font-semibold mb-2">{backendSpec.name}</div>
-                  <div className="space-y-1 text-gray-300">
-                    <div className="flex gap-2">
-                      <span className="font-medium min-w-[60px]">Repo:</span>
-                      <span className="font-mono break-all">
-                        {backendSpec.remoteRepository}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="font-medium min-w-[60px]">Branch:</span>
-                      <span className="font-mono">{backendSpec.branch}</span>
-                    </div>
-                    {backendSpec.commitHash && (
-                      <div className="flex gap-2">
-                        <span className="font-medium min-w-[60px]">Commit:</span>
-                        <span className="font-mono">{backendSpec.commitHash.substring(0, 8)}</span>
-                      </div>
-                    )}
-                  </div>
-                  {/* Arrow pointing down */}
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
-                    <div className="border-4 border-transparent border-t-gray-900"></div>
-                  </div>
+          return backendSpec ? (
+            <div className="ml-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-1.5">
+              {latestBackendSpecs && latestBackendSpecs[expandedBackend] && (
+                <div className="mb-2 pb-2 border-b border-gray-300">
+                  <span className="text-blue-600 font-semibold text-xs">
+                    ✓ From Latest Run
+                  </span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-600 min-w-[80px]">
+                  Name:
+                </span>
+                <span className="text-gray-800">{backendSpec.name}</span>
+              </div>
+              {backendSpec.remoteRepository && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Repository:
+                  </span>
+                  <span className="text-gray-800 font-mono text-xs">
+                    {backendSpec.remoteRepository}
+                  </span>
+                </div>
+              )}
+              {backendSpec.branch && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Branch:
+                  </span>
+                  <span className="text-gray-800 font-mono text-xs">
+                    {backendSpec.branch}
+                  </span>
+                </div>
+              )}
+              {backendSpec.commitHash && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Commit:
+                  </span>
+                  <span className="text-gray-800 font-mono text-xs">
+                    latest ({backendSpec.commitHash})
+                  </span>
+                </div>
+              )}
+              {!backendSpec.commitHash && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Commit:
+                  </span>
+                  <span className="text-gray-500 italic text-xs">
+                    Will use latest from branch
+                  </span>
                 </div>
               )}
             </div>
-          );
-        })}
-      </div>
+          ) : null;
+        })()
+      )}
     </div>
   );
 }
@@ -432,12 +452,14 @@ interface DashboardFilterControlsProps {
   filters: FilterState;
   availableOptions: AvailableFilterOptions;
   updateFilter: (key: keyof FilterState, value: any) => void;
+  latestBackendSpecs?: Record<string, any>; // Backend specs from latest run indexed by backend name
 }
 
 export function DashboardFilterControls({
   filters,
   availableOptions,
   updateFilter,
+  latestBackendSpecs,
 }: DashboardFilterControlsProps) {
   // Build filter configurations dynamically
   const filterConfigs: FilterConfig[] = FILTER_CONFIGS.filter(
@@ -491,6 +513,7 @@ export function DashboardFilterControls({
           selectedOptions: filters[config.key] as string[],
           distinctColors: config.key === "backends",
           onInput: (values: string[]) => updateFilter(config.key, values),
+          latestBackendSpecs: config.key === "backends" ? latestBackendSpecs : undefined,
         },
       };
     }

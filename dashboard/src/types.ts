@@ -13,11 +13,11 @@ export interface BackendSpec {
   id: string; // unique identifier for this spec
   name: string; // display name (e.g., "Triton FAV3")
   backend: string; // base backend type (e.g., "triton")
-  remoteRepository: string; // e.g., "triton-lang/triton"
-  branch: string; // git branch
+  remoteRepository?: string; // e.g., "triton-lang/triton" - optional if parentSpecId is set
+  branch?: string; // git branch - optional if parentSpecId is set
   commitHash?: string; // specific commit, or use latest if not specified
   isDefault?: boolean; // whether this is the default spec for this backend
-  parentSpecId?: string; // if this is a variant, reference to the parent spec
+  parentSpecId?: string; // if this is a variant, reference to the parent spec (inherits repo/branch)
 }
 
 // Runtime configuration for kernels

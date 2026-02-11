@@ -155,26 +155,26 @@ export default function BackendSelector({
                       {selectedSpec.branch}
                     </span>
                   </div>
-                  {selectedSpec.commitHash && (
-                    <div className="flex gap-2">
-                      <span className="font-semibold text-gray-600 min-w-[80px]">
-                        Commit:
-                      </span>
-                      <span className="text-gray-800 font-mono">
-                        {selectedSpec.commitHash}
-                      </span>
-                    </div>
-                  )}
-                  {!selectedSpec.commitHash && (
-                    <div className="flex gap-2">
-                      <span className="font-semibold text-gray-600 min-w-[80px]">
-                        Commit:
-                      </span>
-                      <span className="text-gray-500 italic">
-                        Latest from branch
-                      </span>
-                    </div>
-                  )}
+                    {selectedSpec.commitHash && (
+                      <div className="flex gap-2">
+                        <span className="font-semibold text-gray-600 min-w-[80px]">
+                          Commit:
+                        </span>
+                        <span className="text-gray-800 font-mono">
+                          latest ({selectedSpec.commitHash})
+                        </span>
+                      </div>
+                    )}
+                    {!selectedSpec.commitHash && (
+                      <div className="flex gap-2">
+                        <span className="font-semibold text-gray-600 min-w-[80px]">
+                          Commit:
+                        </span>
+                        <span className="text-gray-500 italic">
+                          Will use latest from branch
+                        </span>
+                      </div>
+                    )}
                 </div>
               )}
             </div>
