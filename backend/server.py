@@ -1043,8 +1043,25 @@ def update_tracker(tracker_id):
             # Use provided specs and resolve commit hashes
             tracker_data["backendSpecs"] = resolve_backend_specs_commits(data["backendSpecs"])
         elif hasattr(existing_tracker, 'backendSpecs') and existing_tracker.backendSpecs:
-            # Keep existing specs
-            tracker_data["backendSpecs"] = existing_tracker.backendSpecs
+            # Check if backends list changed - if so, regenerate specs
+            backends_changed = set(tracker_data["backends"]) != set(existing_tracker.backends)
+            
+            # Check if any existing specs have "unknown" repos (need fixing)
+            has_bad_specs = any(
+                spec.get("remoteRepository", "").startswith("unknown/")
+                for spec in existing_tracker.backendSpecs
+            )
+            
+            if backends_changed or has_bad_specs:
+                logger.info(
+                    f"Regenerating backend specs for tracker (backends_changed={backends_changed}, "
+                    f"has_bad_specs={has_bad_specs})"
+                )
+                default_specs = _generate_default_backend_specs(tracker_data["backends"])
+                tracker_data["backendSpecs"] = resolve_backend_specs_commits(default_specs)
+            else:
+                # Keep existing specs
+                tracker_data["backendSpecs"] = existing_tracker.backendSpecs
         else:
             # Generate default specs based on selected backends
             logger.info(f"Generating default backend specs for tracker update with backends: {tracker_data['backends']}")
@@ -1130,8 +1147,15 @@ def trigger_tracker_manually(tracker_id):
         }
         
         # Include backendSpecs if available
+        # Clear commit hashes so they are re-resolved to get latest commits
         if tracker.backendSpecs:
-            metadata["backendSpecs"] = tracker.backendSpecs
+            backend_specs = []
+            for spec in tracker.backendSpecs:
+                spec_copy = spec.copy()
+                # Remove commit hash to force re-resolution of latest commit
+                spec_copy.pop("commitHash", None)
+                backend_specs.append(spec_copy)
+            metadata["backendSpecs"] = backend_specs
 
         # Use MANUAL_BENCHMARK type so it's treated like a manual run in scheduling
         # but include trackerId to maintain association
