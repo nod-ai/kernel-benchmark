@@ -21,6 +21,7 @@ interface MultiSelectProps extends SelectProps {
   distinctColors?: boolean;
   onInput: (selectedOptions: string[]) => void;
   latestBackendSpecs?: Record<string, any>; // Backend specs from latest run
+  isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
 }
 
 export function SingleSelectFilter({
@@ -60,6 +61,7 @@ export function MultiSelectFilter({
   distinctColors,
   onInput,
   latestBackendSpecs,
+  isTrackerDashboard = false,
 }: MultiSelectProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<"left" | "right">(
@@ -279,7 +281,7 @@ export function MultiSelectFilter({
           
           return backendSpec ? (
             <div className="ml-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-1.5">
-              {latestBackendSpecs && latestBackendSpecs[expandedBackend] && (
+              {isTrackerDashboard && latestBackendSpecs && latestBackendSpecs[expandedBackend] && (
                 <div className="mb-2 pb-2 border-b border-gray-300">
                   <span className="text-blue-600 font-semibold text-xs">
                     ✓ From Latest Run
@@ -317,9 +319,15 @@ export function MultiSelectFilter({
                   <span className="font-semibold text-gray-600 min-w-[80px]">
                     Commit:
                   </span>
-                  <span className="text-gray-800 font-mono text-xs">
-                    latest ({backendSpec.commitHash})
-                  </span>
+                  <a
+                    href={`https://github.com/${backendSpec.remoteRepository}/commit/${backendSpec.commitHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 font-mono text-xs underline"
+                    title="View commit on GitHub"
+                  >
+                    latest ({backendSpec.commitHash.substring(0, 8)})
+                  </a>
                 </div>
               )}
               {!backendSpec.commitHash && (
@@ -453,6 +461,7 @@ interface DashboardFilterControlsProps {
   availableOptions: AvailableFilterOptions;
   updateFilter: (key: keyof FilterState, value: any) => void;
   latestBackendSpecs?: Record<string, any>; // Backend specs from latest run indexed by backend name
+  isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
 }
 
 export function DashboardFilterControls({
@@ -460,6 +469,7 @@ export function DashboardFilterControls({
   availableOptions,
   updateFilter,
   latestBackendSpecs,
+  isTrackerDashboard = false,
 }: DashboardFilterControlsProps) {
   // Build filter configurations dynamically
   const filterConfigs: FilterConfig[] = FILTER_CONFIGS.filter(
@@ -514,6 +524,7 @@ export function DashboardFilterControls({
           distinctColors: config.key === "backends",
           onInput: (values: string[]) => updateFilter(config.key, values),
           latestBackendSpecs: config.key === "backends" ? latestBackendSpecs : undefined,
+          isTrackerDashboard: config.key === "backends" ? isTrackerDashboard : false,
         },
       };
     }

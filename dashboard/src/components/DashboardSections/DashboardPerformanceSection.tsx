@@ -51,7 +51,15 @@ export default function DashboardPerformanceSection({
         const timeline = await response.json();
         
         if (timeline.length > 0) {
-          const latestPoint = timeline[timeline.length - 1];
+          // Find the latest point that has backendSpecs, fallback to last point
+          const latestPoint = [...timeline].reverse().find(point => 
+            point.backendSpecs && Array.isArray(point.backendSpecs) && point.backendSpecs.length > 0
+          ) || timeline[timeline.length - 1];
+          
+          console.log("Timeline points:", timeline.length);
+          console.log("Latest point with specs:", latestPoint);
+          console.log("Latest point backendSpecs:", latestPoint.backendSpecs);
+          
           if (latestPoint.backendSpecs && Array.isArray(latestPoint.backendSpecs)) {
             // Convert array to Record<backend, spec>
             const specsMap: Record<string, BackendSpec> = {};
@@ -116,6 +124,7 @@ export default function DashboardPerformanceSection({
           availableOptions={availableOptions}
           updateFilter={updateFilter}
           latestBackendSpecs={latestBackendSpecs}
+          isTrackerDashboard={!!trackerId}
         />
       </div>
 
