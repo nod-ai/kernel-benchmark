@@ -19,6 +19,20 @@ def _get_backend_classes():
         WaveGemmBenchmark = None
 
     try:
+        from .backends.wave_mxfp4_gemm_4wave import WaveMxfp4Gemm4WaveBenchmark
+
+        backends["wave_4wave"] = WaveMxfp4Gemm4WaveBenchmark
+    except Exception as e:
+        warnings.warn(f"Wave MXFP4 4-wave GEMM backend not available: {e}")
+
+    try:
+        from .backends.wave_mxfp4_gemm_8wave import WaveMxfp4Gemm8WaveBenchmark
+
+        backends["wave_8wave"] = WaveMxfp4Gemm8WaveBenchmark
+    except Exception as e:
+        warnings.warn(f"Wave MXFP4 8-wave GEMM backend not available: {e}")
+
+    try:
         from .backends.iree_gemm import IREEGemmBenchmark
 
         backends["iree"] = IREEGemmBenchmark
