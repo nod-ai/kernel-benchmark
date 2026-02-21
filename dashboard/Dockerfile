@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm install
 COPY . .
 ENV VITE_BACKEND_SERVER_URL="/api/"
+ENV VITE_DASHBOARD_URL="http://51.8.231.84"
 RUN npm run build
 
 FROM nginx:alpine

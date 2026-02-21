@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import "./index.css";
 import { AuthProvider } from "./contexts/AuthContext";
+import { KernelTypesProvider } from "./contexts/KernelTypesContext";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import AddKernels from "./pages/AddKernels";
@@ -19,7 +20,8 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Router>
       <AuthProvider>
-        <Routes>
+        <KernelTypesProvider>
+          <Routes>
           <Route path="/dashboard/tracker/:dashboardName" element={<Dashboard />} />
           <Route path="/dashboard/:runId" element={<Dashboard />} />
           <Route path="/history" element={<History />} />
@@ -32,6 +34,7 @@ createRoot(document.getElementById("root")!).render(
             element={<Navigate to="/dashboard/baseline" replace />}
           />
         </Routes>
+        </KernelTypesProvider>
       </AuthProvider>
     </Router>
   </StrictMode>

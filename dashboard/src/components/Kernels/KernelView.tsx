@@ -1,7 +1,7 @@
 import type { Kernel } from "../../types";
 import { Settings, Play, BarChart3, Zap } from "lucide-react";
 import { getBackendColor } from "../../utils/color";
-import { KERNEL_DIMS, toTitleCase } from "../../utils/utils";
+import { toTitleCase } from "../../utils/utils";
 
 interface ShapeSelectorProps {
   selectedKernel: Kernel;
@@ -18,7 +18,10 @@ function ShapeSelector({
 }: ShapeSelectorProps) {
   const selection = dimensions.map((dimension) => ({
     name: dimension,
-    value: selectedKernel.shape[dimension],
+    value:
+      dimension === "dtype"
+        ? selectedKernel.dtype
+        : selectedKernel.shape[dimension],
   }));
 
   const uniqueElements = (array: any[]) => {
@@ -32,8 +35,10 @@ function ShapeSelector({
       if (dim.name === dimName) {
         return filteredKernels;
       }
-      filteredKernels = filteredKernels.filter(
-        (kernel) => kernel.shape[dim.name] === dim.value
+      filteredKernels = filteredKernels.filter((kernel) =>
+        dim.name === "dtype"
+          ? kernel.dtype === dim.value
+          : kernel.shape[dim.name] === dim.value
       );
     }
 
@@ -53,7 +58,7 @@ function ShapeSelector({
     filteredKernels = filteredKernels.filter((kernel) =>
       dimName === "dtype"
         ? kernel.dtype === dimValue
-        : kernel.shape[dimName] === parseInt(dimValue)
+        : kernel.shape[dimName] == dimValue
     );
     if (filteredKernels.length > 0) setSelected(filteredKernels[0].id);
     else setSelected(null);
@@ -68,7 +73,11 @@ function ShapeSelector({
           </label>
           <select
             className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm min-w-[80px]"
-            value={selectedKernel.shape[dim.name]}
+            value={
+              dim.name === "dtype"
+                ? selectedKernel.dtype
+                : selectedKernel.shape[dim.name]
+            }
             onChange={(e) => {
               setDim(dim.name, e.currentTarget.value);
             }}
@@ -90,6 +99,8 @@ interface KernelViewProps {
   kernels: Kernel[];
   setSelected: (kernelId: string | null) => void;
   sameShapeKernels: Kernel[];
+  /** Dimension names for this kernel type (from kernel type definition, includes "dtype") */
+  dimensions: string[];
 }
 
 export default function KernelView({
@@ -97,6 +108,7 @@ export default function KernelView({
   kernels,
   setSelected,
   sameShapeKernels,
+  dimensions,
 }: KernelViewProps) {
   // Find the best and worst performing kernels (highest and lowest TFLOP/s)
   const bestPerformingKernel = sameShapeKernels.reduce((best, current) =>
@@ -132,7 +144,7 @@ export default function KernelView({
           </div>
 
           <ShapeSelector
-            dimensions={KERNEL_DIMS[selectedKernel.kernelType]}
+            dimensions={dimensions}
             kernels={kernels.filter(
               (k) => k.kernelType === selectedKernel.kernelType
             )}
