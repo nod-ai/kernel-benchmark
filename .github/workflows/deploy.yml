@@ -2,7 +2,7 @@ name: Build and Push to GHCR
 
 on:
   push:
-    branches: [deploy/dashboard]
+    branches: [deployment-fixes]
 
 jobs:
   build:
@@ -21,7 +21,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/kernel-benchmark-backend-temp:latest
+            ghcr.io/${{ github.repository_owner }}/kernel-benchmark-backend-temp:${{ github.sha }}
+
+      - name: Build and push frontend
         uses: docker/build-push-action@v4
         with:
           context: ./dashboard
