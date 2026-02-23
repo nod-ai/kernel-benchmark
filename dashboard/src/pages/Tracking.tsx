@@ -13,6 +13,7 @@ import {
   type TrackerData,
   type ScheduleData,
 } from "../utils/github";
+import type { BackendSpec } from "../types";
 import { formatMMDDYYYY } from "../utils/utils";
 import {
   Plus,
@@ -37,6 +38,7 @@ interface Tracker {
   dashboardName?: string;
   tags: string[];
   backends: string[];
+  backendSpecs?: BackendSpec[];
   machine: string;
   schedule: ScheduleData;
   branch: string;
@@ -180,6 +182,7 @@ export default function Tracking() {
         tags: tracker.tags,
       },
       backends: tracker.backends,
+      backendSpecs: tracker.backendSpecs || [],
       machine: tracker.machine,
       schedule: tracker.schedule,
       branch: tracker.branch,

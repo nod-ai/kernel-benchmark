@@ -1,5 +1,6 @@
 import { Cpu, ChevronDown, Info } from "lucide-react";
-import { SUPPORTED_BACKENDS, BackendSpec } from "../../../types";
+import { SUPPORTED_BACKENDS } from "../../../types";
+import type { BackendSpec } from "../../../types";
 import {
   getBackendSpecsByType,
   getDefaultBackendSpec,
