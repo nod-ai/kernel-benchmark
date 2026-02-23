@@ -3,9 +3,9 @@ import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { getBackendColor } from "../utils/color";
 import { getDefaultBackendSpec } from "../utils/backendSpecs";
 import {
-  FILTER_CONFIGS,
   type FilterState,
   type AvailableFilterOptions,
+  type FilterDefinition,
 } from "../hooks/useKernelFilters";
 
 interface SelectProps {
@@ -462,6 +462,7 @@ interface DashboardFilterControlsProps {
   updateFilter: (key: keyof FilterState, value: any) => void;
   latestBackendSpecs?: Record<string, any>; // Backend specs from latest run indexed by backend name
   isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
+  filterConfigs: FilterDefinition[];
 }
 
 export function DashboardFilterControls({
@@ -470,11 +471,15 @@ export function DashboardFilterControls({
   updateFilter,
   latestBackendSpecs,
   isTrackerDashboard = false,
+  filterConfigs: filterDefinitions,
 }: DashboardFilterControlsProps) {
-  // Build filter configurations dynamically
-  const filterConfigs: FilterConfig[] = FILTER_CONFIGS.filter(
-    (config) => !config.condition || config.condition(filters)
-  ).map((config) => {
+  // Build filter configurations dynamically (filter by condition, then map to UI config)
+  const filterConfigs: FilterConfig[] = filterDefinitions
+    .filter(
+      (config: FilterDefinition) =>
+        !config.condition || config.condition(filters)
+    )
+    .map((config: FilterDefinition) => {
     // Map filter keys to available options keys
     let options: string[] = [];
 
@@ -510,7 +515,7 @@ export function DashboardFilterControls({
         props: {
           title: config.title,
           options,
-          selectedOption: filters[config.key] as string,
+          selectedOption: (filters[config.key] ?? "") as string,
           onInput: (value: string) => updateFilter(config.key, value),
         },
       };
@@ -520,7 +525,7 @@ export function DashboardFilterControls({
         props: {
           title: config.title,
           options,
-          selectedOptions: filters[config.key] as string[],
+          selectedOptions: (filters[config.key] ?? []) as string[],
           distinctColors: config.key === "backends",
           onInput: (values: string[]) => updateFilter(config.key, values),
           latestBackendSpecs: config.key === "backends" ? latestBackendSpecs : undefined,

@@ -1,4 +1,5 @@
 import type { Kernel } from "../types";
+import type { KernelDimsMap } from "../contexts/KernelTypesContext";
 
 export function toTitleCase(str: string): string {
   return str.replace(
@@ -7,11 +8,20 @@ export function toTitleCase(str: string): string {
   );
 }
 
-export const KERNEL_DIMS: Record<string, string[]> = {
-  gemm: ["M", "N", "K", "transpose", "dtype"],
-  attention: ["B", "M", "N", "K1", "K2", "dtype"],
-  conv: ["B", "H", "W", "C", "P", "Q", "F", "S", "dtype"],
-};
+/** Get dimension names for a kernel type; falls back to shape keys + dtype if not in map */
+export function getDimensionsForKernelType(
+  kernelType: string,
+  kernelDims: KernelDimsMap,
+  fallbackShape?: Record<string, unknown>
+): string[] {
+  const fromMap = kernelDims[kernelType];
+  if (fromMap?.length) return fromMap;
+  if (fallbackShape && typeof fallbackShape === "object") {
+    const shapeKeys = Object.keys(fallbackShape).filter((k) => k !== "dtype");
+    return shapeKeys.includes("dtype") ? shapeKeys : [...shapeKeys, "dtype"];
+  }
+  return [];
+}
 
 export function getTimeStringRelative(time: Date | string) {
   time = new Date(time);
@@ -44,21 +54,29 @@ export function getTimeStringRelative(time: Date | string) {
   return time.toLocaleDateString();
 }
 
-export function hashKernel(kernel: Kernel): string {
-  return (
-    `${kernel.kernelType}_` +
-    KERNEL_DIMS[kernel.kernelType]
-      .filter((dimName) => dimName !== "dtype")
-      .map((dimName) => `${dimName}${kernel.shape[dimName]}`)
-      .join("_")
-      .concat(`_${kernel.dtype}`)
+export function hashKernel(
+  kernel: Kernel,
+  kernelDims: KernelDimsMap
+): string {
+  const dims = getDimensionsForKernelType(
+    kernel.kernelType,
+    kernelDims,
+    kernel.shape
   );
+  const shapePart = dims
+    .filter((dimName) => dimName !== "dtype")
+    .map((dimName) => `${dimName}${kernel.shape[dimName] ?? ""}`)
+    .join("_");
+  return `${kernel.kernelType}_${shapePart}_${kernel.dtype}`;
 }
 
-export function getCommonKernels(kernels: Kernel[]): Kernel[] {
+export function getCommonKernels(
+  kernels: Kernel[],
+  kernelDims: KernelDimsMap
+): Kernel[] {
   const backendShapes: Record<string, Set<string>> = {};
   for (const kernel of kernels) {
-    const kernelHash = hashKernel(kernel);
+    const kernelHash = hashKernel(kernel, kernelDims);
     if (!backendShapes[kernel.backend])
       backendShapes[kernel.backend] = new Set<string>();
     backendShapes[kernel.backend].add(kernelHash);
@@ -71,7 +89,7 @@ export function getCommonKernels(kernels: Kernel[]): Kernel[] {
         )
       : new Set<string>();
 
-  return kernels.filter((k) => commonShapes.has(hashKernel(k)));
+  return kernels.filter((k) => commonShapes.has(hashKernel(k, kernelDims)));
 }
 
 export function filterKernelsByPercentile(

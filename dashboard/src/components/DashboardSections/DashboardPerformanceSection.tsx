@@ -9,9 +9,10 @@ import KernelView from "../Kernels/KernelView";
 import {
   filterKernelsByPercentile,
   getCommonKernels,
-  KERNEL_DIMS,
+  getDimensionsForKernelType,
 } from "../../utils/utils";
 import { useKernelFilters } from "../../hooks/useKernelFilters";
+import { useKernelDims } from "../../contexts/KernelTypesContext";
 
 interface DashboardPerformanceSectionProps {
   kernels: Kernel[];
@@ -32,8 +33,9 @@ export default function DashboardPerformanceSection({
   const [percentile, setPercentile] = useState<number>(90);
   const [trackerBackendSpecs, setTrackerBackendSpecs] = useState<Record<string, BackendSpec>>({});
 
+  const kernelDims = useKernelDims();
   // Use the filter hook
-  const { filters, availableOptions, filteredKernels, updateFilter } =
+  const { filters, availableOptions, filteredKernels, updateFilter, filterConfigs } =
     useKernelFilters(kernels);
   
   // Determine which backend specs to use: prop (from run) or tracker (fetched)
@@ -84,22 +86,30 @@ export default function DashboardPerformanceSection({
 
   const sameShapeKernels = useMemo(() => {
     if (!selectedKernel) return [];
+    const dims = getDimensionsForKernelType(
+      selectedKernel.kernelType,
+      kernelDims,
+      selectedKernel.shape
+    );
     return kernels.filter((k) => {
       if (k.kernelType !== selectedKernel.kernelType) return false;
       if (k.dtype !== selectedKernel.dtype) return false;
-      return KERNEL_DIMS[k.kernelType].every(
-        (dimName) => k.shape[dimName] === selectedKernel.shape[dimName]
+      return dims.every(
+        (dimName) =>
+          (dimName === "dtype"
+            ? k.dtype === selectedKernel.dtype
+            : k.shape[dimName] === selectedKernel.shape[dimName])
       );
     });
-  }, [kernels, selectedKernel]);
+  }, [kernels, selectedKernel, kernelDims]);
 
   const commonKernels = useMemo(
     () =>
       filterKernelsByPercentile(
-        getCommonKernels(filteredKernels),
+        getCommonKernels(filteredKernels, kernelDims),
         Math.min(Math.max(percentile / 100, 0), 1)
       ),
-    [filteredKernels, percentile]
+    [filteredKernels, percentile, kernelDims]
   );
 
   if (isLoading) {
@@ -125,6 +135,7 @@ export default function DashboardPerformanceSection({
           updateFilter={updateFilter}
           latestBackendSpecs={latestBackendSpecs}
           isTrackerDashboard={!!trackerId}
+          filterConfigs={filterConfigs}
         />
       </div>
 
@@ -277,6 +288,11 @@ export default function DashboardPerformanceSection({
             sameShapeKernels={sameShapeKernels}
             kernels={kernels}
             setSelected={setSelectedKernelId}
+            dimensions={getDimensionsForKernelType(
+              selectedKernel.kernelType,
+              kernelDims,
+              selectedKernel.shape
+            )}
           />
         </div>
       )}
