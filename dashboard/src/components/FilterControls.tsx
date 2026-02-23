@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { getBackendColor } from "../utils/color";
+import { getDefaultBackendSpec } from "../utils/backendSpecs";
 import {
   type FilterState,
   type AvailableFilterOptions,
@@ -19,6 +20,8 @@ interface MultiSelectProps extends SelectProps {
   selectedOptions: string[];
   distinctColors?: boolean;
   onInput: (selectedOptions: string[]) => void;
+  latestBackendSpecs?: Record<string, any>; // Backend specs from latest run
+  isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
 }
 
 export function SingleSelectFilter({
@@ -57,13 +60,19 @@ export function MultiSelectFilter({
   selectedOptions,
   distinctColors,
   onInput,
+  latestBackendSpecs,
+  isTrackerDashboard = false,
 }: MultiSelectProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<"left" | "right">(
     "left"
   );
+  const [expandedBackend, setExpandedBackend] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  
+  // Check if this is the Backends filter to show backend spec info buttons
+  const isBackendsFilter = title === "Backends";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -204,41 +213,137 @@ export function MultiSelectFilter({
 
   // Original row layout for 10 or fewer options
   return (
-    <div className="select-none flex gap-3 items-center flex-shrink-0">
-      <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
-        {title}:
-      </span>
-      <div className="flex gap-2">
-        {options.map((option) => (
-          <button
-            key={option}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
-            style={{
-              backgroundColor:
-                selectedOptions.includes(option) && distinctColors
-                  ? getBackendColor(option).lighten(0.4).string()
-                  : selectedOptions.includes(option)
-                    ? "#3b82f6" // blue-600
-                    : "#ffffff",
-              borderColor:
-                selectedOptions.includes(option) && distinctColors
-                  ? getBackendColor(option).string()
-                  : selectedOptions.includes(option)
-                    ? "#3b82f6" // blue-600
-                    : "#d1d5db", // gray-300
-              color:
-                selectedOptions.includes(option) && distinctColors
-                  ? getBackendColor(option).darken(0.3).string()
-                  : selectedOptions.includes(option)
-                    ? "#ffffff"
-                    : "#374151", // gray-700
-            }}
-            onClick={(e) => handleOptionClick(option, e)}
-          >
-            {option}
-          </button>
-        ))}
+    <div className="select-none flex flex-col gap-3 flex-shrink-0">
+      <div className="flex gap-3 items-center">
+        <span className="font-medium text-gray-700 text-sm whitespace-nowrap">
+          {title}:
+        </span>
+        <div className="flex gap-2">
+          {options.map((option) => {
+            const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
+            const isSelected = selectedOptions.includes(option);
+            
+            return (
+              <div key={option} className="flex items-center gap-1">
+                <button
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 border outline-0 whitespace-nowrap"
+                  style={{
+                    backgroundColor:
+                      isSelected && distinctColors
+                        ? getBackendColor(option).lighten(0.4).string()
+                        : isSelected
+                          ? "#3b82f6" // blue-600
+                          : "#ffffff",
+                    borderColor:
+                      isSelected && distinctColors
+                        ? getBackendColor(option).string()
+                        : isSelected
+                          ? "#3b82f6" // blue-600
+                          : "#d1d5db", // gray-300
+                    color:
+                      isSelected && distinctColors
+                        ? getBackendColor(option).darken(0.3).string()
+                        : isSelected
+                          ? "#ffffff"
+                          : "#374151", // gray-700
+                  }}
+                  onClick={(e) => handleOptionClick(option, e)}
+                >
+                  {option}
+                </button>
+                
+                {/* Info button for backends */}
+                {isBackendsFilter && isSelected && backendSpec && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedBackend(expandedBackend === option ? null : option);
+                    }}
+                    className="p-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                    title="Show backend details"
+                  >
+                    <Info className="w-3.5 h-3.5 text-gray-600" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
+      
+      {/* Expanded backend specs */}
+      {isBackendsFilter && expandedBackend && (
+        (() => {
+          // Try to get spec from latest run first, fall back to default
+          const backendSpec = (latestBackendSpecs && latestBackendSpecs[expandedBackend]) 
+            || getDefaultBackendSpec(expandedBackend);
+          
+          return backendSpec ? (
+            <div className="ml-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-1.5">
+              {isTrackerDashboard && latestBackendSpecs && latestBackendSpecs[expandedBackend] && (
+                <div className="mb-2 pb-2 border-b border-gray-300">
+                  <span className="text-blue-600 font-semibold text-xs">
+                    ✓ From Latest Run
+                  </span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-600 min-w-[80px]">
+                  Name:
+                </span>
+                <span className="text-gray-800">{backendSpec.name}</span>
+              </div>
+              {backendSpec.remoteRepository && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Repository:
+                  </span>
+                  <span className="text-gray-800 font-mono text-xs">
+                    {backendSpec.remoteRepository}
+                  </span>
+                </div>
+              )}
+              {backendSpec.branch && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Branch:
+                  </span>
+                  <span className="text-gray-800 font-mono text-xs">
+                    {backendSpec.branch}
+                  </span>
+                </div>
+              )}
+              {backendSpec.commitHash && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Commit:
+                  </span>
+                  <a
+                    href={`https://github.com/${backendSpec.remoteRepository}/commit/${backendSpec.commitHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 font-mono text-xs underline"
+                    title="View commit on GitHub"
+                  >
+                    latest ({backendSpec.commitHash.substring(0, 8)})
+                  </a>
+                </div>
+              )}
+              {!backendSpec.commitHash && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">
+                    Commit:
+                  </span>
+                  <span className="text-gray-500 italic text-xs">
+                    Will use latest from branch
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : null;
+        })()
+      )}
     </div>
   );
 }
@@ -355,6 +460,8 @@ interface DashboardFilterControlsProps {
   filters: FilterState;
   availableOptions: AvailableFilterOptions;
   updateFilter: (key: keyof FilterState, value: any) => void;
+  latestBackendSpecs?: Record<string, any>; // Backend specs from latest run indexed by backend name
+  isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
   filterConfigs: FilterDefinition[];
 }
 
@@ -362,6 +469,8 @@ export function DashboardFilterControls({
   filters,
   availableOptions,
   updateFilter,
+  latestBackendSpecs,
+  isTrackerDashboard = false,
   filterConfigs: filterDefinitions,
 }: DashboardFilterControlsProps) {
   // Build filter configurations dynamically (filter by condition, then map to UI config)
@@ -419,6 +528,8 @@ export function DashboardFilterControls({
           selectedOptions: (filters[config.key] ?? []) as string[],
           distinctColors: config.key === "backends",
           onInput: (values: string[]) => updateFilter(config.key, values),
+          latestBackendSpecs: config.key === "backends" ? latestBackendSpecs : undefined,
+          isTrackerDashboard: config.key === "backends" ? isTrackerDashboard : false,
         },
       };
     }

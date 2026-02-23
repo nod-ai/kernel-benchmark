@@ -24,6 +24,9 @@ on:
       tuned_config_url:
         description: "URL to tuning configurations"
         required: false
+      backend_specs_url:
+        description: "URL to backend specifications"
+        required: false
       metadata:
         description: "Optional: metadata string for tagging the result"
         required: false

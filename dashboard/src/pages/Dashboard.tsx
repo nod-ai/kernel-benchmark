@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [selectedRunBlobName, setSelectedRunBlobName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [runBackendSpecs, setRunBackendSpecs] = useState<Record<string, any>>({});
 
   const location = useLocation();
 
@@ -58,8 +59,36 @@ export default function Dashboard() {
       } else {
         // Artifact-only dashboard mode
         setIsTrackerDashboard(false);
-        const blobName = location.pathname.split('/').pop();
-        setSelectedRunBlobName(blobName || null);
+        const runIdOrBlobName = location.pathname.split('/').pop();
+        setSelectedRunBlobName(runIdOrBlobName || null);
+        
+        // Fetch run data to get backendSpecs
+        if (runIdOrBlobName) {
+          try {
+            const response = await fetch(
+              `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs?page=1&page_size=1000&completed_only=true`
+            );
+            const data = await response.json();
+            const runs = data.runs || [];
+            
+            // Find matching run by blobName or ID
+            const item = runs.find((item: any) => 
+              item.run?.blobName === runIdOrBlobName || item.run?._id === runIdOrBlobName
+            );
+            
+            // Extract backendSpecs from trigger metadata
+            if (item?.trigger?.metadata?.backendSpecs) {
+              const specsMap: Record<string, any> = {};
+              item.trigger.metadata.backendSpecs.forEach((spec: any) => {
+                specsMap[spec.backend] = spec;
+              });
+              setRunBackendSpecs(specsMap);
+            }
+          } catch (error) {
+            console.error("Failed to fetch run data:", error);
+          }
+        }
+        
         setIsLoading(false);
       }
     };
@@ -98,7 +127,11 @@ export default function Dashboard() {
         
         {/* Performance Results - Main Focus */}
         {kernels.length > 0 && (
-          <DashboardPerformanceSection kernels={kernels} />
+          <DashboardPerformanceSection 
+            kernels={kernels}
+            latestBackendSpecs={isTrackerDashboard ? undefined : runBackendSpecs}
+            trackerId={isTrackerDashboard ? tracker?._id : undefined}
+          />
         )}
         
         {/* Tracker Controls and Timeline */}

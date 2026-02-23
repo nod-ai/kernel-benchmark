@@ -98,6 +98,8 @@ export default function TrackerDashboardSection({
       const dataPoint: any = {
         timestamp: new Date(point.timestamp).toLocaleDateString(),
         fullTimestamp: point.timestamp,
+        runId: point.runId,
+        backendSpecs: point.backendSpecs || [],
       };
 
       // Add each backend's data
@@ -180,12 +182,58 @@ export default function TrackerDashboardSection({
           },
           tooltip: {
             callbacks: {
+              title: (tooltipItems) => {
+                if (tooltipItems.length === 0) return "";
+                const dataIndex = tooltipItems[0].dataIndex;
+                const point = chartData[dataIndex];
+                return point?.fullTimestamp 
+                  ? new Date(point.fullTimestamp).toLocaleString()
+                  : "";
+              },
               label: (context) => {
                 const label = context.dataset.label || "";
                 const value = context.parsed.y;
                 return `${label}: ${value.toFixed(2)}`;
               },
+              afterBody: (tooltipItems) => {
+                if (tooltipItems.length === 0) return [];
+                
+                const dataIndex = tooltipItems[0].dataIndex;
+                const point = chartData[dataIndex];
+                
+                if (!point?.backendSpecs || point.backendSpecs.length === 0) {
+                  return ["", "No backend specs available"];
+                }
+                
+                // Build backend spec info lines
+                const lines: string[] = ["", "━━━ Backend Specifications ━━━"];
+                point.backendSpecs.forEach((spec: any) => {
+                  lines.push("");
+                  lines.push(`${spec.name || spec.backend}:`);
+                  if (spec.remoteRepository) {
+                    lines.push(`  Repository: ${spec.remoteRepository}`);
+                  }
+                  if (spec.branch) {
+                    lines.push(`  Branch: ${spec.branch}`);
+                  }
+                  if (spec.commitHash) {
+                    lines.push(`  Commit: latest (${spec.commitHash.substring(0, 8)})`);
+                  } else {
+                    lines.push(`  Commit: will use latest from branch`);
+                  }
+                });
+                
+                return lines;
+              },
             },
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            titleColor: '#fff',
+            bodyColor: '#fff',
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            borderWidth: 1,
+            padding: 12,
+            displayColors: true,
+            boxPadding: 4,
           },
         },
       },

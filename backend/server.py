@@ -2,6 +2,7 @@ import logging
 import traceback
 from backend.github_utils import create_gist, get_repo
 from backend.github_utils.gist import load_gist_by_id
+from backend.github_utils.commits import resolve_backend_specs_commits
 from backend.runs import RunType, get_artifact_parser
 from backend.runs.run_utils import find_incomplete_runs, get_run_by_blob_name
 from backend.runs.tracker import get_run_tracker
@@ -33,6 +34,80 @@ CORS(app, supports_credentials=True)
 load_dotenv()
 app.config["SECRET_KEY"] = os.getenv("PEM_FILE")
 app.config["PASSWORD_HASH"] = os.getenv("PASSWORD_HASH")
+
+logger = logging.getLogger(__name__)
+
+
+def _generate_default_backend_specs(backends: list[str]) -> list[dict]:
+    """
+    Generate default backend specifications for the given backend names.
+    
+    Args:
+        backends: List of backend names (e.g., ["triton", "wave"])
+    
+    Returns:
+        List of backend spec dictionaries with default configurations
+    """
+    backend_defaults = {
+        "triton": {
+            "id": "triton-default",
+            "name": "Triton (Default)",
+            "backend": "triton",
+            "remoteRepository": "triton-lang/triton",
+            "branch": "main",
+            "isDefault": True,
+        },
+        "wave": {
+            "id": "wave-default",
+            "name": "Wave (Default)",
+            "backend": "wave",
+            "remoteRepository": "iree-org/wave",
+            "branch": "main",
+            "isDefault": True,
+        },
+        "iree": {
+            "id": "iree-default",
+            "name": "IREE (Default)",
+            "backend": "iree",
+            "remoteRepository": "iree-org/iree",
+            "branch": "main",
+            "isDefault": True,
+        },
+        "torch": {
+            "id": "torch-default",
+            "name": "Torch (Default)",
+            "backend": "torch",
+            "remoteRepository": "ROCm/pytorch",
+            "branch": "develop",
+            "isDefault": True,
+        },
+        "hipblaslt": {
+            "id": "hipblaslt-default",
+            "name": "hipBLASLt (Default)",
+            "backend": "hipblaslt",
+            "remoteRepository": "ROCm/rocm-libraries",
+            "branch": "develop",
+            "isDefault": True,
+        },
+    }
+    
+    specs = []
+    for backend in backends:
+        if backend in backend_defaults:
+            specs.append(backend_defaults[backend])
+        else:
+            # For unknown backends, create a generic spec
+            specs.append({
+                "id": f"{backend}-default",
+                "name": f"{backend.capitalize()} (Default)",
+                "backend": backend,
+                "remoteRepository": f"unknown/{backend}",
+                "branch": "main",
+                "isDefault": True,
+            })
+    
+    return specs
+
 
 logger = logging.getLogger(__name__)
 
@@ -402,6 +477,10 @@ def trigger_manual_workflow():
         "backends": config_data["backends"],
         "branch": config_data["branch"],
     }
+    
+    # Include backendSpecs if provided
+    if "backendSpecs" in config_data and config_data["backendSpecs"]:
+        metadata["backendSpecs"] = config_data["backendSpecs"]
 
     # Handle kernel selection
     if kernel_selection["type"] == "all-quick":
@@ -888,6 +967,17 @@ def create_tracker():
             "createdAt": datetime.now(timezone.utc),
             "dashboardName": data.get("dashboardName"),
         }
+        
+        # Always include backendSpecs - use provided or generate defaults
+        if "backendSpecs" in data and data["backendSpecs"]:
+            # Use provided specs and resolve commit hashes
+            logger.info("Using provided backend specs for tracker")
+            tracker_data["backendSpecs"] = resolve_backend_specs_commits(data["backendSpecs"])
+        else:
+            # Generate default specs based on selected backends
+            logger.info(f"Generating default backend specs for backends: {data['backends']}")
+            default_specs = _generate_default_backend_specs(data["backends"])
+            tracker_data["backendSpecs"] = resolve_backend_specs_commits(default_specs)
 
         tracker = fromdict(Tracker, tracker_data)
 
@@ -947,6 +1037,36 @@ def update_tracker(tracker_id):
             "createdAt": existing_tracker.createdAt,
             "dashboardName": data.get("dashboardName", existing_tracker.dashboardName),
         }
+        
+        # Include backendSpecs if provided, otherwise keep existing or generate defaults
+        if "backendSpecs" in data and data["backendSpecs"]:
+            # Use provided specs and resolve commit hashes
+            tracker_data["backendSpecs"] = resolve_backend_specs_commits(data["backendSpecs"])
+        elif hasattr(existing_tracker, 'backendSpecs') and existing_tracker.backendSpecs:
+            # Check if backends list changed - if so, regenerate specs
+            backends_changed = set(tracker_data["backends"]) != set(existing_tracker.backends)
+            
+            # Check if any existing specs have "unknown" repos (need fixing)
+            has_bad_specs = any(
+                spec.get("remoteRepository", "").startswith("unknown/")
+                for spec in existing_tracker.backendSpecs
+            )
+            
+            if backends_changed or has_bad_specs:
+                logger.info(
+                    f"Regenerating backend specs for tracker (backends_changed={backends_changed}, "
+                    f"has_bad_specs={has_bad_specs})"
+                )
+                default_specs = _generate_default_backend_specs(tracker_data["backends"])
+                tracker_data["backendSpecs"] = resolve_backend_specs_commits(default_specs)
+            else:
+                # Keep existing specs
+                tracker_data["backendSpecs"] = existing_tracker.backendSpecs
+        else:
+            # Generate default specs based on selected backends
+            logger.info(f"Generating default backend specs for tracker update with backends: {tracker_data['backends']}")
+            default_specs = _generate_default_backend_specs(tracker_data["backends"])
+            tracker_data["backendSpecs"] = resolve_backend_specs_commits(default_specs)
 
         updated_tracker = fromdict(Tracker, tracker_data)
 
@@ -1025,6 +1145,17 @@ def trigger_tracker_manually(tracker_id):
             "blobName": tracker.blobName,
             "branch": tracker.branch,
         }
+        
+        # Include backendSpecs if available
+        # Clear commit hashes so they are re-resolved to get latest commits
+        if tracker.backendSpecs:
+            backend_specs = []
+            for spec in tracker.backendSpecs:
+                spec_copy = spec.copy()
+                # Remove commit hash to force re-resolution of latest commit
+                spec_copy.pop("commitHash", None)
+                backend_specs.append(spec_copy)
+            metadata["backendSpecs"] = backend_specs
 
         # Use MANUAL_BENCHMARK type so it's treated like a manual run in scheduling
         # but include trackerId to maintain association
@@ -1138,7 +1269,8 @@ def get_tracker_performance_timeline(tracker_id):
             timeline.append({
                 "timestamp": stat.timestamp.isoformat(),
                 "runId": stat.runId,
-                "backends": backends_data
+                "backends": backends_data,
+                "backendSpecs": stat.backendSpecs if stat.backendSpecs else None
             })
         
         return jsonify(timeline)

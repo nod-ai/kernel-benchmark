@@ -107,6 +107,17 @@ class TrackerScheduler:
             "branch": tracker.branch,
             "blobName": tracker.blobName,
         }
+        
+        # Include backendSpecs if available
+        # Clear commit hashes so they are re-resolved to get latest commits
+        if tracker.backendSpecs:
+            backend_specs = []
+            for spec in tracker.backendSpecs:
+                spec_copy = spec.copy()
+                # Remove commit hash to force re-resolution of latest commit
+                spec_copy.pop("commitHash", None)
+                backend_specs.append(spec_copy)
+            metadata["backendSpecs"] = backend_specs
 
         trigger_id = trigger_run(TriggerType.SCHEDULED, metadata)
 

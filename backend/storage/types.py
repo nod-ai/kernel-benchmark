@@ -5,6 +5,23 @@ from .repository import create_repository
 
 
 @dataclass
+class BackendSpec:
+    """
+    Backend specification with version control metadata.
+    
+    Defines which version of a backend to use for benchmarking.
+    """
+    id: str  # Unique identifier (e.g., "triton-fav3")
+    name: str  # Display name (e.g., "Triton FAV3")
+    backend: str  # Base backend type (e.g., "triton")
+    remoteRepository: str  # GitHub repo (e.g., "triton-lang/triton")
+    branch: str  # Git branch
+    commitHash: Optional[str] = None  # Specific commit, or latest if not specified
+    isDefault: Optional[bool] = None  # Whether this is the default spec
+    parentSpecId: Optional[str] = None  # Reference to parent spec if variant
+
+
+@dataclass
 class WorkflowRunState:
     _id: str
     type: str
@@ -57,6 +74,7 @@ class BenchmarkRunStats:
     performance: dict[str, Any]  # machine → kernel_type → backend → stats
     trackerId: Optional[str] = None  # Tracker._id for scheduled runs
     trackerName: Optional[str] = None
+    backendSpecs: Optional[list[dict[str, Any]]] = None  # Backend specifications used in this run
 
 
 @dataclass
@@ -129,12 +147,13 @@ class Tracker:
     blobName: str
     dashboardName: str
     tags: list[str]
-    backends: list[str]
+    backends: list[str]  # Kept for backward compatibility
     machine: str
     schedule: Schedule
     branch: str
     isActive: bool = True
     createdAt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    backendSpecs: Optional[list[dict[str, Any]]] = None  # Backend specifications with full metadata
 
 
 KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")

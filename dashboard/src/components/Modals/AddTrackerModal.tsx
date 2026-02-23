@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import Modal from "../Modal/Modal";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal/ModalComponents";
-import { type KernelConfig, type KernelSelection } from "../../types";
+import { type KernelConfig, type KernelSelection, type BackendSpec } from "../../types";
 import { fetchKernels } from "../../utils/github";
 import KernelSelector from "./blocks/KernelSelector";
 import ScheduleSelector, { type Schedule } from "./blocks/ScheduleSelector";
@@ -17,13 +17,15 @@ import MachineSelector from "./blocks/MachineSelector";
 import BackendSelector from "./blocks/BackendSelector";
 import BranchSelector from "./blocks/BranchSelector";
 import { simplifyNameForUrl, toMMDDYYYY, toYYYYMMDD } from "../../utils/utils";
+import { getDefaultBackendSpec } from "../../utils/backendSpecs";
 
 export interface TrackerConfig {
   name: string;
   blobName: string;
   dashboardName?: string;
   kernelSelection: KernelSelection;
-  backends: string[]; // Array of backends
+  backends: string[]; // Deprecated: kept for backward compatibility
+  backendSpecs: BackendSpec[]; // New: backend specifications
   machine: string;
   schedule: Schedule;
   branch: string;
@@ -52,7 +54,7 @@ export default function AddTrackerModal({
     type: "specific-tags",
     tags: [],
   });
-  const [selectedBackends, setSelectedBackends] = useState<string[]>([]);
+  const [selectedBackendSpecs, setSelectedBackendSpecs] = useState<BackendSpec[]>([]);
   const [schedule, setSchedule] = useState<Schedule>({
     isInterval: false,
     startDate: "",
@@ -81,7 +83,18 @@ export default function AddTrackerModal({
       setName(editingTracker.name);
       setMachine(editingTracker.machine);
       setKernelSelection(editingTracker.kernelSelection);
-      setSelectedBackends(editingTracker.backends);
+      
+      // Handle both old string backends and new BackendSpec
+      if (editingTracker.backendSpecs && editingTracker.backendSpecs.length > 0) {
+        setSelectedBackendSpecs(editingTracker.backendSpecs);
+      } else if (editingTracker.backends && editingTracker.backends.length > 0) {
+        // Convert old string backends to default BackendSpecs
+        const specs = editingTracker.backends
+          .map((backend) => getDefaultBackendSpec(backend))
+          .filter((spec): spec is BackendSpec => spec !== undefined);
+        setSelectedBackendSpecs(specs);
+      }
+      
       setBranch(editingTracker.branch || "main");
       // Convert dates from MM-DD-YYYY to YYYY-MM-DD for HTML inputs
       const scheduleForForm: Schedule = {
@@ -122,7 +135,7 @@ export default function AddTrackerModal({
       type: "specific-tags",
       tags: [],
     });
-    setSelectedBackends([]);
+    setSelectedBackendSpecs([]);
     setSchedule({
       isInterval: false,
       startDate: "",
@@ -147,7 +160,8 @@ export default function AddTrackerModal({
         blobName: simplifiedName,
         dashboardName: simplifiedName,
         kernelSelection,
-        backends: selectedBackends,
+        backends: selectedBackendSpecs.map((spec) => spec.backend), // For backward compatibility
+        backendSpecs: selectedBackendSpecs,
         machine,
         schedule: scheduleForBackend,
         branch,
@@ -172,7 +186,7 @@ export default function AddTrackerModal({
     if (!name.trim()) return false;
     if (!machine) return false;
     if (!kernelSelection.tags || kernelSelection.tags.length === 0) return false;
-    if (selectedBackends.length === 0) return false;
+    if (selectedBackendSpecs.length === 0) return false;
     if (!schedule.startDate) return false;
     if (!schedule.timeOfDay) return false;
 
@@ -266,8 +280,8 @@ export default function AddTrackerModal({
 
               {/* Backend Selection */}
               <BackendSelector
-                selectedBackends={selectedBackends}
-                onChange={setSelectedBackends}
+                selectedBackendSpecs={selectedBackendSpecs}
+                onChange={setSelectedBackendSpecs}
                 disabled={isSubmitting}
               />
 

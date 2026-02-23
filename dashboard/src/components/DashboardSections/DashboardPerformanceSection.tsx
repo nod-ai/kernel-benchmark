@@ -2,9 +2,9 @@ import RooflinePlot from "../Plots/RooflinePlot";
 import { BarComparisonPlot } from "../Plots/BarPlot";
 import { BellComparisonPlot } from "../Plots/BellPlot";
 import { DashboardFilterControls } from "../FilterControls";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { BarChart3, Filter, Settings, TrendingUp } from "lucide-react";
-import type { Kernel } from "../../types";
+import type { Kernel, BackendSpec } from "../../types";
 import KernelView from "../Kernels/KernelView";
 import {
   filterKernelsByPercentile,
@@ -17,21 +17,67 @@ import { useKernelDims } from "../../contexts/KernelTypesContext";
 interface DashboardPerformanceSectionProps {
   kernels: Kernel[];
   isLoading?: boolean;
+  latestBackendSpecs?: Record<string, BackendSpec>; // Optional: backend specs from run or tracker
+  trackerId?: string; // Optional: to fetch backend specs from latest tracker run
 }
 
 export default function DashboardPerformanceSection({
   kernels,
   isLoading = false,
+  latestBackendSpecs: propBackendSpecs,
+  trackerId,
 }: DashboardPerformanceSectionProps) {
   const [selectedKernelId, setSelectedKernelId] = useState<string | null>(null);
   const [graphType, setGraphType] = useState<string>("bar");
   const [comparisonMetric, setComparisonMetric] = useState<string>("tflops");
-  const [percentile, setPercentile] = useState<number>(100);
+  const [percentile, setPercentile] = useState<number>(90);
+  const [trackerBackendSpecs, setTrackerBackendSpecs] = useState<Record<string, BackendSpec>>({});
 
   const kernelDims = useKernelDims();
   // Use the filter hook
   const { filters, availableOptions, filteredKernels, updateFilter, filterConfigs } =
     useKernelFilters(kernels);
+  
+  // Determine which backend specs to use: prop (from run) or tracker (fetched)
+  const latestBackendSpecs = propBackendSpecs || trackerBackendSpecs;
+  
+  // Fetch backend specs from tracker if trackerId is provided
+  useEffect(() => {
+    const fetchTrackerBackendSpecs = async () => {
+      if (!trackerId) return;
+      
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance`
+        );
+        const timeline = await response.json();
+        
+        if (timeline.length > 0) {
+          // Find the latest point that has backendSpecs, fallback to last point
+          const latestPoint = [...timeline].reverse().find(point => 
+            point.backendSpecs && Array.isArray(point.backendSpecs) && point.backendSpecs.length > 0
+          ) || timeline[timeline.length - 1];
+          
+          console.log("Timeline points:", timeline.length);
+          console.log("Latest point with specs:", latestPoint);
+          console.log("Latest point backendSpecs:", latestPoint.backendSpecs);
+          
+          if (latestPoint.backendSpecs && Array.isArray(latestPoint.backendSpecs)) {
+            // Convert array to Record<backend, spec>
+            const specsMap: Record<string, BackendSpec> = {};
+            latestPoint.backendSpecs.forEach((spec: BackendSpec) => {
+              specsMap[spec.backend] = spec;
+            });
+            setTrackerBackendSpecs(specsMap);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch tracker backend specs:", error);
+      }
+    };
+    
+    fetchTrackerBackendSpecs();
+  }, [trackerId]);
 
   const selectedKernel = useMemo(
     () => kernels.find((k) => k.id === selectedKernelId),
@@ -87,6 +133,8 @@ export default function DashboardPerformanceSection({
           filters={filters}
           availableOptions={availableOptions}
           updateFilter={updateFilter}
+          latestBackendSpecs={latestBackendSpecs}
+          isTrackerDashboard={!!trackerId}
           filterConfigs={filterConfigs}
         />
       </div>
