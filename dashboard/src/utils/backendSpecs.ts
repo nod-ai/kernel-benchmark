@@ -52,16 +52,18 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     name: "Wave (4-wave)",
     backend: "wave",
     backendParam: "wave_4wave",
-    parentSpecId: "wave-default",
+    remoteRepository: "iree-org/wave",
     branch: "main",
+    parentSpecId: "wave-default",
   },
   {
     id: "wave-8wave",
     name: "Wave (8-wave)",
     backend: "wave",
     backendParam: "wave_8wave",
-    parentSpecId: "wave-default",
+    remoteRepository: "iree-org/wave",
     branch: "main",
+    parentSpecId: "wave-default",
   },
   {
     id: "triton-fav3",
@@ -69,13 +71,6 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     backend: "triton",
     parentSpecId: "triton-default", // Inherits remoteRepository and branch from triton-default
     branch: "fav3", // Override branch (uses triton-lang/triton @ fav3)
-  },
-  {
-    id: "wave-experimental",
-    name: "Wave Experimental",
-    backend: "wave",
-    parentSpecId: "wave-default", // Inherits remoteRepository and branch from wave-default
-    branch: "experimental", // Override just the branch
   },
   // Example: Variant that inherits everything and only changes the commit
   {
