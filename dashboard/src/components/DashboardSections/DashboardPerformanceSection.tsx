@@ -64,9 +64,11 @@ export default function DashboardPerformanceSection({
           
           if (latestPoint.backendSpecs && Array.isArray(latestPoint.backendSpecs)) {
             // Convert array to Record<backend, spec>
+            // Use backendParam as key if available (e.g., wave_4wave), otherwise use backend
             const specsMap: Record<string, BackendSpec> = {};
             latestPoint.backendSpecs.forEach((spec: BackendSpec) => {
-              specsMap[spec.backend] = spec;
+              const key = spec.backendParam || spec.backend;
+              specsMap[key] = spec;
             });
             setTrackerBackendSpecs(specsMap);
           }
