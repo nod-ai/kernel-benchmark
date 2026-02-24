@@ -179,6 +179,7 @@ echo ""
 # Track which backends succeeded/failed
 declare -a SUCCESSFUL_BACKENDS=()
 declare -a FAILED_BACKENDS=()
+WAVE_INSTALLED=false
 
 # Install each backend
 for backend in "${BACKEND_LIST[@]}"; do
@@ -189,7 +190,13 @@ for backend in "${BACKEND_LIST[@]}"; do
     echo "-----------------------------------"
     
     case "$backend" in
-        wave)
+        wave*)
+            if [[ "$WAVE_INSTALLED" == "true" ]]; then
+                echo "Wave already installed, skipping reinstall for $backend"
+                SUCCESSFUL_BACKENDS+=("$backend")
+                continue
+            fi
+
             if [[ ! -f "backends/setup_wave.sh" ]]; then
                 echo "Error: setup_wave.sh not found in backends/"
                 FAILED_BACKENDS+=("$backend")
@@ -199,6 +206,7 @@ for backend in "${BACKEND_LIST[@]}"; do
             if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
                 if bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH"; then
                     SUCCESSFUL_BACKENDS+=("$backend")
+                    WAVE_INSTALLED=true
                 else
                     echo "Warning: Failed to install $backend backend"
                     FAILED_BACKENDS+=("$backend")
@@ -206,6 +214,7 @@ for backend in "${BACKEND_LIST[@]}"; do
             else
                 if bash backends/setup_wave.sh; then
                     SUCCESSFUL_BACKENDS+=("$backend")
+                    WAVE_INSTALLED=true
                 else
                     echo "Warning: Failed to install $backend backend"
                     FAILED_BACKENDS+=("$backend")
