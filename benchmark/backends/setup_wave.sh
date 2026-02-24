@@ -41,12 +41,14 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
     pip install -e .
     cd ..
 else
-    echo "Installing wave-lang from PyPI..."
-    # Install IREE dependencies from pre-release links
-    echo "Installing IREE dependencies..."
-    pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-    echo "Installing wave-lang from PyPI..."
-    pip install wave-lang
+    git clone "https://github.com/iree-org/wave.git"
+    cd wave
+    git checkout main
+
+    echo "Installing wave dependencies..."
+    pip install -r requirements-iree-pinned.txt
+    pip install -e .
+    cd ..
 fi
 
 echo "Wave backend setup complete!"
