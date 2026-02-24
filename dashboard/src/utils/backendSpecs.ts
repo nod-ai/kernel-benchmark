@@ -48,6 +48,22 @@ export const DEFAULT_BACKEND_SPECS: Record<string, BackendSpec> = {
 // When parentSpecId is specified, remoteRepository and branch are inherited from parent
 export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
   {
+    id: "wave-4wave",
+    name: "Wave (4-wave)",
+    backend: "wave",
+    backendParam: "wave_4wave",
+    parentSpecId: "wave-default",
+    branch: "main",
+  },
+  {
+    id: "wave-8wave",
+    name: "Wave (8-wave)",
+    backend: "wave",
+    backendParam: "wave_8wave",
+    parentSpecId: "wave-default",
+    branch: "main",
+  },
+  {
     id: "triton-fav3",
     name: "Triton FAV3",
     backend: "triton",
