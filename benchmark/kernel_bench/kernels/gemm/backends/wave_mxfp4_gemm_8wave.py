@@ -8,10 +8,13 @@ WAVE_AVAILABLE = False
 try:
     from wave_lang.kernel.lang.global_symbols import *
     from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
-    from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
     from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
     from wave_lang.kernel.wave.templates import get_tagged_mxfp4_gemm
-    from wave_lang.kernel.wave.schedules import get_mxfp4_dbuf_schedule
+    from wave_lang.kernel.wave.schedules import (
+        get_mxfp4_dbuf_schedule,
+        get_mxfp4_dbuf_pingpong_schedule,
+        get_mxfp4_dbuf_mixed_pingpong_schedule,
+    )
     from wave_lang.kernel.wave.utils.mxfp_utils import (
         generate_gemm_afp4wfp4_inputs,
         torchScaledGemmMXFP4,
@@ -29,7 +32,6 @@ from ..gemm_utils import GemmConfig
 
 # Fixed tile / wave config for the 8-wave double-buffer schedule.
 _BLOCK = (256, 256, 256)
-_WAVE_SHAPE = (4, 2)   # 4×2 = 8 waves per workgroup
 
 
 class WaveMxfp4Gemm8WaveBenchmark(WaveKernelBenchmark):
@@ -67,9 +69,9 @@ class WaveMxfp4Gemm8WaveBenchmark(WaveKernelBenchmark):
         gemm, options = get_tagged_mxfp4_gemm(
             shape=shape,
             block_shape=_BLOCK,
-            wave_shape=_WAVE_SHAPE,
+            wave_shape=(4, 2),
         )
-        schedule = get_mxfp4_dbuf_schedule(use_stagger=True)
+        schedule = get_mxfp4_dbuf_pingpong_schedule(use_stagger=True, shape=shape)
 
         hyperparams = options.subs
         return WaveTemplate(
@@ -83,8 +85,10 @@ class WaveMxfp4Gemm8WaveBenchmark(WaveKernelBenchmark):
         return WaveCompileOptions(
             canonicalize=True,
             schedule=SchedulingType.MANUAL,
+            specialize=True,
+            use_buffer_ops=True,
             use_global_to_shared=True,
-            minimize_shared_allocs=False,
+            minimize_shared_allocs=True,
         )
 
     @override

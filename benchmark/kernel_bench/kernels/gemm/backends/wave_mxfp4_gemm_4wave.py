@@ -29,7 +29,6 @@ from ..gemm_utils import GemmConfig
 
 # Fixed tile / wave config for the 4-wave double-buffer schedule.
 _BLOCK = (256, 256, 256)
-_WAVE_SHAPE = (2, 2)   # 2×2 = 4 waves per workgroup
 
 
 class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
@@ -67,7 +66,7 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
         gemm, options = get_tagged_mxfp4_gemm(
             shape=shape,
             block_shape=_BLOCK,
-            wave_shape=_WAVE_SHAPE,
+            wave_shape=(2, 2),
         )
         schedule = get_mxfp4_dbuf_schedule(use_stagger=False)
 
@@ -81,10 +80,8 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
     @override
     def extra_compile_options(self):
         return WaveCompileOptions(
-            canonicalize=True,
             schedule=SchedulingType.MANUAL,
             use_global_to_shared=True,
-            minimize_shared_allocs=False,
         )
 
     @override
