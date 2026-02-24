@@ -41,6 +41,23 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
     pip install -e .
     cd ..
 else
+    echo "Checking for Rust installation..."
+    if ! command -v rustc &> /dev/null; then
+        echo "Rust not found. Installing Rust..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        # shellcheck disable=SC1091
+        source "$HOME/.cargo/env"
+        echo "Rust installed successfully."
+    else
+        echo "Rust is already installed."
+    fi
+
+    echo "Cloning wave repository..."
+    if [[ -d "wave" ]]; then
+        echo "Removing existing wave directory..."
+        rm -rf wave
+    fi
+
     git clone "https://github.com/iree-org/wave.git"
     cd wave
     git checkout main
