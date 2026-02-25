@@ -21,6 +21,9 @@ export default function BackendSelector({
   
   const backendSpecsByType = getBackendSpecsByType();
 
+  // Backends that only have one default spec (no variants)
+  const singleSpecBackends = ["iree", "hipblaslt", "torch"];
+
   // Remove a backend spec from the list
   const handleRemove = (index: number) => {
     onChange(selectedBackendSpecs.filter((_, i) => i !== index));
@@ -28,7 +31,20 @@ export default function BackendSelector({
 
   // Add a new backend spec
   const handleAdd = () => {
-    if (!selectedBackend || !selectedVariant) return;
+    if (!selectedBackend) return;
+
+    // For single-spec backends, automatically add the default spec
+    if (singleSpecBackends.includes(selectedBackend)) {
+      const defaultSpec = backendSpecsByType[selectedBackend]?.find((s) => s.isDefault);
+      if (defaultSpec) {
+        onChange([...selectedBackendSpecs, defaultSpec]);
+        setSelectedBackend("");
+        return;
+      }
+    }
+
+    // For multi-spec backends, require variant selection
+    if (!selectedVariant) return;
 
     if (selectedVariant === "__ADD_CUSTOM__") {
       setShowCustomModal(selectedBackend);
@@ -118,7 +134,7 @@ export default function BackendSelector({
         <label className="block text-sm font-medium text-gray-700">
           Add Backend:
         </label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={`grid grid-cols-1 gap-3 ${!selectedBackend || singleSpecBackends.includes(selectedBackend) ? '' : 'md:grid-cols-2'}`}>
           {/* Backend type selector */}
           <div>
             <select
@@ -139,34 +155,36 @@ export default function BackendSelector({
             </select>
           </div>
 
-          {/* Variant selector */}
-          <div>
-            <select
-              value={selectedVariant}
-              onChange={(e) => setSelectedVariant(e.target.value)}
-              disabled={disabled || !selectedBackend}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="">Select Specification</option>
-              {availableVariants.map((spec) => (
-                <option key={spec.id} value={spec.id}>
-                  {spec.name}
-                </option>
-              ))}
-              {selectedBackend && (
-                <option value="__ADD_CUSTOM__" className="font-semibold text-blue-600">
-                  + Add new backend specification
-                </option>
-              )}
-            </select>
-          </div>
+          {/* Variant selector - only show for multi-spec backends */}
+          {selectedBackend && !singleSpecBackends.includes(selectedBackend) && (
+            <div>
+              <select
+                value={selectedVariant}
+                onChange={(e) => setSelectedVariant(e.target.value)}
+                disabled={disabled || !selectedBackend}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">Select Specification</option>
+                {availableVariants.map((spec) => (
+                  <option key={spec.id} value={spec.id}>
+                    {spec.name}
+                  </option>
+                ))}
+                {selectedBackend && (
+                  <option value="__ADD_CUSTOM__" className="font-semibold text-blue-600">
+                    + Add new backend specification
+                  </option>
+                )}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Add button */}
         <button
           type="button"
           onClick={handleAdd}
-          disabled={disabled || !selectedBackend || !selectedVariant}
+          disabled={disabled || !selectedBackend || (!singleSpecBackends.includes(selectedBackend) && !selectedVariant)}
           className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-4 h-4" />
