@@ -56,7 +56,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: "Setting up Rust"
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -81,7 +81,7 @@ jobs:
           python -m kernel_bench.cli.bench --tune --load_problems=problems.json --backend=${{ inputs.backend }} --num_trials=${{ inputs.num_trials }} --machine=mi325x
 
       - name: Upload tuning results
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: tuning-results
           path: ./benchmark/results/tuning/
