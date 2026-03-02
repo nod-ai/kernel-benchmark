@@ -28,7 +28,7 @@ from ..gemm_utils import GemmConfig
 
 
 # Fixed tile / wave config for the 4-wave double-buffer schedule.
-_BLOCK = (256, 256, 256)
+_BLOCK = (128, 256, 256)
 
 
 class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
@@ -63,12 +63,12 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
         config = self.config
         shape = (config.M, config.N, config.K)
 
-        gemm, options = get_tagged_mxfp4_gemm(
+        gemm, options = get_tagged_mxfp4_gemm_preshuffle_b(
             shape=shape,
             block_shape=_BLOCK,
-            wave_shape=(2, 2),
+            wave_shape=(1, 4),
         )
-        schedule = get_mxfp4_dbuf_schedule(use_stagger=False)
+        schedule = get_mxfp4_asymmetric_schedule(is_bscale_shuffled=True)
 
         hyperparams = options.subs
         return WaveTemplate(
@@ -82,6 +82,10 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
         return WaveCompileOptions(
             schedule=SchedulingType.MANUAL,
             use_global_to_shared=True,
+            options.backend = "asm"
+            options.wave_runtime = True
+            options.use_wave_asm_backend = True,
+            
         )
 
     @override
