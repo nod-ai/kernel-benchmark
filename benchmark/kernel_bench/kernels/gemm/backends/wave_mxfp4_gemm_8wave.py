@@ -9,11 +9,15 @@ try:
     from wave_lang.kernel.lang.global_symbols import *
     from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
     from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
-    from wave_lang.kernel.wave.templates import get_tagged_mxfp4_gemm
+    from wave_lang.kernel.wave.templates import (
+        get_tagged_mxfp4_gemm,
+        get_tagged_mxfp4_gemm_preshuffle_scales,
+    )
     from wave_lang.kernel.wave.schedules import (
         get_mxfp4_dbuf_schedule,
         get_mxfp4_dbuf_pingpong_schedule,
         get_mxfp4_dbuf_mixed_pingpong_schedule,
+        
     )
     from wave_lang.kernel.wave.utils.mxfp_utils import (
         generate_gemm_afp4wfp4_inputs,
@@ -66,7 +70,7 @@ class WaveMxfp4Gemm8WaveBenchmark(WaveKernelBenchmark):
         config = self.config
         shape = (config.M, config.N, config.K)
 
-        gemm, options = get_tagged_mxfp4_gemm(
+        gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
             shape=shape,
             block_shape=_BLOCK,
             wave_shape=(4, 2),
