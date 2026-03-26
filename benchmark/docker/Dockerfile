@@ -80,7 +80,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Validate GPU_ARCH is provided when needed
 RUN BACKENDS_VAR="${BACKENDS:-all}"; \
-    if [ "$BACKENDS_VAR" = "all" ] || echo "$BACKENDS_VAR" | grep -qE '(^|,)hipblaslt(,|$)'; then \
+    if [ "$BACKENDS_VAR" = "all" ] || echo "$BACKENDS_VAR" | grep -qE '(^|,)(hipblaslt|wave_4wave_rocroller)(,|$)'; then \
         if [ -z "$GPU_ARCH" ]; then \
             echo "ERROR: --build-arg GPU_ARCH is required when building with hipBLASLt or all backends."; \
             echo ""; \
@@ -110,8 +110,20 @@ RUN SETUP_CMD="bash setup.sh"; \
     echo "Running: $SETUP_CMD"; \
     eval "$SETUP_CMD" || echo "Warning: Some backends may have failed to install"
 
+# Replace benchmark_mxfp4.py with the rocroller-compatible version
+# https://gist.github.com/suryajasper/382f1fe58a751308e6da772123d99f95
+RUN BENCH_SCRIPT="/workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4.py" && \
+    if [ -d "/workspace/wave/wave_lang/kernel/wave/perf" ]; then \
+        curl -sL "https://gist.githubusercontent.com/suryajasper/382f1fe58a751308e6da772123d99f95/raw/benchmark_mxfp4.py" \
+            -o "$BENCH_SCRIPT" && \
+        echo "Replaced benchmark_mxfp4.py with rocroller-compatible version"; \
+    else \
+        echo "Wave perf directory not found, skipping benchmark_mxfp4.py replacement"; \
+    fi
+
 # Set environment variables for backends
-ENV PATH="/workspace/rocm-libraries/projects/hipblaslt/build/release/clients:${PATH}"
+ENV PATH="/workspace/rocm-libraries/projects/hipblaslt/build/clients:/opt/rocm/llvm/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/workspace/rocm-libraries/projects/hipblaslt/build/library:${LD_LIBRARY_PATH}"
 ENV WAVE_CACHE_ON=0
 
 CMD ["/bin/bash"]

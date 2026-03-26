@@ -122,13 +122,13 @@ else
 fi
 echo ""
 
-# Validate GPU_ARCH is provided when hipBLASLt is in the backend list
+# Validate GPU_ARCH is provided when hipBLASLt or rocroller backends are in the list
 REQUIRES_GPU_ARCH=false
 if [[ "$BACKENDS" == "all" ]]; then
     REQUIRES_GPU_ARCH=true
 else
     for backend in "${BACKEND_LIST[@]}"; do
-        if [[ "$backend" == "hipblaslt" ]]; then
+        if [[ "$backend" == "hipblaslt" || "$backend" == *"rocroller"* ]]; then
             REQUIRES_GPU_ARCH=true
             break
         fi
@@ -282,9 +282,25 @@ for backend in "${BACKEND_LIST[@]}"; do
             fi
             ;;
             
+        wave_4wave_rocroller)
+            echo "wave_4wave_rocroller requires hipblaslt with rocroller support"
+            if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
+                echo "Error: setup_hipblaslt.sh not found in backends/"
+                FAILED_BACKENDS+=("$backend")
+                continue
+            fi
+
+            if bash backends/setup_hipblaslt.sh; then
+                SUCCESSFUL_BACKENDS+=("$backend")
+            else
+                echo "Warning: Failed to install $backend backend"
+                FAILED_BACKENDS+=("$backend")
+            fi
+            ;;
+
         *)
             echo "Error: Unknown backend '$backend'"
-            echo "Available backends: wave, torch, triton, iree, hipblaslt"
+            echo "Available backends: wave, torch, triton, iree, hipblaslt, wave_4wave_rocroller"
             FAILED_BACKENDS+=("$backend")
             ;;
     esac

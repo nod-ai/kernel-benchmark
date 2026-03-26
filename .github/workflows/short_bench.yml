@@ -74,15 +74,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Parse Backend Specs
+        id: backend_specs
+        if: ${{ inputs.backend_specs_url }}
+        run: |
+          SPECS=$(curl -sL "${{ inputs.backend_specs_url }}")
+          # Extract wave repo/branch from specs (use first wave spec found)
+          WAVE_REPO=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              if s.get('backend') == 'wave' and s.get('remoteRepository'):
+                  print(s['remoteRepository'])
+                  break
+          " 2>/dev/null || echo "")
+          WAVE_BRANCH=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              if s.get('backend') == 'wave' and s.get('branch'):
+                  print(s['branch'])
+                  break
+          " 2>/dev/null || echo "")
+          echo "wave_repo=$WAVE_REPO" >> $GITHUB_OUTPUT
+          echo "wave_branch=$WAVE_BRANCH" >> $GITHUB_OUTPUT
+          echo "Parsed wave repo: $WAVE_REPO, branch: $WAVE_BRANCH"
+
       - name: Build Docker Image
         run: |
           cd benchmark
           chmod +x ./docker/build_docker.sh
+
+          # Determine wave repo/branch: backend_specs > pr_repository/pr_branch > defaults
+          WAVE_REPO="${{ steps.backend_specs.outputs.wave_repo || inputs.pr_repository }}"
+          WAVE_BRANCH="${{ steps.backend_specs.outputs.wave_branch || inputs.pr_branch }}"
+
           ./docker/build_docker.sh \
             --machine ${{ inputs.machine }} \
             ${{ inputs.selected_backend != 'all' && format('--backends {0}', inputs.selected_backend) || '' }} \
-            ${{ inputs.pr_repository && format('--wave-repo {0}', inputs.pr_repository) || '' }} \
-            ${{ inputs.pr_branch && format('--wave-branch {0}', inputs.pr_branch) || '' }} \
+            ${WAVE_REPO:+--wave-repo $WAVE_REPO} \
+            ${WAVE_BRANCH:+--wave-branch $WAVE_BRANCH} \
             -t ${{ env.DOCKER_IMAGE }}
 
       - name: Run Benchmarks

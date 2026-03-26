@@ -69,7 +69,24 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     parentSpecId: "triton-default", // Inherits repo and branch
     commitHash: "abc123def456", // Use a specific commit
   },
-  // Add more variants as needed
+  {
+    id: "wave-4wave-reduce-reg-pres",
+    name: "Wave 4-wave (reduce_reg_pres)",
+    backend: "wave",
+    backendParam: "wave_4wave",
+    remoteRepository: "panditsa/wave",
+    branch: "reduce_reg_pres",
+    parentSpecId: "wave-default",
+  },
+  {
+    id: "wave-4wave-rocroller",
+    name: "Wave 4-wave (rocroller)",
+    backend: "wave",
+    backendParam: "wave_4wave_rocroller",
+    remoteRepository: "panditsa/wave",
+    branch: "reduce_reg_pres",
+    parentSpecId: "wave-default",
+  },
 ];
 
 // Helper function to resolve a spec with its parent's properties

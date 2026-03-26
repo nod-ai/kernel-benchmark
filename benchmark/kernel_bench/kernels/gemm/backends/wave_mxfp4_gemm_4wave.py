@@ -82,10 +82,9 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
         return WaveCompileOptions(
             schedule=SchedulingType.MANUAL,
             use_global_to_shared=True,
-            options.backend = "asm"
-            options.wave_runtime = True
-            options.use_wave_asm_backend = True,
-            
+            backend="asm",
+            wave_runtime=True,
+            use_wave_asm_backend=True,
         )
 
     @override

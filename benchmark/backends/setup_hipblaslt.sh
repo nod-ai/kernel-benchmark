@@ -1,13 +1,12 @@
 #!/bin/bash
-# Setup script for hipBLASLt backend
+# Setup script for hipBLASLt backend (with rocroller support for Wave kernels)
 
 set -e
 
 echo "Installing hipBLASLt backend dependencies..."
 
-# Configuration
-ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/ROCm/rocm-libraries.git}"
-ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-develop}"
+ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/suryajasper/rocm-libraries.git}"
+ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-wave-mxfp4-testing}"
 
 # GPU_ARCH must be provided by setup.sh
 if [[ -z "$GPU_ARCH" ]]; then
@@ -26,15 +25,10 @@ BUILD_DIR="/workspace"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Clone Monorepo with Sparse Checkout
-echo "Cloning ROCm libraries monorepo (sparse checkout)..."
-git clone --filter=blob:none --no-checkout -b "${ROCM_LIBRARIES_BRANCH}" "${ROCM_LIBRARIES_REPO}" rocm-libraries
-cd rocm-libraries
-git sparse-checkout init --cone
-git sparse-checkout set projects/hipblaslt shared cmake
-git checkout "${ROCM_LIBRARIES_BRANCH}"
-
-cd projects/hipblaslt
+# Full recursive clone (rocroller requires submodules)
+echo "Cloning ROCm libraries with rocroller support..."
+git clone --recursive -b "${ROCM_LIBRARIES_BRANCH}" "${ROCM_LIBRARIES_REPO}" rocm-libraries
+cd rocm-libraries/projects/hipblaslt
 
 # Install Python Requirements for Tensile
 if [ -f "tensilelite/requirements.txt" ]; then
@@ -42,11 +36,29 @@ if [ -f "tensilelite/requirements.txt" ]; then
     pip install -r tensilelite/requirements.txt
 fi
 
-echo "Installing hipBLASLt (this may take a while)..."
-./install.sh -dc -a $GPU_ARCH
+echo "Configuring hipBLASLt with rocroller (this may take a while)..."
+cmake \
+    -DCMAKE_INSTALL_PREFIX=${PWD}/install \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_CXX_COMPILER=/opt/rocm/bin/amdclang++ \
+    -DCMAKE_C_COMPILER=/opt/rocm/bin/amdclang \
+    -DCMAKE_PREFIX_PATH=/opt/rocm \
+    -S . \
+    -B ./build/ \
+    -G Ninja \
+    -DGPU_TARGETS=$GPU_ARCH \
+    -DHIPBLASLT_ENABLE_BLIS=0 \
+    -DPython3_EXECUTABLE=$(which python) \
+    -DHIPBLASLT_BUILD_SHARED_LIBS=1 \
+    -DHIPBLASLT_ENABLE_CLIENT=1 \
+    -DHIPBLASLT_ENABLE_DEVICE=1 \
+    -DHIPBLASLT_ENABLE_HOST=1 \
+    -DHIPBLASLT_ENABLE_ROCROLLER=1
 
-# Source code preserved in $BUILD_DIR for reference/debugging
-echo "ROCm libraries source preserved in: $BUILD_DIR"
-echo "Note: PATH will be set in Dockerfile ENV for persistent access"
+echo "Building hipblaslt-bench..."
+ninja -C ./build/ hipblaslt-bench
+
+echo "ROCm libraries source preserved in: $BUILD_DIR/rocm-libraries"
+echo "Note: PATH and LD_LIBRARY_PATH will be set in Dockerfile ENV"
 
 echo "hipBLASLt backend setup complete!"
