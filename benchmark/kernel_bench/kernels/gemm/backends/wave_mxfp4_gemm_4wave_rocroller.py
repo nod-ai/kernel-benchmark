@@ -79,8 +79,12 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
         env = os.environ.copy()
         env["HIP_VISIBLE_DEVICES"] = str(device_id)
         env["WAVE_CACHE_ON"] = "0"
-        if "/opt/rocm/lib" not in env.get("LD_LIBRARY_PATH", ""):
-            env["LD_LIBRARY_PATH"] = f"/opt/rocm/lib:{env.get('LD_LIBRARY_PATH', '')}"
+        base_ld = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = (
+            f"{HIPBLASLT_DIR}/build/library:"
+            f"{HIPBLASLT_DIR}/build/rocroller:"
+            f"/opt/rocm/lib:{base_ld}"
+        )
 
         # Step 1: Compile wave kernel → assembly + manifest
         compile_cmd = [

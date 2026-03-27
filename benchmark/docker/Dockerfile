@@ -125,7 +125,6 @@ RUN BENCH_SCRIPT="/workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4.py"
 
 # Set environment variables for backends
 ENV PATH="/workspace/rocm-libraries/projects/hipblaslt/build/clients:/opt/rocm/llvm/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/workspace/rocm-libraries/projects/hipblaslt/build/library:${LD_LIBRARY_PATH}"
 ENV WAVE_CACHE_ON=0
 
 CMD ["/bin/bash"]
