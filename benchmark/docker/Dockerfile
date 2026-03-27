@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-filesystem-dev \
     libdrm-dev \
     libgtest-dev \
+    libblas-dev \
+    liblapack-dev \
     # Build tools
     make \
     build-essential \
