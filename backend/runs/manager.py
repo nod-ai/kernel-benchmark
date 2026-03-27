@@ -91,16 +91,32 @@ class RunManager:
                         logger.info(f"Found matching run {gh_run.id} for trigger {trigger_id}")
                         run_id = str(gh_run.id)
                         
+                        # Ensure WorkflowRunState exists (webhook may have been missed)
+                        try:
+                            from backend.storage.types import WorkflowRunDb
+                            existing = WorkflowRunDb.find_by_id(run_id)
+                            if not existing:
+                                from backend.runs.run_utils import parse_run_from_gh
+                                run_state = parse_run_from_gh(gh_run)
+                                run_state.triggerId = trigger_id
+                                run_state.machine = trigger.machine
+                                WorkflowRunDb.upsert(run_state)
+                                logger.info(f"Created WorkflowRunState for missed run {run_id}")
+                            else:
+                                WorkflowRunDb.update_by_id(run_id, {"triggerId": trigger_id})
+                        except Exception as e:
+                            logger.error(f"Failed to ensure WorkflowRunState for run {run_id}: {e}")
+                        
                         # Link trigger to run
                         if link_trigger_to_run(trigger_id, run_id):
-                            # Also update the WorkflowRunState if it exists
-                            try:
-                                from backend.storage.types import WorkflowRunDb
-                                WorkflowRunDb.update_by_id(run_id, {"triggerId": trigger_id})
-                            except:
-                                pass
-                            
                             linked_count += 1
+                            # Track the new run so artifact gets processed
+                            try:
+                                run_state = WorkflowRunDb.find_by_id(run_id)
+                                if run_state:
+                                    self.track_run(run_state)
+                            except Exception:
+                                pass
                             break
             
             if linked_count > 0:

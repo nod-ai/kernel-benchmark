@@ -14,7 +14,6 @@ _BLOCK = (256, 192, 256)
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
 HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
 INTEGRATE_SCRIPT = f"{HIPBLASLT_DIR}/integrate_wave_kernels.py"
-BENCHMARK_MXFP4_SCRIPT = "wave_lang/kernel/wave/perf/benchmark_mxfp4.py"
 WAVE_DIR = "/workspace/wave"
 
 
@@ -25,7 +24,7 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
         config = self.config
         if config.M < 4 or config.N < 4 or config.K < 4:
             return False
-        if config.K % 2 != 0:
+        if config.K % 256 != 0:
             return False
         if config.tA != "N" or config.tB != "T":
             return False
@@ -49,11 +48,11 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
 
     def _run_automated(self, device_id: int, num_iterations: int, timeout: Optional[float]):
         """
-        Two-step automated flow:
-        1. benchmark_mxfp4.py --dynamic: compile wave kernel → assembly + manifest
-        2. integrate_wave_kernels.py: patch, integrate, rebuild, benchmark
+        Two-step automated flow per WAVE_KERNEL_BENCHMARKING.md:
+        1. benchmark_mxfp4.py --shapes <csv> --dynamic --skip-validate --asm-dir <dir>
+        2. integrate_wave_kernels.py --asm-dir <dir> --flip-macrotiles --build --benchmark
         """
-        bench_script = Path(WAVE_DIR) / BENCHMARK_MXFP4_SCRIPT
+        bench_script = Path(WAVE_DIR) / "wave_lang/kernel/wave/perf/benchmark_mxfp4.py"
         integrate_script = Path(INTEGRATE_SCRIPT)
 
         if not bench_script.exists():
@@ -65,25 +64,35 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
 
         config = self.config
         work_dir = Path(tempfile.mkdtemp(prefix="rocroller_"))
-        asm_output_dir = work_dir / "wave_asm"
-        shapes_csv = work_dir / "shapes.csv"
+        asm_dir = work_dir / "wave_asm"
+        shapes_csv = work_dir / "wave_shapes.csv"
 
+        # Shapes CSV in wave convention: M,N,K,MT_M,MT_N,MT_K
         with open(shapes_csv, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["M", "N", "K"])
-            writer.writerow([config.M, config.N, config.K])
+            writer.writerow(["M", "N", "K", "MT_M", "MT_N", "MT_K"])
+            writer.writerow([
+                config.M, config.N, config.K,
+                _BLOCK[0], _BLOCK[1], _BLOCK[2],
+            ])
 
         env = os.environ.copy()
         env["HIP_VISIBLE_DEVICES"] = str(device_id)
+        env["WAVE_CACHE_ON"] = "0"
+        if "/opt/rocm/lib" not in env.get("LD_LIBRARY_PATH", ""):
+            env["LD_LIBRARY_PATH"] = f"/opt/rocm/lib:{env.get('LD_LIBRARY_PATH', '')}"
 
-        # Step 1: Compile wave kernel to assembly + manifest
+        # Step 1: Compile wave kernel → assembly + manifest
         compile_cmd = [
-            "python", str(bench_script),
+            "python", "-u", str(bench_script),
+            "--shapes", str(shapes_csv),
             "--dynamic",
-            "--block", str(_BLOCK[0]), str(_BLOCK[1]), str(_BLOCK[2]),
-            "-o", str(asm_output_dir),
+            "--skip-validate",
+            "--asm-dir", str(asm_dir),
+            "-o", str(work_dir / "wave_compile_results.csv"),
         ]
 
+        self.logger.info(f"Step 1: Compiling wave kernel: {' '.join(compile_cmd)}")
         try:
             proc = subprocess.run(
                 compile_cmd,
@@ -106,26 +115,27 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
             self.logger.error(f"Error running benchmark_mxfp4.py: {e}")
             return None
 
-        if not asm_output_dir.exists():
-            self.logger.error(f"Assembly output dir not found at {asm_output_dir}")
+        if not asm_dir.exists():
+            self.logger.error(f"Assembly output dir not found at {asm_dir}")
             return self.get_bench_result(0.0, False)
 
-        # Step 2: Integrate kernels, rebuild hipblaslt-bench, and benchmark
+        # Step 2: Integrate, rebuild, and benchmark via hipBLASLt
         integrate_cmd = [
             "python", str(integrate_script),
-            str(asm_output_dir),
+            "--asm-dir", str(asm_dir),
+            "--flip-macrotiles",
             "--build",
             "--benchmark",
-            "--flip-macrotiles",
-            "--shapes", str(shapes_csv),
+            "--benchmark-iters", str(num_iterations),
         ]
 
+        self.logger.info(f"Step 2: Integrating & benchmarking: {' '.join(integrate_cmd)}")
         try:
             proc = subprocess.run(
                 integrate_cmd,
                 capture_output=True,
                 text=True,
-                timeout=timeout or 1200,
+                timeout=timeout or 1800,
                 cwd=HIPBLASLT_DIR,
                 env=env,
             )
@@ -136,7 +146,7 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
                 )
                 return self.get_bench_result(0.0, False)
 
-            return self._parse_integrate_output(proc.stdout, work_dir)
+            return self._parse_integrate_output(proc.stdout, asm_dir)
 
         except subprocess.TimeoutExpired:
             self.logger.error("integrate_wave_kernels.py timed out")
@@ -145,16 +155,12 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
             self.logger.error(f"Error running integrate_wave_kernels.py: {e}")
             return self.get_bench_result(0.0, False)
 
-    def _parse_integrate_output(self, stdout: str, work_dir: Path):
-        """Parse results from integrate_wave_kernels.py output or CSV."""
-        # Try to find a results CSV in the work directory or hipblaslt dir
-        for candidate in [
-            work_dir / "results.csv",
-            Path(HIPBLASLT_DIR) / "results.csv",
-            Path(HIPBLASLT_DIR) / "benchmark_results.csv",
-        ]:
-            if candidate.exists():
-                return self._parse_results_csv(candidate)
+    def _parse_integrate_output(self, stdout: str, asm_dir: Path):
+        """Parse results from integrate_wave_kernels.py output CSV."""
+        # Per docs, results are at <asm-dir>/hipblaslt_results.csv
+        results_csv = asm_dir / "hipblaslt_results.csv"
+        if results_csv.exists():
+            return self._parse_results_csv(results_csv)
 
         # Fall back to parsing hipblaslt-bench output from stdout
         try:
@@ -169,27 +175,65 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
         return self.get_bench_result(0.0, False)
 
     def _parse_results_csv(self, results_csv: Path):
+        """
+        Parse hipblaslt_results.csv with columns:
+        tag, m, n, k, status, kernel_source, tile, tflops, runtime_us, correctness
+        """
         try:
+            config = self.config
             with open(results_csv, "r") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    us_val = row.get("us") or row.get("mean_us") or row.get("time_us")
-                    if us_val is not None:
+                    row_m = int(row.get("m", 0))
+                    row_n = int(row.get("n", 0))
+                    row_k = int(row.get("k", 0))
+
+                    # Match by shape (hipBLASLt convention: m,n,k)
+                    # Wave (M,N,K) = hipBLASLt (n,m,k) due to M/N swap
+                    if row_m == config.N and row_n == config.M and row_k == config.K:
+                        us_val = row.get("runtime_us")
+                        if us_val is not None:
+                            self.logger.info(
+                                f"Matched shape m={row_m},n={row_n},k={row_k}: "
+                                f"kernel_source={row.get('kernel_source', '?')}, "
+                                f"tflops={row.get('tflops', '?')}, "
+                                f"runtime_us={us_val}"
+                            )
+                            return self.get_bench_result(float(us_val), True)
+
+            # If exact match not found, use the first valid row
+            with open(results_csv, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    us_val = row.get("runtime_us")
+                    if us_val is not None and float(us_val) > 0:
+                        self.logger.info(
+                            f"Using first result: runtime_us={us_val}, "
+                            f"kernel_source={row.get('kernel_source', '?')}"
+                        )
                         return self.get_bench_result(float(us_val), True)
 
-            self.logger.error(f"No timing column found in {results_csv}")
+            self.logger.error(f"No valid results in {results_csv}")
             return self.get_bench_result(0.0, False)
         except Exception as e:
             self.logger.error(f"Failed to parse results CSV: {e}")
             return self.get_bench_result(0.0, False)
 
     def _run_via_hipblaslt_bench(self, device_id: int, num_iterations: int, timeout: Optional[float]):
+        """Direct hipblaslt-bench fallback (assumes kernels are already integrated)."""
         config = self.config
         cmd = _get_rocroller_hipblaslt_cmd(config, device_id, num_iterations)
 
         try:
+            env = os.environ.copy()
+            env["LD_LIBRARY_PATH"] = (
+                f"{HIPBLASLT_DIR}/build/library:"
+                f"{HIPBLASLT_DIR}/build/rocroller:"
+                f"{env.get('LD_LIBRARY_PATH', '')}"
+            )
             result = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=timeout or 600,
+                env=env,
             )
 
             if result.returncode != 0:
@@ -214,7 +258,7 @@ def _get_rocroller_hipblaslt_cmd(
     config: GemmConfig, device_id: int = 0, num_iterations: int = 3,
 ):
     return [
-        "hipblaslt-bench",
+        f"{HIPBLASLT_DIR}/build/clients/hipblaslt-bench",
         "--api_method", "c",
         "-m", str(config.M),
         "-n", str(config.N),
@@ -231,10 +275,8 @@ def _get_rocroller_hipblaslt_cmd(
         "--c_type", "bf16_r",
         "--d_type", "bf16_r",
         "--compute_type", "f32_r",
-        "--rotating", "0",
-        "--cold_iters", "1",
+        "--cold_iters", "2",
         "--iters", str(num_iterations),
-        "--use_gpu_timer",
         "--swizzleA",
         "--device", str(device_id),
     ]

@@ -282,13 +282,6 @@ def _build_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         "tuned_config_url": tuned_configs_gist.raw_url,
     }
 
-    # Optional backend selection
-    if "backends" in metadata:
-        if isinstance(metadata["backends"], list):
-            inputs["selected_backend"] = ",".join(metadata["backends"])
-        else:
-            inputs["selected_backend"] = metadata["backends"]
-
     # Backend specifications with commit hashes
     if "backendSpecs" in metadata and metadata["backendSpecs"]:
         backend_specs_gist = create_gist(metadata["backendSpecs"])
@@ -296,6 +289,21 @@ def _build_benchmark_inputs(metadata: dict[str, Any]) -> dict[str, Any]:
         logger.info(
             f"Created backend specs gist with {len(metadata['backendSpecs'])} specs"
         )
+        # Derive selected_backend from backendSpecs (backendParam takes priority)
+        backend_names = []
+        for spec in metadata["backendSpecs"]:
+            param = spec.get("backendParam") or spec.get("backend")
+            if param and param not in backend_names:
+                backend_names.append(param)
+        if backend_names:
+            inputs["selected_backend"] = ",".join(backend_names)
+
+    # Fallback: use backends list if no backendSpecs provided
+    elif "backends" in metadata:
+        if isinstance(metadata["backends"], list):
+            inputs["selected_backend"] = ",".join(metadata["backends"])
+        else:
+            inputs["selected_backend"] = metadata["backends"]
 
     # Optional PR info (for manual runs)
     if "repoName" in metadata:

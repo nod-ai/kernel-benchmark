@@ -79,7 +79,7 @@ jobs:
         if: ${{ inputs.backend_specs_url }}
         run: |
           SPECS=$(curl -sL "${{ inputs.backend_specs_url }}")
-          # Extract wave repo/branch from specs (use first wave spec found)
+          # Extract wave repo/branch from specs (any spec with backend=='wave', including variants)
           WAVE_REPO=$(echo "$SPECS" | python3 -c "
           import json, sys
           specs = json.load(sys.stdin)
@@ -95,6 +95,19 @@ jobs:
               if s.get('backend') == 'wave' and s.get('branch'):
                   print(s['branch'])
                   break
+          " 2>/dev/null || echo "")
+          # Extract rocm-libraries repo/branch for rocroller variants
+          ROCM_LIBRARIES_REPO=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              bp = s.get('backendParam', '')
+              if 'rocroller' in bp:
+                  # rocroller variants may specify a separate rocm-libraries repo
+                  meta = s.get('buildMeta', {})
+                  if meta.get('rocmLibrariesRepo'):
+                      print(meta['rocmLibrariesRepo'])
+                      break
           " 2>/dev/null || echo "")
           echo "wave_repo=$WAVE_REPO" >> $GITHUB_OUTPUT
           echo "wave_branch=$WAVE_BRANCH" >> $GITHUB_OUTPUT

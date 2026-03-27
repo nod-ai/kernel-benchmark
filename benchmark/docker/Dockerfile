@@ -70,7 +70,7 @@ COPY . /workspace
 WORKDIR /workspace
 
 # Install Rust for wave compilation (if needed and wave backend is requested)
-RUN if echo "$BACKENDS" | grep -qE '(^|,)(all|wave)(,|$)'; then \
+RUN if echo "$BACKENDS" | grep -qE '(^|,)(all|wave|wave_[^,]*)(,|$)'; then \
         echo "Installing Rust for Wave backend..."; \
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
     else \
@@ -101,7 +101,7 @@ RUN SETUP_CMD="bash setup.sh"; \
         SETUP_CMD="$SETUP_CMD --backends=$BACKENDS"; \
     fi; \
     # Always include Wave repo/branch if Wave backend is selected (using defaults if not overridden)
-    if echo "$BACKENDS" | grep -qE '(^|,)(all|wave)(,|$)'; then \
+    if echo "$BACKENDS" | grep -qE '(^|,)(all|wave|wave_[^,]*)(,|$)'; then \
         SETUP_CMD="$SETUP_CMD --wave-repo $WAVE_REPO --wave-branch $WAVE_BRANCH"; \
     fi; \
     if [ -n "$GPU_ARCH" ]; then \
