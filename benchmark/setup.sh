@@ -190,6 +190,22 @@ for backend in "${BACKEND_LIST[@]}"; do
     echo "-----------------------------------"
     
     case "$backend" in
+        wave_4wave_rocroller)
+            echo "wave_4wave_rocroller requires hipblaslt with rocroller support"
+            if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
+                echo "Error: setup_hipblaslt.sh not found in backends/"
+                FAILED_BACKENDS+=("$backend")
+                continue
+            fi
+
+            if bash backends/setup_hipblaslt.sh; then
+                SUCCESSFUL_BACKENDS+=("$backend")
+            else
+                echo "Warning: Failed to install $backend backend"
+                FAILED_BACKENDS+=("$backend")
+            fi
+            ;;
+
         wave*)
             if [[ "$WAVE_INSTALLED" == "true" ]]; then
                 echo "Wave already installed, skipping reinstall for $backend"
@@ -274,22 +290,6 @@ for backend in "${BACKEND_LIST[@]}"; do
                 continue
             fi
             
-            if bash backends/setup_hipblaslt.sh; then
-                SUCCESSFUL_BACKENDS+=("$backend")
-            else
-                echo "Warning: Failed to install $backend backend"
-                FAILED_BACKENDS+=("$backend")
-            fi
-            ;;
-            
-        wave_4wave_rocroller)
-            echo "wave_4wave_rocroller requires hipblaslt with rocroller support"
-            if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
-                echo "Error: setup_hipblaslt.sh not found in backends/"
-                FAILED_BACKENDS+=("$backend")
-                continue
-            fi
-
             if bash backends/setup_hipblaslt.sh; then
                 SUCCESSFUL_BACKENDS+=("$backend")
             else
