@@ -19,7 +19,7 @@ ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
 HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
 INTEGRATE_SCRIPT = f"{HIPBLASLT_DIR}/integrate_wave_kernels.py"
 WAVE_DIR = "/workspace/wave"
-BENCH_SCRIPT = f"{WAVE_DIR}/wave_lang/kernel/wave/perf/benchmark_mxfp4.py"
+BENCH_SCRIPT = f"{WAVE_DIR}/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py"
 
 _integration_lock = threading.Lock()
 _integration_attempted = False

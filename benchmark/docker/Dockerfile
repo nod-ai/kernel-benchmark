@@ -112,15 +112,13 @@ RUN SETUP_CMD="bash setup.sh"; \
     echo "Running: $SETUP_CMD"; \
     eval "$SETUP_CMD" || echo "Warning: Some backends may have failed to install"
 
-# Replace benchmark_mxfp4.py with the rocroller-compatible version
-# https://gist.github.com/suryajasper/382f1fe58a751308e6da772123d99f95
-RUN BENCH_SCRIPT="/workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4.py" && \
-    if [ -d "/workspace/wave/wave_lang/kernel/wave/perf" ]; then \
-        curl -sL "https://gist.githubusercontent.com/suryajasper/382f1fe58a751308e6da772123d99f95/raw/benchmark_mxfp4.py" \
-            -o "$BENCH_SCRIPT" && \
-        echo "Replaced benchmark_mxfp4.py with rocroller-compatible version"; \
+# Install standalone 4-wave compilation script (replaces the 8-wave gist)
+RUN if [ -d "/workspace/wave/wave_lang/kernel/wave/perf" ]; then \
+        cp /workspace/scripts/benchmark_mxfp4_4wave.py \
+           /workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py && \
+        echo "Installed 4-wave compilation script"; \
     else \
-        echo "Wave perf directory not found, skipping benchmark_mxfp4.py replacement"; \
+        echo "Wave perf directory not found, skipping 4-wave script install"; \
     fi
 
 # Set environment variables for backends

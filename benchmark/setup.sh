@@ -154,6 +154,16 @@ if [[ -n "$GPU_ARCH" ]]; then
     echo "GPU Architecture: $GPU_ARCH"
 fi
 
+# Enable WaveASM build for 4-wave backends (requires LLVM from ROCm)
+for backend in "${BACKEND_LIST[@]}"; do
+    if [[ "$backend" == *"4wave"* ]]; then
+        export WAVE_BUILD_WAVEASM=1
+        export WAVE_LLVM_DIR="/opt/rocm/llvm"
+        echo "WaveASM build enabled for 4-wave backend ($backend)"
+        break
+    fi
+done
+
 # Create and activate virtual environment only if requested
 if [[ "$USE_VENV" == "true" ]]; then
     echo "Creating Python virtual environment..."
