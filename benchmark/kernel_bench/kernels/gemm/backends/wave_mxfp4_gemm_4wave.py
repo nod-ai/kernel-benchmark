@@ -28,7 +28,7 @@ from ..gemm_utils import GemmConfig
 
 
 # Fixed tile / wave config for the 4-wave double-buffer schedule.
-_BLOCK = (128, 256, 256)
+_BLOCK = (256, 192, 256)
 
 
 class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):

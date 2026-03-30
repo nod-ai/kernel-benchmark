@@ -10,7 +10,10 @@ from kernel_bench.core.template import KernelBenchmark
 from .hipblaslt_gemm import parse_hipblaslt_us
 from ..gemm_utils import GemmConfig
 
-_BLOCK = (256, 192, 256)
+_MACROTILES = [
+    (256, 192, 256),
+    (64, 64, 256),
+]
 
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
 HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
@@ -70,7 +73,11 @@ def _try_compile_and_integrate(device_id: int, logger) -> bool:
     with open(shapes_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["M", "N", "K", "MT_M", "MT_N", "MT_K"])
-        writer.writerow([4096, 4096, 4096, _BLOCK[0], _BLOCK[1], _BLOCK[2]])
+        for mt in _MACROTILES:
+            writer.writerow([
+                max(mt[0], 512), max(mt[1], 512), max(mt[2], 512),
+                mt[0], mt[1], mt[2],
+            ])
 
     # Step 1: Compile wave kernel with CLEAN env (no custom hipblaslt)
     compile_env = _get_compile_env()
