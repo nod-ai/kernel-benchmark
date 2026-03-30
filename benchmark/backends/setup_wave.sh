@@ -43,39 +43,56 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
         echo "Building WaveASM with LLVM from source..."
         LLVM_COMMIT="${WAVEASM_LLVM_COMMIT:-d783723a584a1cab30c3a92ca247abb3401fc6da}"
         WAVE_ROOT="$(pwd)"
+        WAVEASM_OK=0
 
-        # Step 1: Clone LLVM (sparse checkout for speed)
-        echo "Cloning LLVM (sparse checkout, commit $LLVM_COMMIT)..."
-        git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
-        cd llvm-project
-        git sparse-checkout init --cone
-        git sparse-checkout set llvm mlir cmake clang lld
-        git checkout "$LLVM_COMMIT"
+        (
+            set -e
 
-        # Step 2: Build LLVM with MLIR, Clang, LLD
-        echo "Building LLVM with MLIR support (this will take a while)..."
-        mkdir -p build && cd build
-        cmake -GNinja ../llvm \
-            -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
-            -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_ENABLE_ASSERTIONS=ON
-        ninja
-        LLVM_BUILD_DIR="$(pwd)"
-        echo "LLVM build complete: $LLVM_BUILD_DIR"
+            # Step 1: Clone LLVM (sparse checkout for speed)
+            echo "Cloning LLVM (sparse checkout, commit $LLVM_COMMIT)..."
+            git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
+            cd llvm-project
+            git sparse-checkout init --cone
+            git sparse-checkout set llvm mlir cmake clang lld third-party
+            git checkout "$LLVM_COMMIT"
 
-        # Step 3: Build WaveASM against the LLVM build
-        cd "$WAVE_ROOT/waveasm"
-        echo "Building WaveASM..."
-        cmake -GNinja -Bbuild -S . \
-            -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
-        cmake --build build
-        echo "WaveASM build complete."
+            # Step 2: Build LLVM with MLIR, Clang, LLD
+            echo "Building LLVM with MLIR support (this will take a while)..."
+            mkdir -p build && cd build
+            cmake -GNinja ../llvm \
+                -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
+                -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DLLVM_ENABLE_ASSERTIONS=ON \
+                -DLLVM_INCLUDE_TESTS=OFF \
+                -DLLVM_INCLUDE_BENCHMARKS=OFF \
+                -DLLVM_INCLUDE_EXAMPLES=OFF \
+                -DLLVM_INCLUDE_DOCS=OFF \
+                -DMLIR_INCLUDE_TESTS=OFF
+            ninja
+            LLVM_BUILD_DIR="$(pwd)"
+            echo "LLVM build complete: $LLVM_BUILD_DIR"
 
-        # Step 4: Install wave with pre-built WaveASM
+            # Step 3: Build WaveASM against the LLVM build
+            cd "$WAVE_ROOT/waveasm"
+            echo "Building WaveASM..."
+            cmake -GNinja -Bbuild -S . \
+                -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
+            cmake --build build
+            echo "WaveASM build complete."
+        ) && WAVEASM_OK=1
+
         cd "$WAVE_ROOT"
-        WAVE_WAVEASM_DIR="$WAVE_ROOT/waveasm/build" pip install -e .
-        echo "Wave installed with WaveASM support."
+
+        if [[ "$WAVEASM_OK" -eq 1 ]]; then
+            echo "Installing Wave with WaveASM support..."
+            WAVE_WAVEASM_DIR="$WAVE_ROOT/waveasm/build" pip install -e .
+            echo "Wave installed with WaveASM support."
+        else
+            echo "WARNING: WaveASM build failed. Installing Wave without WaveASM..."
+            pip install -e .
+            echo "Wave installed (without WaveASM)."
+        fi
     else
         pip install -e .
     fi
