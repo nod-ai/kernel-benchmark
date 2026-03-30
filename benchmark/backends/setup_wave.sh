@@ -45,6 +45,12 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
         WAVE_ROOT="$(pwd)"
         WAVEASM_OK=0
 
+        # Build LLVM + WaveASM in a subshell; track success via a marker file
+        # (bash disables set -e inside subshells used in conditionals, so we
+        #  use an explicit exit trap instead)
+        WAVEASM_MARKER="/tmp/.waveasm_build_ok"
+        rm -f "$WAVEASM_MARKER"
+
         (
             set -e
 
@@ -53,14 +59,14 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
             cd llvm-project
             git sparse-checkout init --cone
-            git sparse-checkout set llvm mlir cmake clang lld third-party
+            git sparse-checkout set llvm mlir cmake third-party
             git checkout "$LLVM_COMMIT"
 
-            # Step 2: Build LLVM with MLIR, Clang, LLD
+            # Step 2: Build LLVM with MLIR only (clang/lld not needed for WaveASM)
             echo "Building LLVM with MLIR support (this will take a while)..."
             mkdir -p build && cd build
             cmake -GNinja ../llvm \
-                -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
+                -DLLVM_ENABLE_PROJECTS="mlir" \
                 -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DLLVM_ENABLE_ASSERTIONS=ON \
@@ -69,7 +75,7 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
                 -DLLVM_INCLUDE_EXAMPLES=OFF \
                 -DLLVM_INCLUDE_DOCS=OFF \
                 -DMLIR_INCLUDE_TESTS=OFF
-            ninja
+            ninja -j$(nproc)
             LLVM_BUILD_DIR="$(pwd)"
             echo "LLVM build complete: $LLVM_BUILD_DIR"
 
@@ -80,11 +86,17 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
                 -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
             cmake --build build
             echo "WaveASM build complete."
-        ) && WAVEASM_OK=1
+
+            # Signal success
+            touch "$WAVEASM_MARKER"
+        ) 2>&1 || true
 
         cd "$WAVE_ROOT"
 
-        if [[ "$WAVEASM_OK" -eq 1 ]]; then
+        # Unset WAVE_BUILD_WAVEASM so pip install doesn't try to build WaveASM itself
+        unset WAVE_BUILD_WAVEASM
+
+        if [[ -f "$WAVEASM_MARKER" ]]; then
             echo "Installing Wave with WaveASM support..."
             WAVE_WAVEASM_DIR="$WAVE_ROOT/waveasm/build" pip install -e .
             echo "Wave installed with WaveASM support."
