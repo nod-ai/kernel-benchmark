@@ -40,14 +40,42 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
     pip install -r requirements-iree-pinned.txt
 
     if [[ -n "$WAVE_BUILD_WAVEASM" ]]; then
-        echo "Attempting Wave install with WaveASM support (WAVE_BUILD_WAVEASM=1)..."
-        if WAVE_BUILD_WAVEASM=1 WAVE_LLVM_DIR="${WAVE_LLVM_DIR:-/opt/rocm/llvm}" pip install -e . -v; then
-            echo "Wave installed with WaveASM support."
-        else
-            echo "WaveASM build failed, falling back to standard install..."
-            unset WAVE_BUILD_WAVEASM
-            pip install -e .
-        fi
+        echo "Building WaveASM with LLVM from source..."
+        LLVM_COMMIT="${WAVEASM_LLVM_COMMIT:-d783723a584a1cab30c3a92ca247abb3401fc6da}"
+        WAVE_ROOT="$(pwd)"
+
+        # Step 1: Clone LLVM (sparse checkout for speed)
+        echo "Cloning LLVM (sparse checkout, commit $LLVM_COMMIT)..."
+        git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
+        cd llvm-project
+        git sparse-checkout init --cone
+        git sparse-checkout set llvm mlir cmake clang lld
+        git checkout "$LLVM_COMMIT"
+
+        # Step 2: Build LLVM with MLIR, Clang, LLD
+        echo "Building LLVM with MLIR support (this will take a while)..."
+        mkdir -p build && cd build
+        cmake -GNinja ../llvm \
+            -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
+            -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=ON
+        ninja
+        LLVM_BUILD_DIR="$(pwd)"
+        echo "LLVM build complete: $LLVM_BUILD_DIR"
+
+        # Step 3: Build WaveASM against the LLVM build
+        cd "$WAVE_ROOT/waveasm"
+        echo "Building WaveASM..."
+        cmake -GNinja -Bbuild -S . \
+            -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
+        cmake --build build
+        echo "WaveASM build complete."
+
+        # Step 4: Install wave with pre-built WaveASM
+        cd "$WAVE_ROOT"
+        WAVE_WAVEASM_DIR="$WAVE_ROOT/waveasm/build" pip install -e .
+        echo "Wave installed with WaveASM support."
     else
         pip install -e .
     fi
