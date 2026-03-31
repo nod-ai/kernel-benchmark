@@ -79,12 +79,13 @@ jobs:
         if: ${{ inputs.backend_specs_url }}
         run: |
           SPECS=$(curl -sL "${{ inputs.backend_specs_url }}")
-          # Extract wave repo/branch from specs (any spec with backend=='wave', including variants)
+          # Extract wave repo/branch from specs (wave or wave_* backends, e.g. wave_4wave_rocroller)
           WAVE_REPO=$(echo "$SPECS" | python3 -c "
           import json, sys
           specs = json.load(sys.stdin)
           for s in specs:
-              if s.get('backend') == 'wave' and s.get('remoteRepository'):
+              b = str(s.get('backend', '')).lower()
+              if (b == 'wave' or b.startswith('wave_')) and s.get('remoteRepository'):
                   print(s['remoteRepository'])
                   break
           " 2>/dev/null || echo "")
@@ -92,26 +93,42 @@ jobs:
           import json, sys
           specs = json.load(sys.stdin)
           for s in specs:
-              if s.get('backend') == 'wave' and s.get('branch'):
+              b = str(s.get('backend', '')).lower()
+              if (b == 'wave' or b.startswith('wave_')) and s.get('branch'):
                   print(s['branch'])
                   break
           " 2>/dev/null || echo "")
-          # Extract rocm-libraries repo/branch for rocroller variants
+          # Extract rocm-libraries repo/branch for rocroller variants (backend id or params)
           ROCM_LIBRARIES_REPO=$(echo "$SPECS" | python3 -c "
           import json, sys
           specs = json.load(sys.stdin)
           for s in specs:
-              bp = s.get('backendParam', '')
-              if 'rocroller' in bp:
-                  # rocroller variants may specify a separate rocm-libraries repo
+              b = str(s.get('backend', '')).lower()
+              bp = str(s.get('backendParam', '')).lower()
+              if 'rocroller' in b or 'rocroller' in bp:
                   meta = s.get('buildMeta', {})
                   if meta.get('rocmLibrariesRepo'):
                       print(meta['rocmLibrariesRepo'])
                       break
           " 2>/dev/null || echo "")
+          ROCM_LIBRARIES_BRANCH=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              b = str(s.get('backend', '')).lower()
+              bp = str(s.get('backendParam', '')).lower()
+              if 'rocroller' in b or 'rocroller' in bp:
+                  meta = s.get('buildMeta', {})
+                  if meta.get('rocmLibrariesBranch'):
+                      print(meta['rocmLibrariesBranch'])
+                      break
+          " 2>/dev/null || echo "")
           echo "wave_repo=$WAVE_REPO" >> $GITHUB_OUTPUT
           echo "wave_branch=$WAVE_BRANCH" >> $GITHUB_OUTPUT
+          echo "rocm_libraries_repo=$ROCM_LIBRARIES_REPO" >> $GITHUB_OUTPUT
+          echo "rocm_libraries_branch=$ROCM_LIBRARIES_BRANCH" >> $GITHUB_OUTPUT
           echo "Parsed wave repo: $WAVE_REPO, branch: $WAVE_BRANCH"
+          echo "Parsed rocm-libraries repo: $ROCM_LIBRARIES_REPO, branch: $ROCM_LIBRARIES_BRANCH"
 
       - name: Build Docker Image
         run: |
@@ -121,12 +138,16 @@ jobs:
           # Determine wave repo/branch: backend_specs > pr_repository/pr_branch > defaults
           WAVE_REPO="${{ steps.backend_specs.outputs.wave_repo || inputs.pr_repository }}"
           WAVE_BRANCH="${{ steps.backend_specs.outputs.wave_branch || inputs.pr_branch }}"
+          ROCM_LIBRARIES_REPO="${{ steps.backend_specs.outputs.rocm_libraries_repo }}"
+          ROCM_LIBRARIES_BRANCH="${{ steps.backend_specs.outputs.rocm_libraries_branch }}"
 
           ./docker/build_docker.sh \
             --machine ${{ inputs.machine }} \
             ${{ inputs.selected_backend != 'all' && format('--backends {0}', inputs.selected_backend) || '' }} \
             ${WAVE_REPO:+--wave-repo $WAVE_REPO} \
             ${WAVE_BRANCH:+--wave-branch $WAVE_BRANCH} \
+            ${ROCM_LIBRARIES_REPO:+--rocm-libraries-repo $ROCM_LIBRARIES_REPO} \
+            ${ROCM_LIBRARIES_BRANCH:+--rocm-libraries-branch $ROCM_LIBRARIES_BRANCH} \
             -t ${{ env.DOCKER_IMAGE }}
 
       - name: Run Benchmarks

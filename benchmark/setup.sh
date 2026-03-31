@@ -14,6 +14,7 @@ WAVE_BRANCH=""
 INSTALL_FROM_SOURCE=false
 BACKENDS="all"  # Default to all backends
 GPU_ARCH="${GPU_ARCH:-}"  # No default, required for hipblaslt/all backends
+STRICT=false  # If true, exit non-zero when any requested backend fails (e.g. Docker/CI)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -43,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             GPU_ARCH="$2"
             shift 2
             ;;
+        --strict)
+            STRICT=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -56,6 +61,7 @@ while [[ $# -gt 0 ]]; do
             echo "                         installs into the existing Python environment."
             echo "  --gpu-arch ARCH        GPU architecture for hipBLASLt (REQUIRED for hipblaslt/all)"
             echo "                         Examples: gfx950, gfx942, gfx90a, gfx950;gfx942"
+            echo "  --strict               Exit with failure if any backend fails to install"
             echo "  -h, --help             Show this help message"
             echo ""
             echo "Examples:"
@@ -356,5 +362,9 @@ echo ""
 
 if [[ ${#FAILED_BACKENDS[@]} -gt 0 ]]; then
     echo "Warning: Some backends failed to install. The benchmark suite will automatically skip these backends."
-    exit 0  # Don't fail the entire setup if some backends fail
+    if [[ "$STRICT" == "true" ]]; then
+        echo "Error: --strict was set; failing setup because backends failed: ${FAILED_BACKENDS[*]}"
+        exit 1
+    fi
+    exit 0
 fi

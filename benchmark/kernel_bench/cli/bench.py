@@ -158,6 +158,7 @@ if __name__ == "__main__":
             logger.error(
                 f"Kernel type {kernel_type} is currently unsupported. Skipping..."
             )
+            continue
 
         # if kernel_type == "extend_attention":
         #     configs = LOAD_PROBLEMS[kernel_type](kernel_type, "wave")

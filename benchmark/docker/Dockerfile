@@ -66,6 +66,12 @@ ARG WAVE_REPO
 ARG WAVE_BRANCH
 ARG BACKENDS
 ARG GPU_ARCH
+ARG ROCM_LIBRARIES_REPO
+ARG ROCM_LIBRARIES_BRANCH
+
+# Optional rocroller fork (setup_hipblaslt.sh reads these; empty leaves script defaults)
+ENV ROCM_LIBRARIES_REPO=${ROCM_LIBRARIES_REPO}
+ENV ROCM_LIBRARIES_BRANCH=${ROCM_LIBRARIES_BRANCH}
 
 # Copy the repository files
 COPY . /workspace
@@ -109,8 +115,9 @@ RUN SETUP_CMD="bash setup.sh"; \
     if [ -n "$GPU_ARCH" ]; then \
         SETUP_CMD="$SETUP_CMD --gpu-arch $GPU_ARCH"; \
     fi; \
+    SETUP_CMD="$SETUP_CMD --strict"; \
     echo "Running: $SETUP_CMD"; \
-    eval "$SETUP_CMD" || echo "Warning: Some backends may have failed to install"
+    eval "$SETUP_CMD"
 
 # Install standalone 4-wave compilation script (replaces the 8-wave gist)
 RUN if [ -d "/workspace/wave/wave_lang/kernel/wave/perf" ]; then \

@@ -117,11 +117,72 @@ The benchmarking infrastructure is built around several key components that work
 - **Implementation**: `hipblaslt-bench` using latest rocm-libraries hipblaslt build
 - **Note**: Requires GPU architecture specification for compilation
 
+#### **wave_4wave_rocroller** - Wave MXFP4 GEMM via rocRoller custom kernels
+- **Implementation**: `hipblaslt-bench` with Wave-produced `.s` kernels integrated into hipBLASLt (same pipeline as the Wave ↔ hipBLASLt integration docs below)
+- **Code**: `kernel_bench/kernels/gemm/backends/wave_mxfp4_gemm_4wave_rocroller.py`
+- **Requires**: `BACKENDS=wave_4wave_rocroller` image build (or full setup), a rocRoller-capable `rocm-libraries` hipBLASLt tree, and a Wave checkout with the 4-wave perf driver
+
 ### Kernel Types
 
 #### **GEMM (General Matrix Multiplication)**
 - **Configurations**: Matrix dimensions (M, N, K), data types (f16, bf16, f8)
-- **Backends**: Wave, IREE, Triton, PyTorch, hipBLASLt
+- **Backends**: Wave, IREE, Triton, PyTorch, hipBLASLt, wave_4wave_rocroller (MXFP4 + rocRoller)
+
+## Wave MXFP4 + rocRoller (hipBLASLt custom kernels)
+
+End-to-end benchmarking for Wave-compiled MXFP4 GEMM kernels that are injected into hipBLASLt and measured with `hipblaslt-bench` is documented in two companion guides (keep your copies locally as needed):
+
+1. **Benchmarking workflow** — compile Wave → `integrate_wave_kernels.py` → `benchmark_shapes.py` / `hipblaslt-bench` (M/N conventions, CSV layouts, flags).
+2. **Integration details** — `custom_kernels/`, registration, assembly patching, `LD_LIBRARY_PATH`, and debugging.
+
+This repository follows that model. Below is how the guides map into **this tree** and the **Docker layout**.
+
+### Conventions (same as the guides)
+
+- **M/N swap**: Wave shape CSVs use Wave convention `(M, N, K, MT_M, MT_N, MT_K)`; hipBLASLt problem sizes are swapped. Integration uses **`--flip-macrotiles`** when registering kernels.
+- **MXFP4 / rocRoller**: Custom `.s` files live under hipBLASLt `library/src/amd_detail/rocblaslt/src/rocroller/custom_kernels/`; `integrate_wave_kernels.py` copies assemblies, updates CMake/C++ registration, and rebuilds.
+
+### Paths inside the benchmark container
+
+| Guide concept | Typical path in this image |
+|---------------|----------------------------|
+| Wave repo root | `/workspace/wave` |
+| 4-wave compile driver (installed from this repo during Docker build) | `/workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py` |
+| LLVM 8-wave driver (if present in your Wave branch) | `/workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4.py` |
+| Alternate rocRoller-tuned driver (some Wave branches) | `wave_lang/kernel/wave/perf/benchmark_mxfp4_rocroller.py` (same compile flags; patching details in the integration guide) |
+| hipBLASLt project (rocroller fork) | `/workspace/rocm-libraries/projects/hipblaslt` |
+| Integration script | `/workspace/rocm-libraries/projects/hipblaslt/integrate_wave_kernels.py` |
+| `hipblaslt-bench` | `/workspace/rocm-libraries/projects/hipblaslt/build/clients/hipblaslt-bench` |
+
+The **`wave_4wave_rocroller`** backend automates **compile** (4-wave script, `--dynamic`, `--skip-validate`, `--asm-dir`) and **integrate** (`integrate_wave_kernels.py --flip-macrotiles --build`), then runs **`hipblaslt-bench`** with `transA=T`, `transB=N`, `--swizzleA`, and MXFP4 types—matching the manual guide.
+
+### Manual workflow (equivalent to the guides, from container shells)
+
+```bash
+# 1) Compile (Wave convention CSV). Use benchmark_mxfp4.py for LLVM 8-wave or
+#    benchmark_mxfp4_4wave.py for 4-wave ASM, depending on your branch.
+cd /workspace/wave
+LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH WAVE_CACHE_ON=0 \
+  python -u wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py \
+    --shapes /tmp/wave_shapes.csv --dynamic --skip-validate \
+    --asm-dir /tmp/wave_asm -o /tmp/wave_compile_results.csv
+
+# 2) Integrate + build (hipBLASLt)
+cd /workspace/rocm-libraries/projects/hipblaslt
+export LD_LIBRARY_PATH="$PWD/build/library:$PWD/build/rocroller:/opt/rocm/lib:$LD_LIBRARY_PATH"
+python integrate_wave_kernels.py \
+  --asm-dir /tmp/wave_asm --flip-macrotiles --build --benchmark   # optional --benchmark
+
+# 3) Extra shapes: benchmark_shapes.py / hipblaslt-bench as in the guides
+```
+
+### Forks, mounts, and CI
+
+- **`rocm-libraries`**: Must be a fork that includes **`integrate_wave_kernels.py`** and rocRoller custom-kernel support. Defaults are set in `backends/setup_hipblaslt.sh`; override with `ROCM_LIBRARIES_REPO` / `ROCM_LIBRARIES_BRANCH` (Docker build-args or environment when running `setup.sh`).
+- **Do not bind-mount an empty host directory** over `/workspace/rocm-libraries` unless you intend to replace the built tree; that hides the hipBLASLt build from the image.
+- Mounting **`/workspace/wave`** to a host clone is fine for iteration; ensure that tree contains the perf script you use (`benchmark_mxfp4_4wave.py` or `benchmark_mxfp4.py`).
+
+Assembly compatibility patches described in the integration guide (metadata / code-object version) are applied in **`benchmark/scripts/benchmark_mxfp4_4wave.py`** during the 4-wave path; align any manual pipeline with those same rules so `.s` files link into `rr_custom_kernels.co`.
 
 #### **Attention Mechanisms**
 - **Variants**: 

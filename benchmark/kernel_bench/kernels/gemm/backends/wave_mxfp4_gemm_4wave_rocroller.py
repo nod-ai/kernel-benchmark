@@ -60,10 +60,17 @@ def _try_compile_and_integrate(device_id: int, logger) -> bool:
     integrate_script = Path(INTEGRATE_SCRIPT)
 
     if not bench_script.exists():
-        logger.info(f"benchmark_mxfp4.py not found at {bench_script}, skipping compilation")
+        logger.info(
+            f"Wave perf script not found at {bench_script} "
+            f"(install benchmark_mxfp4_4wave.py into wave or use Wave tree with perf script); "
+            f"skipping compile"
+        )
         return False
     if not integrate_script.exists():
-        logger.info(f"integrate_wave_kernels.py not found at {integrate_script}, skipping compilation")
+        logger.info(
+            f"integrate_wave_kernels.py not found at {integrate_script} "
+            f"(need rocm-libraries hipBLASLt fork); skipping integration"
+        )
         return False
 
     work_dir = Path(tempfile.mkdtemp(prefix="rocroller_"))
