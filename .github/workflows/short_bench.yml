@@ -61,10 +61,15 @@ jobs:
     name: Short Benchmark
     needs: identifier
     runs-on: "linux-${{ inputs.machine }}-1gpu-ossci-nod-ai"
+    # Frees the GPU slot if a run hangs (Docker/build stuck). Raise if legit runs exceed 24h.
+    timeout-minutes: 1440
 
+    # Single active job per machine for OSS CI GPU runners. Applies to dashboard manual runs,
+    # scheduled runs, and Actions UI the same way — the dashboard "run name" is not a GitHub key.
+    # cancel-in-progress: true lets a newer dispatch replace a stuck run instead of Queued forever.
     concurrency:
       group: kernel-benchmarking-${{ inputs.machine }}
-      cancel-in-progress: false
+      cancel-in-progress: true
 
     env:
       WAVE_CACHE_ON: 0
