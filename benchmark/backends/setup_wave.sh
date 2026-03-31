@@ -41,8 +41,17 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
 
     if [[ -n "$WAVE_BUILD_WAVEASM" ]]; then
         echo "Building WaveASM with LLVM from source..."
-        LLVM_COMMIT="${WAVEASM_LLVM_COMMIT:-d783723a584a1cab30c3a92ca247abb3401fc6da}"
         WAVE_ROOT="$(pwd)"
+
+        LLVM_SHA_FILE="$WAVE_ROOT/water/llvm-sha.txt"
+        if [[ -f "$LLVM_SHA_FILE" ]]; then
+            DEFAULT_LLVM_COMMIT=$(cat "$LLVM_SHA_FILE" | tr -d '[:space:]')
+            echo "Read LLVM commit from water/llvm-sha.txt: $DEFAULT_LLVM_COMMIT"
+        else
+            DEFAULT_LLVM_COMMIT="d783723a584a1cab30c3a92ca247abb3401fc6da"
+            echo "Warning: water/llvm-sha.txt not found, using fallback LLVM commit"
+        fi
+        LLVM_COMMIT="${WAVEASM_LLVM_COMMIT:-$DEFAULT_LLVM_COMMIT}"
         WAVEASM_OK=0
 
         # Build LLVM + WaveASM in a subshell; track success via a marker file
@@ -59,14 +68,14 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
             cd llvm-project
             git sparse-checkout init --cone
-            git sparse-checkout set llvm mlir cmake third-party
+            git sparse-checkout set llvm mlir cmake clang lld third-party
             git checkout "$LLVM_COMMIT"
 
-            # Step 2: Build LLVM with MLIR only (clang/lld not needed for WaveASM)
+            # Step 2: Build LLVM with MLIR, clang, and lld (needed for WaveASM)
             echo "Building LLVM with MLIR support (this will take a while)..."
             mkdir -p build && cd build
             cmake -GNinja ../llvm \
-                -DLLVM_ENABLE_PROJECTS="mlir" \
+                -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
                 -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DLLVM_ENABLE_ASSERTIONS=ON \
@@ -84,9 +93,7 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             echo "Building WaveASM..."
             cmake -GNinja -Bbuild -S . \
                 -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
-            cmake --build build -j"$(nproc)"
-            # Default "all" can omit tools on some configs; always build the translator.
-            cmake --build build -j"$(nproc)" --target waveasm-translate
+            cmake --build build --target check-waveasm -j"$(nproc)"
 
             WAT_BIN="$WAVE_ROOT/waveasm/build/bin/waveasm-translate"
             if [[ ! -x "$WAT_BIN" ]]; then
