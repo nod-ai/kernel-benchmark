@@ -94,8 +94,19 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             # Step 3: Build WaveASM against the installed LLVM
             cd "$WAVE_ROOT/waveasm"
             echo "Building WaveASM..."
+            # MLIR cmake config may be under lib/ or lib64/ depending on platform
+            if [[ -d "$LLVM_INSTALL_DIR/lib64/cmake/mlir" ]]; then
+                MLIR_CMAKE_DIR="$LLVM_INSTALL_DIR/lib64/cmake/mlir"
+            elif [[ -d "$LLVM_INSTALL_DIR/lib/cmake/mlir" ]]; then
+                MLIR_CMAKE_DIR="$LLVM_INSTALL_DIR/lib/cmake/mlir"
+            else
+                echo "ERROR: Could not find MLIRConfig.cmake in install dir"
+                find "$LLVM_INSTALL_DIR" -name "MLIRConfig.cmake" 2>/dev/null || true
+                exit 1
+            fi
+            echo "Using MLIR cmake dir: $MLIR_CMAKE_DIR"
             cmake -GNinja -Bbuild -S . \
-                -DMLIR_DIR="$LLVM_INSTALL_DIR/lib/cmake/mlir"
+                -DMLIR_DIR="$MLIR_CMAKE_DIR"
             cmake --build build --target check-waveasm -j"$(nproc)"
 
             WAT_BIN="$WAVE_ROOT/waveasm/build/bin/waveasm-translate"
