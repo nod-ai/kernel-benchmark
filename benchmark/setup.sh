@@ -110,15 +110,24 @@ if [[ "$BACKENDS" == "all" ]]; then
 else
     IFS=',' read -ra BACKEND_LIST <<< "$BACKENDS"
     
-    # Always ensure Wave is in the list (required dependency for other backends)
+    # Ensure Wave gets installed when needed. Plain "wave" counts; any backend
+    # named wave_* (e.g. wave_4wave_rocroller) installs Wave inside its own case
+    # so we must not prepend a separate "wave" entry — that runs Wave first and
+    # can fail strict builds even when the user only asked for wave_* (hipBLASLt
+    # then still succeeds, yielding a confusing split summary).
     WAVE_IN_LIST=false
     for backend in "${BACKEND_LIST[@]}"; do
-        if [[ "$backend" == "wave" ]]; then
+        backend_trim=$(echo "$backend" | xargs)
+        if [[ "$backend_trim" == "wave" ]]; then
+            WAVE_IN_LIST=true
+            break
+        fi
+        if [[ "$backend_trim" == wave_* ]]; then
             WAVE_IN_LIST=true
             break
         fi
     done
-    
+
     if [[ "$WAVE_IN_LIST" == "false" ]]; then
         echo "Note: Adding Wave backend (required dependency)"
         BACKEND_LIST=("wave" "${BACKEND_LIST[@]}")
@@ -207,7 +216,30 @@ for backend in "${BACKEND_LIST[@]}"; do
     
     case "$backend" in
         wave_4wave_rocroller)
-            echo "wave_4wave_rocroller requires hipblaslt with rocroller support"
+            echo "wave_4wave_rocroller requires Wave (wave_lang) + hipblaslt with rocroller support"
+
+            if [[ "$WAVE_INSTALLED" != "true" ]]; then
+                if [[ ! -f "backends/setup_wave.sh" ]]; then
+                    echo "Error: setup_wave.sh not found in backends/"
+                    FAILED_BACKENDS+=("$backend")
+                    continue
+                fi
+                if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
+                    if ! bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH"; then
+                        echo "Warning: Wave install failed (required for $backend)"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                else
+                    if ! bash backends/setup_wave.sh; then
+                        echo "Warning: Wave install failed (required for $backend)"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                fi
+                WAVE_INSTALLED=true
+            fi
+
             if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
                 echo "Error: setup_hipblaslt.sh not found in backends/"
                 FAILED_BACKENDS+=("$backend")
