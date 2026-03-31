@@ -110,7 +110,7 @@ def _try_compile_and_integrate(device_id: int, logger) -> bool:
             logger.warning(
                 f"Wave compilation failed (rc={proc.returncode}). "
                 f"Using pre-integrated kernels from rocm-libraries fork.\n"
-                f"stderr: {proc.stderr[-2000:]}\nstdout: {proc.stdout[-1000:]}"
+                f"stderr: {proc.stderr[-4000:]}\nstdout: {proc.stdout[-2000:]}"
             )
             return False
     except Exception as e:

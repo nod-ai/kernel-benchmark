@@ -73,11 +73,13 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
 
             # Step 2: Build LLVM with MLIR, clang, and lld (needed for WaveASM)
             echo "Building LLVM with MLIR support (this will take a while)..."
+            LLVM_INSTALL_DIR="$(pwd)/install"
             mkdir -p build && cd build
             cmake -GNinja ../llvm \
                 -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
                 -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
                 -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$LLVM_INSTALL_DIR" \
                 -DLLVM_ENABLE_ASSERTIONS=ON \
                 -DLLVM_INCLUDE_TESTS=OFF \
                 -DLLVM_INCLUDE_BENCHMARKS=OFF \
@@ -85,14 +87,15 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
                 -DLLVM_INCLUDE_DOCS=OFF \
                 -DMLIR_INCLUDE_TESTS=OFF
             ninja -j$(nproc)
-            LLVM_BUILD_DIR="$(pwd)"
-            echo "LLVM build complete: $LLVM_BUILD_DIR"
+            echo "Installing LLVM to $LLVM_INSTALL_DIR..."
+            ninja install
+            echo "LLVM build and install complete: $LLVM_INSTALL_DIR"
 
-            # Step 3: Build WaveASM against the LLVM build
+            # Step 3: Build WaveASM against the installed LLVM
             cd "$WAVE_ROOT/waveasm"
             echo "Building WaveASM..."
             cmake -GNinja -Bbuild -S . \
-                -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
+                -DMLIR_DIR="$LLVM_INSTALL_DIR/lib/cmake/mlir"
             cmake --build build --target check-waveasm -j"$(nproc)"
 
             WAT_BIN="$WAVE_ROOT/waveasm/build/bin/waveasm-translate"

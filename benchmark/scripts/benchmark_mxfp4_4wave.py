@@ -207,7 +207,7 @@ def _spawn_compile_worker(
         )
         if proc.returncode == 0:
             return (True, "")
-        stderr_preview = (proc.stderr or "").strip()[-500:]
+        stderr_preview = (proc.stderr or "").strip()[-2000:]
         return (False, stderr_preview or f"exit code {proc.returncode}")
     except subprocess.TimeoutExpired:
         return (False, "compilation timed out (600s)")
@@ -597,7 +597,7 @@ def _run_parallel_compile(
                 print(f"  OK: {tag}")
             else:
                 failed.append((shape, mt, err_msg))
-                print(f"  FAIL: {tag}: {err_msg[:200]}", file=sys.stderr)
+                print(f"  FAIL: {tag}: {err_msg[:1000]}", file=sys.stderr)
 
     manifest_entries = []
     if dynamic:
@@ -654,7 +654,7 @@ def _run_parallel_compile(
         print(f"Failed compilations ({len(failed)}):", file=sys.stderr)
         for s, mt, err in failed:
             print(
-                f"  ({s[0]},{s[1]},{s[2]}) MT({mt[0]},{mt[1]},{mt[2]}): {err[:200]}",
+                f"  ({s[0]},{s[1]},{s[2]}) MT({mt[0]},{mt[1]},{mt[2]}): {err[:1000]}",
                 file=sys.stderr,
             )
     if n_ok == 0:
