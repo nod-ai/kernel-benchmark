@@ -84,10 +84,28 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             echo "Building WaveASM..."
             cmake -GNinja -Bbuild -S . \
                 -DMLIR_DIR="$LLVM_BUILD_DIR/lib/cmake/mlir"
-            cmake --build build
-            echo "WaveASM build complete."
+            cmake --build build -j"$(nproc)"
+            # Default "all" can omit tools on some configs; always build the translator.
+            cmake --build build -j"$(nproc)" --target waveasm-translate
 
-            # Signal success
+            WAT_BIN="$WAVE_ROOT/waveasm/build/bin/waveasm-translate"
+            if [[ ! -x "$WAT_BIN" ]]; then
+                echo "waveasm-translate not at $WAT_BIN; searching build tree..."
+                _found="$(find "$WAVE_ROOT/waveasm/build" -name waveasm-translate -type f 2>/dev/null | head -1 || true)"
+                if [[ -n "$_found" && -x "$_found" ]]; then
+                    mkdir -p "$WAVE_ROOT/waveasm/build/bin"
+                    cp -f "$_found" "$WAT_BIN"
+                    chmod +x "$WAT_BIN"
+                    echo "Staged waveasm-translate into build/bin from $_found"
+                else
+                    echo "ERROR: waveasm-translate missing after build (WaveASM unusable)."
+                    find "$WAVE_ROOT/waveasm/build" -maxdepth 4 -type f 2>/dev/null | head -50 || true
+                    exit 1
+                fi
+            fi
+            echo "WaveASM build complete ($WAT_BIN)."
+
+            # Signal success only if the tool exists (pip checks WAVE_WAVEASM_DIR/bin/waveasm-translate)
             touch "$WAVEASM_MARKER"
         ) 2>&1 || true
 
