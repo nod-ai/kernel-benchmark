@@ -87,6 +87,15 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     branch: "reduce_reg_pres",
     parentSpecId: "wave-default",
   },
+  {
+    id: "wave-8wave-rocroller",
+    name: "Wave 8-wave (rocroller)",
+    backend: "wave",
+    backendParam: "wave_8wave_rocroller",
+    remoteRepository: "iree-org/wave",
+    branch: "main",
+    parentSpecId: "wave-default",
+  },
 ];
 
 // Helper function to resolve a spec with its parent's properties

@@ -169,12 +169,12 @@ if [[ -n "$GPU_ARCH" ]]; then
     echo "GPU Architecture: $GPU_ARCH"
 fi
 
-# Enable WaveASM build for 4-wave backends (requires LLVM from ROCm)
+# Enable WaveASM build for wave rocroller backends (requires LLVM from ROCm)
 for backend in "${BACKEND_LIST[@]}"; do
-    if [[ "$backend" == *"4wave"* ]]; then
+    if [[ "$backend" == *"4wave"* || "$backend" == *"8wave"* ]]; then
         export WAVE_BUILD_WAVEASM=1
         export WAVE_LLVM_DIR="/opt/rocm/llvm"
-        echo "WaveASM build enabled for 4-wave backend ($backend)"
+        echo "WaveASM build enabled for wave backend ($backend)"
         break
     fi
 done
@@ -215,8 +215,8 @@ for backend in "${BACKEND_LIST[@]}"; do
     echo "-----------------------------------"
     
     case "$backend" in
-        wave_4wave_rocroller)
-            echo "wave_4wave_rocroller requires Wave (wave_lang) + hipblaslt with rocroller support"
+        wave_4wave_rocroller|wave_8wave_rocroller)
+            echo "$backend requires Wave (wave_lang) + hipblaslt with rocroller support"
 
             if [[ "$WAVE_INSTALLED" != "true" ]]; then
                 if [[ ! -f "backends/setup_wave.sh" ]]; then
@@ -348,7 +348,7 @@ for backend in "${BACKEND_LIST[@]}"; do
 
         *)
             echo "Error: Unknown backend '$backend'"
-            echo "Available backends: wave, torch, triton, iree, hipblaslt, wave_4wave_rocroller"
+            echo "Available backends: wave, torch, triton, iree, hipblaslt, wave_4wave_rocroller, wave_8wave_rocroller"
             FAILED_BACKENDS+=("$backend")
             ;;
     esac

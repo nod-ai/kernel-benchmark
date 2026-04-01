@@ -71,6 +71,13 @@ def _get_backend_classes():
     except Exception as e:
         warnings.warn(f"Wave MXFP4 4-wave rocroller GEMM backend not available: {e}")
 
+    try:
+        from .backends.wave_mxfp4_gemm_8wave_rocroller import WaveMxfp4Gemm8WaveRocrollerBenchmark
+
+        backends["wave_8wave_rocroller"] = WaveMxfp4Gemm8WaveRocrollerBenchmark
+    except Exception as e:
+        warnings.warn(f"Wave MXFP4 8-wave rocroller GEMM backend not available: {e}")
+
     return backends
 
 

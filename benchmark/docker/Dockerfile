@@ -88,7 +88,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Validate GPU_ARCH is provided when needed
 RUN BACKENDS_VAR="${BACKENDS:-all}"; \
-    if [ "$BACKENDS_VAR" = "all" ] || echo "$BACKENDS_VAR" | grep -qE '(^|,)(hipblaslt|wave_4wave_rocroller)(,|$)'; then \
+    if [ "$BACKENDS_VAR" = "all" ] || echo "$BACKENDS_VAR" | grep -qE '(^|,)(hipblaslt|wave_4wave_rocroller|wave_8wave_rocroller)(,|$)'; then \
         if [ -z "$GPU_ARCH" ]; then \
             echo "ERROR: --build-arg GPU_ARCH is required when building with hipBLASLt or all backends."; \
             echo ""; \
@@ -119,13 +119,16 @@ RUN SETUP_CMD="bash setup.sh"; \
     echo "Running: $SETUP_CMD"; \
     eval "$SETUP_CMD"
 
-# Install standalone 4-wave compilation script (replaces the 8-wave gist)
+# Install standalone compilation scripts for wave rocroller backends
 RUN if [ -d "/workspace/wave/wave_lang/kernel/wave/perf" ]; then \
         cp /workspace/scripts/benchmark_mxfp4_4wave.py \
            /workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py && \
         echo "Installed 4-wave compilation script"; \
+        cp /workspace/scripts/benchmark_mxfp4_8wave.py \
+           /workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4_8wave.py && \
+        echo "Installed 8-wave compilation script"; \
     else \
-        echo "Wave perf directory not found, skipping 4-wave script install"; \
+        echo "Wave perf directory not found, skipping wave script install"; \
     fi
 
 # Set environment variables for backends
