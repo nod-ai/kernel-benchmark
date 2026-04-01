@@ -13,6 +13,7 @@ export interface BackendSpec {
   id: string; // unique identifier for this spec
   name: string; // display name (e.g., "Triton FAV3")
   backend: string; // base backend type (e.g., "triton")
+  backendParam?: string; // CLI parameter to pass (e.g., "wave_4wave") - defaults to backend if not specified
   remoteRepository?: string; // e.g., "triton-lang/triton" - optional if parentSpecId is set
   branch?: string; // git branch - optional if parentSpecId is set
   commitHash?: string; // specific commit, or use latest if not specified

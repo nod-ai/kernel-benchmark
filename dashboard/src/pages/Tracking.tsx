@@ -71,6 +71,7 @@ export default function Tracking() {
         dashboardName: t.dashboardName,
         tags: t.tags,
         backends: t.backends,
+        backendSpecs: t.backendSpecs,
         machine: t.machine,
         schedule: {
           ...t.schedule,

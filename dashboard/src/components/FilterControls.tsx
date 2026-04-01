@@ -220,7 +220,10 @@ export function MultiSelectFilter({
         </span>
         <div className="flex gap-2">
           {options.map((option) => {
-            const backendSpec = isBackendsFilter ? getDefaultBackendSpec(option) : null;
+            // Try to get spec from latest run first, then fall back to default
+            const backendSpec = isBackendsFilter 
+              ? ((latestBackendSpecs && latestBackendSpecs[option]) || getDefaultBackendSpec(option))
+              : null;
             const isSelected = selectedOptions.includes(option);
             
             return (

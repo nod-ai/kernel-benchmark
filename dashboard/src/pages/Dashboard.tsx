@@ -80,7 +80,9 @@ export default function Dashboard() {
             if (item?.trigger?.metadata?.backendSpecs) {
               const specsMap: Record<string, any> = {};
               item.trigger.metadata.backendSpecs.forEach((spec: any) => {
-                specsMap[spec.backend] = spec;
+                // Use backendParam as key if available (e.g., wave_4wave), otherwise use backend
+                const key = spec.backendParam || spec.backend;
+                specsMap[key] = spec;
               });
               setRunBackendSpecs(specsMap);
             }

@@ -94,7 +94,7 @@ export default function ManualBenchmarkModal({
       const config: ManualBenchmarkConfig = {
         name: name.trim(),
         machine,
-        backends: selectedBackendSpecs.map((spec) => spec.backend), // For backward compatibility
+        backends: selectedBackendSpecs.map((spec) => spec.backendParam || spec.backend), // Use backendParam if available
         backendSpecs: selectedBackendSpecs,
         kernelSelection,
         branch,

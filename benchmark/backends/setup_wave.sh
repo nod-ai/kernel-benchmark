@@ -41,12 +41,31 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
     pip install -e .
     cd ..
 else
-    echo "Installing wave-lang from PyPI..."
-    # Install IREE dependencies from pre-release links
-    echo "Installing IREE dependencies..."
-    pip install --pre --no-cache-dir --find-links https://iree.dev/pip-release-links.html iree-base-compiler iree-base-runtime --upgrade
-    echo "Installing wave-lang from PyPI..."
-    pip install wave-lang
+    echo "Checking for Rust installation..."
+    if ! command -v rustc &> /dev/null; then
+        echo "Rust not found. Installing Rust..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        # shellcheck disable=SC1091
+        source "$HOME/.cargo/env"
+        echo "Rust installed successfully."
+    else
+        echo "Rust is already installed."
+    fi
+
+    echo "Cloning wave repository..."
+    if [[ -d "wave" ]]; then
+        echo "Removing existing wave directory..."
+        rm -rf wave
+    fi
+
+    git clone "https://github.com/iree-org/wave.git"
+    cd wave
+    git checkout main
+
+    echo "Installing wave dependencies..."
+    pip install -r requirements-iree-pinned.txt
+    pip install -e .
+    cd ..
 fi
 
 echo "Wave backend setup complete!"

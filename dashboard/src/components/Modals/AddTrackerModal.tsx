@@ -160,7 +160,7 @@ export default function AddTrackerModal({
         blobName: simplifiedName,
         dashboardName: simplifiedName,
         kernelSelection,
-        backends: selectedBackendSpecs.map((spec) => spec.backend), // For backward compatibility
+        backends: selectedBackendSpecs.map((spec) => spec.backendParam || spec.backend), // Use backendParam if available
         backendSpecs: selectedBackendSpecs,
         machine,
         schedule: scheduleForBackend,
