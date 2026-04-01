@@ -66,21 +66,30 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     parentSpecId: "wave-default",
   },
   {
+    id: "wave-4wave-rocroller",
+    name: "Wave 4-wave (rocroller)",
+    backend: "wave",
+    backendParam: "wave_4wave_rocroller",
+    remoteRepository: "panditsa/wave",
+    branch: "reduce_reg_pres",
+    parentSpecId: "wave-default",
+  },
+  {
+    id: "wave-8wave-rocroller",
+    name: "Wave 8-wave (rocroller)",
+    backend: "wave",
+    backendParam: "wave_8wave_rocroller",
+    remoteRepository: "adedespirlet/wave",
+    branch: "8wavepingpong",
+    parentSpecId: "wave-default",
+  },
+  {
     id: "triton-fav3",
     name: "Triton FAV3",
     backend: "triton",
-    parentSpecId: "triton-default", // Inherits remoteRepository and branch from triton-default
-    branch: "fav3", // Override branch (uses triton-lang/triton @ fav3)
+    parentSpecId: "triton-default",
+    branch: "fav3",
   },
-  // Example: Variant that inherits everything and only changes the commit
-  {
-    id: "triton-pinned",
-    name: "Triton (Pinned v2.1)",
-    backend: "triton",
-    parentSpecId: "triton-default", // Inherits repo and branch
-    commitHash: "abc123def456", // Use a specific commit
-  },
-  // Add more variants as needed
 ];
 
 // Helper function to resolve a spec with its parent's properties

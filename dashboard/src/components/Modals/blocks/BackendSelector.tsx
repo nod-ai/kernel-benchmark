@@ -1,7 +1,10 @@
-import { Cpu, X, Plus } from "lucide-react";
+import { Cpu, ChevronDown, Plus } from "lucide-react";
 import { SUPPORTED_BACKENDS } from "../../../types";
 import type { BackendSpec } from "../../../types";
-import { getBackendSpecsByType } from "../../../utils/backendSpecs";
+import {
+  getBackendSpecsByType,
+  getDefaultBackendSpec,
+} from "../../../utils/backendSpecs";
 import { useState } from "react";
 
 interface BackendSelectorProps {
@@ -15,50 +18,54 @@ export default function BackendSelector({
   onChange,
   disabled = false,
 }: BackendSelectorProps) {
-  const [selectedBackend, setSelectedBackend] = useState<string>("");
-  const [selectedVariant, setSelectedVariant] = useState<string>("");
+  const [expandedBackend, setExpandedBackend] = useState<string | null>(null);
   const [showCustomModal, setShowCustomModal] = useState<string | null>(null);
-  
   const backendSpecsByType = getBackendSpecsByType();
 
-  // Backends that only have one default spec (no variants)
-  const singleSpecBackends = ["iree", "hipblaslt", "torch"];
-
-  // Remove a backend spec from the list
-  const handleRemove = (index: number) => {
-    onChange(selectedBackendSpecs.filter((_, i) => i !== index));
+  // Check if a backend type is selected (any variant)
+  const isBackendTypeSelected = (backend: string) => {
+    return selectedBackendSpecs.some((spec) => spec.backend === backend);
   };
 
-  // Add a new backend spec
-  const handleAdd = () => {
-    if (!selectedBackend) return;
+  // Check if a specific spec is selected
+  const isSpecSelected = (specId: string) => {
+    return selectedBackendSpecs.some((spec) => spec.id === specId);
+  };
 
-    // For single-spec backends, automatically add the default spec
-    if (singleSpecBackends.includes(selectedBackend)) {
-      const defaultSpec = backendSpecsByType[selectedBackend]?.find((s) => s.isDefault);
+  // Get all selected specs for a backend type
+  const getSelectedSpecs = (backend: string): BackendSpec[] => {
+    return selectedBackendSpecs.filter((spec) => spec.backend === backend);
+  };
+
+  // Toggle backend on/off (defaults to default spec)
+  const handleBackendToggle = (backend: string) => {
+    if (isBackendTypeSelected(backend)) {
+      // Remove all specs of this backend type
+      onChange(selectedBackendSpecs.filter((spec) => spec.backend !== backend));
+      if (expandedBackend === backend) {
+        setExpandedBackend(null);
+      }
+    } else {
+      // Add default spec
+      const defaultSpec = getDefaultBackendSpec(backend);
       if (defaultSpec) {
         onChange([...selectedBackendSpecs, defaultSpec]);
-        setSelectedBackend("");
-        return;
       }
     }
+  };
 
-    // For multi-spec backends, require variant selection
-    if (!selectedVariant) return;
+  // Toggle a specific variant on/off
+  const handleVariantToggle = (backend: string, specId: string) => {
+    const spec = backendSpecsByType[backend]?.find((s) => s.id === specId);
+    if (!spec) return;
 
-    if (selectedVariant === "__ADD_CUSTOM__") {
-      setShowCustomModal(selectedBackend);
-      return;
-    }
-
-    const spec = backendSpecsByType[selectedBackend]?.find(
-      (s) => s.id === selectedVariant
-    );
-
-    if (spec) {
+    if (isSpecSelected(specId)) {
+      // Remove this spec
+      const remaining = selectedBackendSpecs.filter((s) => s.id !== specId);
+      onChange(remaining);
+    } else {
+      // Add this spec
       onChange([...selectedBackendSpecs, spec]);
-      setSelectedBackend("");
-      setSelectedVariant("");
     }
   };
 
@@ -66,14 +73,7 @@ export default function BackendSelector({
   const handleCustomSpecCreate = (customSpec: BackendSpec) => {
     onChange([...selectedBackendSpecs, customSpec]);
     setShowCustomModal(null);
-    setSelectedBackend("");
-    setSelectedVariant("");
   };
-
-  // Get available variants for selected backend
-  const availableVariants = selectedBackend
-    ? backendSpecsByType[selectedBackend] || []
-    : [];
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
@@ -82,119 +82,155 @@ export default function BackendSelector({
           <Cpu className="w-4 h-4 text-orange-600" />
         </div>
         <div>
-          <h4 className="font-semibold text-gray-900">Backend Specifications *</h4>
+          <h4 className="font-semibold text-gray-900">Backends *</h4>
           <p className="text-sm text-gray-600">
-            Add one or more backends to benchmark
+            Select which backends to benchmark and their variants
           </p>
         </div>
       </div>
 
-      {/* Selected backends list */}
-      {selectedBackendSpecs.length > 0 && (
-        <div className="mb-4 space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Selected Backends:
-          </label>
-          <div className="space-y-2">
-            {selectedBackendSpecs.map((spec, index) => (
-              <div
-                key={`${spec.id}-${index}`}
-                className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg"
-              >
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{spec.name}</div>
-                  {spec.backendParam && spec.backendParam !== spec.backend && (
-                    <div className="text-xs text-gray-600 font-mono">
-                      CLI: --backend {spec.backendParam}
-                    </div>
-                  )}
-                  {spec.remoteRepository && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      {spec.remoteRepository} @ {spec.branch || "main"}
-                    </div>
-                  )}
-                </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {SUPPORTED_BACKENDS.map((backend) => {
+          const isSelected = isBackendTypeSelected(backend);
+          const selectedSpecs = getSelectedSpecs(backend);
+          const variants = backendSpecsByType[backend] || [];
+          const hasVariants = variants.length > 1;
+
+          return (
+            <div key={backend} className="space-y-2">
+              {/* Backend toggle button */}
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleRemove(index)}
+                  onClick={() => handleBackendToggle(backend)}
                   disabled={disabled}
-                  className="ml-3 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
-                  title="Remove"
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isSelected
+                      ? "bg-orange-600 text-white border-2 border-orange-700"
+                      : "bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-gray-200"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  <X className="w-4 h-4" />
+                  <span className="capitalize">
+                    {backend}
+                    {selectedSpecs.length > 1 && (
+                      <span className="ml-1 text-xs opacity-80">
+                        ({selectedSpecs.length} selected)
+                      </span>
+                    )}
+                  </span>
                 </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Add backend form */}
-      <div className="space-y-3">
-        <label className="block text-sm font-medium text-gray-700">
-          Add Backend:
-        </label>
-        <div className={`grid grid-cols-1 gap-3 ${!selectedBackend || singleSpecBackends.includes(selectedBackend) ? '' : 'md:grid-cols-2'}`}>
-          {/* Backend type selector */}
-          <div>
-            <select
-              value={selectedBackend}
-              onChange={(e) => {
-                setSelectedBackend(e.target.value);
-                setSelectedVariant("");
-              }}
-              disabled={disabled}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="">Select Backend Type</option>
-              {SUPPORTED_BACKENDS.map((backend) => (
-                <option key={backend} value={backend}>
-                  {backend.charAt(0).toUpperCase() + backend.slice(1)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Variant selector - only show for multi-spec backends */}
-          {selectedBackend && !singleSpecBackends.includes(selectedBackend) && (
-            <div>
-              <select
-                value={selectedVariant}
-                onChange={(e) => setSelectedVariant(e.target.value)}
-                disabled={disabled || !selectedBackend}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">Select Specification</option>
-                {availableVariants.map((spec) => (
-                  <option key={spec.id} value={spec.id}>
-                    {spec.name}
-                  </option>
-                ))}
-                {selectedBackend && (
-                  <option value="__ADD_CUSTOM__" className="font-semibold text-blue-600">
-                    + Add new backend specification
-                  </option>
+                {/* Expand/collapse variants */}
+                {isSelected && hasVariants && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedBackend(
+                        expandedBackend === backend ? null : backend
+                      )
+                    }
+                    disabled={disabled}
+                    className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    title="Show variants"
+                  >
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-600 transition-transform ${
+                        expandedBackend === backend ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
                 )}
-              </select>
-            </div>
-          )}
-        </div>
+              </div>
 
-        {/* Add button */}
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={disabled || !selectedBackend || (!singleSpecBackends.includes(selectedBackend) && !selectedVariant)}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-4 h-4" />
-          Add Backend
-        </button>
+              {/* Variant checkboxes (multi-select) */}
+              {isSelected && hasVariants && expandedBackend === backend && (
+                <div className="ml-2 space-y-1">
+                  {variants.map((spec) => {
+                    const checked = isSpecSelected(spec.id);
+                    return (
+                      <label
+                        key={spec.id}
+                        className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                          checked
+                            ? "bg-orange-50 border-orange-300"
+                            : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+                        } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleVariantToggle(backend, spec.id)}
+                          disabled={disabled}
+                          className="mt-0.5 w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900">
+                            {spec.name}
+                          </div>
+                          {spec.backendParam && spec.backendParam !== spec.backend && (
+                            <div className="text-xs text-gray-600 font-mono">
+                              CLI: --backend {spec.backendParam}
+                            </div>
+                          )}
+                          {spec.remoteRepository && (
+                            <div className="text-xs text-gray-500 font-mono truncate">
+                              {spec.remoteRepository}
+                              {spec.branch && ` @ ${spec.branch}`}
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+
+                  {/* Add custom spec button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomModal(backend)}
+                    disabled={disabled}
+                    className="flex items-center gap-2 w-full p-2.5 rounded-lg border border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add custom specification
+                  </button>
+                </div>
+              )}
+
+              {/* Single variant info (for backends with only one spec) */}
+              {isSelected && !hasVariants && selectedSpecs[0] && expandedBackend === backend && (
+                <div className="ml-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-1.5">
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-600 min-w-[80px]">
+                      Name:
+                    </span>
+                    <span className="text-gray-800">{selectedSpecs[0].name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-600 min-w-[80px]">
+                      Repository:
+                    </span>
+                    <span className="text-gray-800 font-mono">
+                      {selectedSpecs[0].remoteRepository}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-semibold text-gray-600 min-w-[80px]">
+                      Branch:
+                    </span>
+                    <span className="text-gray-800 font-mono">
+                      {selectedSpecs[0].branch}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {selectedBackendSpecs.length === 0 && (
         <p className="text-sm text-amber-600 mt-3">
-          Please add at least one backend
+          Please select at least one backend
         </p>
       )}
 
@@ -203,11 +239,7 @@ export default function BackendSelector({
         <CustomBackendSpecModal
           backend={showCustomModal}
           onSave={(customSpec) => handleCustomSpecCreate(customSpec)}
-          onCancel={() => {
-            setShowCustomModal(null);
-            setSelectedBackend("");
-            setSelectedVariant("");
-          }}
+          onCancel={() => setShowCustomModal(null)}
         />
       )}
     </div>
@@ -226,7 +258,7 @@ function CustomBackendSpecModal({ backend, onSave, onCancel }: CustomBackendSpec
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("main");
   const [backendParam, setBackendParam] = useState("");
-  
+
   const handleSave = () => {
     if (!repository.trim()) {
       alert("Please enter a repository URL");
@@ -252,7 +284,7 @@ function CustomBackendSpecModal({ backend, onSave, onCancel }: CustomBackendSpec
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
           Add Custom {backend.charAt(0).toUpperCase() + backend.slice(1)} Specification
         </h3>
-        
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -279,7 +311,7 @@ function CustomBackendSpecModal({ backend, onSave, onCancel }: CustomBackendSpec
               placeholder={`e.g., ${backend}_custom`}
             />
             <p className="text-xs text-gray-500 mt-1">
-              What to pass to --backend flag (defaults to "{backend}" if empty)
+              What to pass to --backend flag (defaults to &quot;{backend}&quot; if empty)
             </p>
           </div>
 
