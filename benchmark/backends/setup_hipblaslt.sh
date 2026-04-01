@@ -5,8 +5,8 @@ set -e
 
 echo "Installing hipBLASLt backend dependencies..."
 
-ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/ROCm/rocm-libraries.git}"
-ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-develop}"
+ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/suryajasper/rocm-libraries.git}"
+ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-wave-mxfp4-testing}"
 
 # GPU_ARCH must be provided by setup.sh
 if [[ -z "$GPU_ARCH" ]]; then
