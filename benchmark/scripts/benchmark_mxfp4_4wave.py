@@ -62,7 +62,7 @@ import wave_lang.kernel.lang as tkl
 # 4-wave configuration
 # ---------------------------------------------------------------------------
 
-_WAVE_SHAPE = (1, 4)
+_WAVE_SHAPE = (4, 1)
 _BLOCK_SIZE = [128, 2, 1]
 
 
