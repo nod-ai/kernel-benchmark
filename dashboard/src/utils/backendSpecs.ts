@@ -92,8 +92,8 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     name: "Wave 8-wave (rocroller)",
     backend: "wave",
     backendParam: "wave_8wave_rocroller",
-    remoteRepository: "iree-org/wave",
-    branch: "main",
+    remoteRepository: "adedespirlet/wave",
+    branch: "8wavepingpong",
     parentSpecId: "wave-default",
   },
 ];
