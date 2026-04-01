@@ -19,6 +19,8 @@ ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
 HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
 INTEGRATE_SCRIPT = f"{HIPBLASLT_DIR}/integrate_wave_kernels.py"
 WAVE_DIR = "/workspace/wave"
+# Compile flags match Wave test test_dbuf_4wave_mxfp_dynamic_preshuffle_b_gemm_asm
+# (preshuffle-B, wave_shape 2×2, reorder_workgroups, dynamic M/N/K, ASM backend).
 BENCH_SCRIPT = f"{WAVE_DIR}/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py"
 
 _integration_lock = threading.Lock()

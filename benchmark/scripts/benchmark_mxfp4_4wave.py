@@ -10,11 +10,11 @@ Standalone 4-wave MXFP4 Wave GEMM compilation script.
 Based on the 8-wave benchmark_mxfp4.py gist, adapted for 4-wave ASM kernels.
 
 Key differences from the 8-wave version:
-  - wave_shape = (1, 4) — 4 waves total instead of 8
+  - wave_shape = (2, 2) — 4 waves total instead of 8 (matches
+    test_dbuf_4wave_mxfp_dynamic_preshuffle_b_gemm_asm)
   - Uses WaveASM backend (backend="asm", use_wave_asm_backend=True)
-  - Block size = {128, 2, 1} instead of {256, 2, 1}
-  - Template: get_tagged_mxfp4_gemm_preshuffle_b (B-only preshuffle)
-  - Schedule: get_mxfp4_asymmetric_schedule
+  - Template: get_tagged_mxfp4_gemm_preshuffle_b with reorder_workgroups=True
+  - Schedule: get_mxfp4_asymmetric_schedule(..., eliminate_epilogue=True)
 
 Usage (compile-only, dynamic kernels):
 
@@ -59,10 +59,12 @@ from wave_lang.kernel.wave.perf.utils import (
 import wave_lang.kernel.lang as tkl
 
 # ---------------------------------------------------------------------------
-# 4-wave configuration
+# 4-wave configuration (preshuffle-B ASM path; see Wave test
+# test_dbuf_4wave_mxfp_dynamic_preshuffle_b_gemm_asm)
 # ---------------------------------------------------------------------------
 
-_WAVE_SHAPE = (4, 1)
+_WAVE_SHAPE = (2, 2)
+# Manifest metadata (integrate_wave_kernels.py); inner scheduling block hint.
 _BLOCK_SIZE = [128, 2, 1]
 
 
@@ -142,34 +144,38 @@ def get_mxfp4_gemm_4wave(
     macrotiles: tuple[int, int, int],
     intermediates_dir: Optional[Path] = None,
     dynamic: bool = False,
+    eliminate_epilogue: bool = True,
 ):
-    """Compile a 4-wave MXFP4 GEMM kernel.
+    """Compile a 4-wave MXFP4 GEMM kernel (preshuffle-B, WaveASM).
 
-    Uses the ASM backend with wave_shape=(1,4) and block_size={128,2,1}.
+    Mirrors test_dbuf_4wave_mxfp_dynamic_preshuffle_b_gemm_asm: wave_shape (2,2),
+    reorder_workgroups, buffer ops, ASM backend, asymmetric schedule.
     """
     gemm, options = get_tagged_mxfp4_gemm_preshuffle_b(
         shape=shape,
         block_shape=macrotiles,
         wave_shape=_WAVE_SHAPE,
+        reorder_workgroups=True,
     )
-    options.specialize = True
     options.use_buffer_ops = True
-    options.wave_runtime = True
-
-    # 4-wave ASM backend
     options.backend = "asm"
     options.use_wave_asm_backend = True
-    options.use_global_to_shared = True
+    options.wave_runtime = True
+    options.eliminate_epilogue = eliminate_epilogue
 
     if dynamic:
-        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
-        for sym in options.dynamic_symbols:
+        dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in dynamic_symbols:
             del options.subs[sym]
+        options.dynamic_symbols = dynamic_symbols
 
     if intermediates_dir is not None:
         options.dump_intermediates = str(intermediates_dir)
 
-    schedule = get_mxfp4_asymmetric_schedule(is_bscale_shuffled=True)
+    schedule = get_mxfp4_asymmetric_schedule(
+        eliminate_epilogue=eliminate_epilogue,
+        is_bscale_shuffled=True,
+    )
     options = set_default_run_config(options)
     compiled_gemm = wave_compile(options, gemm, schedule)
     return compiled_gemm

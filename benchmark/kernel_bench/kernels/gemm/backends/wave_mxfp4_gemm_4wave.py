@@ -8,10 +8,9 @@ WAVE_AVAILABLE = False
 try:
     from wave_lang.kernel.lang.global_symbols import *
     from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
-    from wave_lang.kernel.wave.utils.general_utils import get_default_scheduling_params
     from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
-    from wave_lang.kernel.wave.templates import get_tagged_mxfp4_gemm
-    from wave_lang.kernel.wave.schedules import get_mxfp4_dbuf_schedule
+    from wave_lang.kernel.wave.templates import get_tagged_mxfp4_gemm_preshuffle_b
+    from wave_lang.kernel.wave.schedules import get_mxfp4_asymmetric_schedule
     from wave_lang.kernel.wave.utils.mxfp_utils import (
         generate_gemm_afp4wfp4_inputs,
         torchScaledGemmMXFP4,
@@ -27,8 +26,10 @@ from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from ..gemm_utils import GemmConfig
 
 
-# Fixed tile / wave config for the 4-wave double-buffer schedule.
+# Preshuffle-B 4-wave tile; wave grid (2, 2) matches
+# test_dbuf_4wave_mxfp_dynamic_preshuffle_b_gemm_asm.
 _BLOCK = (256, 192, 256)
+_WAVE_SHAPE = (2, 2)
 
 
 class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
@@ -54,8 +55,7 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
         return True
 
     def setup_parameters(self):
-        # The 4-wave double-buffer schedule has a fixed tile of 256×256×256 —
-        # no tunable block/wave params needed.
+        # Fixed asymmetric tile 256×192×256 and (2,2) wave grid; no tunable params.
         pass
 
     @override
@@ -66,9 +66,13 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
         gemm, options = get_tagged_mxfp4_gemm_preshuffle_b(
             shape=shape,
             block_shape=_BLOCK,
-            wave_shape=(1, 4),
+            wave_shape=_WAVE_SHAPE,
+            reorder_workgroups=True,
         )
-        schedule = get_mxfp4_asymmetric_schedule(is_bscale_shuffled=True)
+        schedule = get_mxfp4_asymmetric_schedule(
+            eliminate_epilogue=True,
+            is_bscale_shuffled=True,
+        )
 
         hyperparams = options.subs
         return WaveTemplate(
@@ -81,7 +85,7 @@ class WaveMxfp4Gemm4WaveBenchmark(WaveKernelBenchmark):
     def extra_compile_options(self):
         return WaveCompileOptions(
             schedule=SchedulingType.MANUAL,
-            use_global_to_shared=True,
+            use_buffer_ops=True,
             backend="asm",
             wave_runtime=True,
             use_wave_asm_backend=True,
