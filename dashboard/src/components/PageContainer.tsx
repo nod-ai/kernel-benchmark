@@ -18,19 +18,20 @@ export default function PageContainer({
   children,
   isLoading,
 }: PageContainerProps) {
-  const { isAuthenticated, requestAuth } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, requestAuth } = useAuth();
   const requireAuth = authPages.includes(activePage);
+  const needsAuth = requireAuth && !isAuthenticated && !isAuthLoading;
 
   useEffect(() => {
-    if (requireAuth && !isAuthenticated) {
+    if (needsAuth) {
       requestAuth();
     }
-  }, [requireAuth, isAuthenticated, requestAuth]);
+  }, [needsAuth, requestAuth]);
 
   return (
     <>
       <Navbar activePage={activePage} />
-      {!requireAuth || isAuthenticated ? (
+      {!needsAuth ? (
         <div className="px-12 pt-24 pb-6">
           {isLoading ? (
             <div className="flex items-center justify-center min-h-[60vh]">

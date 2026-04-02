@@ -92,13 +92,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const requestAuth = useCallback((): Promise<boolean> => {
-    if (isAuthenticated) return Promise.resolve(true);
+    if (isAuthenticated || isLoading) return Promise.resolve(isAuthenticated);
 
     return new Promise((resolve) => {
       authCallbackRef.current = resolve;
       setShowAuthModal(true);
     });
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isLoading]);
 
   const handleAuthSubmit = async (password: string) => {
     const success = await login(password);
