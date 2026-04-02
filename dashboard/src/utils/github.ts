@@ -11,68 +11,79 @@ import type {
   RunWithTrigger,
 } from "../types";
 
-export async function fetchModifications() {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/pull_requests`
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
+const API_URL = import.meta.env.VITE_BACKEND_SERVER_URL;
+const TOKEN_KEY = "auth_token";
 
-    const data = await response.json();
-    const modifications: RepoPullRequest[] = [];
+/**
+ * Centralized fetch wrapper that attaches the auth token and emits
+ * an `auth-required` event when the server responds with 401.
+ */
+async function apiFetch(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+  };
 
-    for (let obj of data) {
-      obj["timestamp"] = new Date(obj["timestamp"]);
-      modifications.push(obj as RepoPullRequest);
-    }
-
-    modifications.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-    console.log("modifications", modifications);
-
-    return modifications;
-  } catch (error) {
-    throw new Error(`Failed to fetch pull requests: ${error}`);
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401) {
+    window.dispatchEvent(new CustomEvent("auth-required"));
+    throw new Error("Authentication required");
+  }
+
+  return response;
+}
+
+export async function fetchModifications() {
+  const response = await apiFetch("/pull_requests");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const modifications: RepoPullRequest[] = [];
+
+  for (let obj of data) {
+    obj["timestamp"] = new Date(obj["timestamp"]);
+    modifications.push(obj as RepoPullRequest);
+  }
+
+  modifications.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  return modifications;
 }
 
 export async function fetchRuns() {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/runs`
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const jobs: BenchmarkRun[] = await response.json();
-    return jobs;
-  } catch (error) {
-    throw new Error(`Failed to fetch runs: ${error}`);
+  const response = await apiFetch("/runs");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+
+  const jobs: BenchmarkRun[] = await response.json();
+  return jobs;
 }
 
 export async function fetchPerformanceRuns() {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/performances`
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const perfs: BenchmarkRun[] = await response.json();
-    return perfs;
-  } catch (error) {
-    throw new Error(`Failed to fetch runs: ${error}`);
+  const response = await apiFetch("/performances");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+
+  const perfs: BenchmarkRun[] = await response.json();
+  return perfs;
 }
 
 export async function fetchKernels() {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernels`
-  );
+  const response = await apiFetch("/kernels");
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
@@ -82,9 +93,7 @@ export async function fetchKernels() {
 }
 
 export async function fetchTuningResults() {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/tune/results`
-  );
+  const response = await apiFetch("/tune/results");
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
@@ -109,15 +118,11 @@ export async function fetchTuningResults() {
     );
   }
 
-  console.log("Tuning Results", tuningResults);
-
   return tuningResults;
 }
 
 export async function fetchInProgressTuningRuns() {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/tune/runs`
-  );
+  const response = await apiFetch("/tune/runs");
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
@@ -128,9 +133,7 @@ export async function fetchInProgressTuningRuns() {
 }
 
 export async function fetchChangeStats() {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/change_stats`
-  );
+  const response = await apiFetch("/change_stats");
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
@@ -145,12 +148,7 @@ export async function fetchChangeStats() {
 }
 
 export async function rebase() {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/rebase`,
-    {
-      method: "POST",
-    }
-  );
+  const response = await apiFetch("/rebase", { method: "POST" });
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
@@ -165,21 +163,12 @@ export async function triggerBenchWorkflow(
   pullRequest: RepoPullRequest,
   config: BenchmarkRuntimeConfig
 ) {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/pr/trigger`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        pr: pullRequest,
-        config,
-      }),
-    }
-  );
+  const response = await apiFetch("/workflow/pr/trigger", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pr: pullRequest, config }),
+  });
   if (!response.ok) {
-    console.log(response.statusText);
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
 }
@@ -190,53 +179,34 @@ export async function triggerManualBenchWorkflow(config: {
   backends: string[];
   kernelSelection: KernelSelection;
 }) {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/manual/trigger`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        config,
-      }),
-    }
-  );
+  const response = await apiFetch("/workflow/manual/trigger", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config }),
+  });
   if (!response.ok) {
-    console.log(response.statusText);
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
 }
 
 export async function cancelWorkflow(runId: string) {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/workflow/cancel`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ runId }),
-    }
-  );
+  const response = await apiFetch("/workflow/cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ runId }),
+  });
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
 }
 
 export async function triggerTuningWorkflow(kernelIds: string[]) {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_SERVER_URL}/tune`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ kernel_ids: kernelIds }),
-    }
-  );
+  const response = await apiFetch("/tune", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kernel_ids: kernelIds }),
+  });
   if (!response.ok) {
-    console.log(response.statusText);
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
 }
@@ -244,97 +214,62 @@ export async function triggerTuningWorkflow(kernelIds: string[]) {
 // Kernel Type Management Functions
 
 export async function fetchKernelTypes(): Promise<KernelTypeDefinition[]> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernel_types`
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const kernelTypes: KernelTypeDefinition[] = await response.json();
-    return kernelTypes;
-  } catch (error) {
-    throw new Error(`Failed to fetch kernel types: ${error}`);
+  const response = await apiFetch("/kernel_types");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  return response.json();
 }
 
 export async function addKernelType(
   kernelType: KernelTypeDefinition
 ): Promise<KernelTypeDefinition> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernel_types`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(kernelType),
-      }
+  const response = await apiFetch("/kernel_types", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(kernelType),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-
-    const createdKernelType: KernelTypeDefinition = await response.json();
-    return createdKernelType;
-  } catch (error) {
-    throw new Error(`Failed to add kernel type: ${error}`);
   }
+
+  return response.json();
 }
 
 export async function updateKernelType(
   kernelTypeId: string,
   updates: Partial<Omit<KernelTypeDefinition, "_id">>
 ): Promise<KernelTypeDefinition> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernel_types/${kernelTypeId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updates),
-      }
+  const response = await apiFetch(`/kernel_types/${kernelTypeId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-
-    const updatedKernelType: KernelTypeDefinition = await response.json();
-    return updatedKernelType;
-  } catch (error) {
-    throw new Error(`Failed to update kernel type: ${error}`);
   }
+
+  return response.json();
 }
 
 export async function deleteKernelType(kernelTypeId: string): Promise<void> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernel_types/${kernelTypeId}`,
-      {
-        method: "DELETE",
-      }
-    );
+  const response = await apiFetch(`/kernel_types/${kernelTypeId}`, {
+    method: "DELETE",
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-  } catch (error) {
-    throw new Error(`Failed to delete kernel type: ${error}`);
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
+    );
   }
 }
 
@@ -343,82 +278,53 @@ export async function deleteKernelType(kernelTypeId: string): Promise<void> {
 export async function addKernels(
   kernelConfigs: Omit<KernelConfig, "_id">[]
 ): Promise<KernelConfig[]> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernels`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(kernelConfigs),
-      }
+  const response = await apiFetch("/kernels", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(kernelConfigs),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-
-    const createdKernels: KernelConfig[] = await response.json();
-    return createdKernels;
-  } catch (error) {
-    throw new Error(`Failed to add kernels: ${error}`);
   }
+
+  return response.json();
 }
 
 export async function updateKernels(
   kernelUpdates: Partial<KernelConfig>[]
 ): Promise<KernelConfig[]> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernels/batch`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(kernelUpdates),
-      }
+  const response = await apiFetch("/kernels/batch", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(kernelUpdates),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-
-    const updatedKernels: KernelConfig[] = await response.json();
-    return updatedKernels;
-  } catch (error) {
-    throw new Error(`Failed to update kernels: ${error}`);
   }
+
+  return response.json();
 }
 
 export async function deleteKernels(kernelIds: string[]): Promise<void> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/kernels`,
-      {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ids: kernelIds }),
-      }
-    );
+  const response = await apiFetch("/kernels", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: kernelIds }),
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-  } catch (error) {
-    throw new Error(`Failed to delete kernels: ${error}`);
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
+    );
   }
 }
 
@@ -445,85 +351,71 @@ export interface FetchRunsResponse {
 export async function fetchAllRuns(
   params: FetchRunsParams = {}
 ): Promise<FetchRunsResponse> {
-  try {
-    const queryParams = new URLSearchParams();
-    if (params.page) queryParams.append("page", params.page.toString());
-    if (params.page_size)
-      queryParams.append("page_size", params.page_size.toString());
-    if (params.type) queryParams.append("type", params.type);
-    if (params.has_artifact !== undefined)
-      queryParams.append("has_artifact", params.has_artifact.toString());
-    if (params.completed_only !== undefined)
-      queryParams.append("completed_only", params.completed_only.toString());
+  const queryParams = new URLSearchParams();
+  if (params.page) queryParams.append("page", params.page.toString());
+  if (params.page_size)
+    queryParams.append("page_size", params.page_size.toString());
+  if (params.type) queryParams.append("type", params.type);
+  if (params.has_artifact !== undefined)
+    queryParams.append("has_artifact", params.has_artifact.toString());
+  if (params.completed_only !== undefined)
+    queryParams.append("completed_only", params.completed_only.toString());
 
-    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const data: FetchRunsResponse = await response.json();
-
-    // Convert timestamp strings to Date objects for both run and trigger
-    data.runs = data.runs.map((item) => ({
-      run: item.run
-        ? {
-            ...item.run,
-            timestamp: new Date(item.run.timestamp),
-          }
-        : null,
-      trigger: item.trigger
-        ? {
-            ...item.trigger,
-            timestamp: new Date(item.trigger.timestamp),
-            dispatchedAt: item.trigger.dispatchedAt
-              ? new Date(item.trigger.dispatchedAt)
-              : undefined,
-            linkedAt: item.trigger.linkedAt
-              ? new Date(item.trigger.linkedAt)
-              : undefined,
-          }
-        : null,
-    }));
-
-    return data;
-  } catch (error) {
-    throw new Error(`Failed to fetch runs: ${error}`);
+  const qs = queryParams.toString();
+  const response = await apiFetch(`/api/runs${qs ? `?${qs}` : ""}`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+
+  const data: FetchRunsResponse = await response.json();
+
+  data.runs = data.runs.map((item) => ({
+    run: item.run
+      ? {
+          ...item.run,
+          timestamp: new Date(item.run.timestamp),
+        }
+      : null,
+    trigger: item.trigger
+      ? {
+          ...item.trigger,
+          timestamp: new Date(item.trigger.timestamp),
+          dispatchedAt: item.trigger.dispatchedAt
+            ? new Date(item.trigger.dispatchedAt)
+            : undefined,
+          linkedAt: item.trigger.linkedAt
+            ? new Date(item.trigger.linkedAt)
+            : undefined,
+        }
+      : null,
+  }));
+
+  return data;
 }
 
 export async function deleteRun(runId: string): Promise<void> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs/${runId}`,
-      {
-        method: "DELETE",
-      }
-    );
+  const response = await apiFetch(`/api/runs/${runId}`, {
+    method: "DELETE",
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-  } catch (error) {
-    throw new Error(`Failed to delete run: ${error}`);
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
+    );
   }
 }
 
 // Tracker types
+
 export interface ScheduleData {
   isInterval: boolean;
-  startDate: string; // MM-DD-YYYY
-  timeOfDay: string; // HH:MM in UTC
-  daysOfWeek?: string[]; // For weekly schedules
-  intervalValue?: number; // For interval schedules
-  intervalUnit?: "weeks" | "months"; // For interval schedules
-  endDate?: string; // MM-DD-YYYY
+  startDate: string;
+  timeOfDay: string;
+  daysOfWeek?: string[];
+  intervalValue?: number;
+  intervalUnit?: "weeks" | "months";
+  endDate?: string;
 }
 
 export interface TrackerData {
@@ -541,152 +433,97 @@ export interface TrackerData {
 }
 
 export async function fetchTrackers(): Promise<TrackerData[]> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers`
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const data: TrackerData[] = await response.json();
-    return data;
-  } catch (error) {
-    throw new Error(`Failed to fetch trackers: ${error}`);
+  const response = await apiFetch("/api/trackers");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  return response.json();
 }
 
-export async function createTracker(tracker: TrackerData): Promise<TrackerData> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(tracker),
-      }
+export async function createTracker(
+  tracker: TrackerData
+): Promise<TrackerData> {
+  const response = await apiFetch("/api/trackers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tracker),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-
-    const data: TrackerData = await response.json();
-    return data;
-  } catch (error) {
-    throw new Error(`Failed to create tracker: ${error}`);
   }
+
+  return response.json();
 }
 
 export async function updateTracker(
   trackerId: string,
   tracker: Partial<TrackerData>
 ): Promise<TrackerData> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(tracker),
-      }
+  const response = await apiFetch(`/api/trackers/${trackerId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tracker),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-
-    const data: TrackerData = await response.json();
-    return data;
-  } catch (error) {
-    throw new Error(`Failed to update tracker: ${error}`);
   }
+
+  return response.json();
 }
 
 export async function deleteTracker(trackerId: string): Promise<void> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}`,
-      {
-        method: "DELETE",
-      }
-    );
+  const response = await apiFetch(`/api/trackers/${trackerId}`, {
+    method: "DELETE",
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-  } catch (error) {
-    throw new Error(`Failed to delete tracker: ${error}`);
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
+    );
   }
 }
 
 export async function triggerTrackerRun(trackerId: string): Promise<void> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/trigger`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+  const response = await apiFetch(`/api/trackers/${trackerId}/trigger`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        errorData.error || `HTTP error! Status: ${response.status}`
-      );
-    }
-  } catch (error) {
-    throw new Error(`Failed to trigger tracker run: ${error}`);
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `HTTP error! Status: ${response.status}`
+    );
   }
 }
 
-export async function fetchTrackerByDashboardName(dashboardName: string): Promise<TrackerData> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/dashboard/${dashboardName}`
-    );
-    
-    if (!response.ok) {
-      throw new Error("Tracker not found");
-    }
-    
-    return await response.json();
-  } catch (error) {
-    throw new Error(`Failed to fetch tracker by dashboard name: ${error}`);
+export async function fetchTrackerByDashboardName(
+  dashboardName: string
+): Promise<TrackerData> {
+  const response = await apiFetch(
+    `/api/trackers/dashboard/${dashboardName}`
+  );
+  if (!response.ok) {
+    throw new Error("Tracker not found");
   }
+  return response.json();
 }
 
 export async function fetchTrackerRuns(trackerId: string): Promise<any[]> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/runs`
-    );
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    throw new Error(`Failed to fetch tracker runs: ${error}`);
+  const response = await apiFetch(`/api/trackers/${trackerId}/runs`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  return response.json();
 }
 
 export async function fetchTrackerPerformanceTimeline(
@@ -694,40 +531,24 @@ export async function fetchTrackerPerformanceTimeline(
   startDate?: string,
   endDate?: string
 ): Promise<any[]> {
-  try {
-    const params = new URLSearchParams();
-    if (startDate) params.append("start_date", startDate);
-    if (endDate) params.append("end_date", endDate);
-    
-    const url = `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
-      params.toString() ? `?${params.toString()}` : ""
-    }`;
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    throw new Error(`Failed to fetch tracker performance timeline: ${error}`);
+  const params = new URLSearchParams();
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+
+  const qs = params.toString();
+  const response = await apiFetch(
+    `/api/trackers/${trackerId}/performance${qs ? `?${qs}` : ""}`
+  );
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  return response.json();
 }
 
 export async function fetchBranches(): Promise<string[]> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/branches`
-    );
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    
-    const branches: string[] = await response.json();
-    return branches;
-  } catch (error) {
-    throw new Error(`Failed to fetch branches: ${error}`);
+  const response = await apiFetch("/api/branches");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  return response.json();
 }

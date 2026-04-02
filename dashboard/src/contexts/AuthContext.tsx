@@ -1,134 +1,142 @@
-// contexts/AuthContext.tsx
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
+import PasswordModal from "../components/PasswordModal";
+
+const API_BASE_URL = import.meta.env.VITE_BACKEND_SERVER_URL;
+const TOKEN_KEY = "auth_token";
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  logout: () => void;
+  /** Prompt the user to authenticate. Resolves true on success, false on dismiss. */
+  requestAuth: () => Promise<boolean>;
+  getToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const API_BASE_URL = import.meta.env.VITE_BACKEND_SERVER_URL;
-
-class FetchError extends Error {
-  status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-    this.name = "FetchError";
-  }
-}
-
-const fetchAPI = async <T = any,>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<{ data: T; response: Response }> => {
-  const url = `${API_BASE_URL}${endpoint}`;
-
-  const defaultOptions: RequestInit = {
-    credentials: "include", // Include cookies in requests
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    ...options,
-  };
-
-  try {
-    const response = await fetch(url, defaultOptions);
-
-    let data: T;
-    const contentType = response.headers.get("content-type");
-
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      data = {} as T;
-    }
-
-    if (!response.ok) {
-      throw new FetchError(
-        (data as any)?.message || `HTTP error! status: ${response.status}`,
-        response.status
-      );
-    }
-
-    return { data, response };
-  } catch (error) {
-    if (error instanceof TypeError && error.message === "Failed to fetch") {
-      throw new Error("Network error. Please check your connection.");
-    }
-    throw error;
-  }
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const checkAuth = async () => {
+  const authCallbackRef = useRef<((success: boolean) => void) | null>(null);
+
+  const getToken = useCallback(() => localStorage.getItem(TOKEN_KEY), []);
+
+  const checkAuth = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setIsAuthenticated(false);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const { data } = await fetchAPI<{ authenticated: boolean }>(
-        "/auth/verify"
-      );
-      setIsAuthenticated(data.authenticated);
-    } catch (error) {
+      const response = await fetch(`${API_BASE_URL}/auth/verify`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.authenticated) {
+        setIsAuthenticated(true);
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+        setIsAuthenticated(false);
+      }
+    } catch {
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getToken]);
 
   useEffect(() => {
     checkAuth();
-  }, []);
+  }, [checkAuth]);
 
-  const login = async (password: string): Promise<boolean> => {
+  const login = useCallback(async (password: string): Promise<boolean> => {
     try {
-      await fetchAPI<{ message: string }>("/auth/login", {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
 
-      setIsAuthenticated(true);
-      return true;
-    } catch (error) {
-      setIsAuthenticated(false);
+      if (!response.ok) return false;
 
-      if (error instanceof FetchError && error.status === 401) {
-        // Invalid password
-        return false;
+      const data = await response.json();
+      if (data.token) {
+        localStorage.setItem(TOKEN_KEY, data.token);
+        setIsAuthenticated(true);
+        return true;
       }
+      return false;
+    } catch {
+      return false;
+    }
+  }, []);
 
-      // Re-throw other errors for the component to handle
-      throw error;
+  const logout = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    setIsAuthenticated(false);
+  }, []);
+
+  const requestAuth = useCallback((): Promise<boolean> => {
+    if (isAuthenticated) return Promise.resolve(true);
+
+    return new Promise((resolve) => {
+      authCallbackRef.current = resolve;
+      setShowAuthModal(true);
+    });
+  }, [isAuthenticated]);
+
+  const handleAuthSubmit = async (password: string) => {
+    const success = await login(password);
+    if (success) {
+      setShowAuthModal(false);
+      authCallbackRef.current?.(true);
+      authCallbackRef.current = null;
+    } else {
+      throw new Error("Invalid password");
     }
   };
 
-  const logout = async () => {
-    try {
-      await fetchAPI("/auth/logout", {
-        method: "POST",
-      });
-    } catch (error) {
-      console.error("Logout failed:", error);
-    } finally {
-      // Always set authenticated to false
+  const handleAuthClose = () => {
+    setShowAuthModal(false);
+    authCallbackRef.current?.(false);
+    authCallbackRef.current = null;
+  };
+
+  useEffect(() => {
+    const handler = () => {
+      localStorage.removeItem(TOKEN_KEY);
       setIsAuthenticated(false);
-    }
-  };
+      setShowAuthModal(true);
+    };
+    window.addEventListener("auth-required", handler);
+    return () => window.removeEventListener("auth-required", handler);
+  }, []);
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, isLoading, login, logout, checkAuth }}
+      value={{ isAuthenticated, isLoading, login, logout, requestAuth, getToken }}
     >
       {children}
+      <PasswordModal
+        isOpen={showAuthModal}
+        onClose={handleAuthClose}
+        onSubmit={handleAuthSubmit}
+      />
     </AuthContext.Provider>
   );
 };

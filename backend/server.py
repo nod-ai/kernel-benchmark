@@ -16,14 +16,14 @@ from backend.webhook.wave_update import WaveUpdateListener
 from backend.storage.auth import get_blob_client
 
 from uuid import uuid4
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dataclass_wizard import fromdict, asdict
 from functools import wraps
 import jwt
 from datetime import datetime, timezone, timedelta
 import os
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 from dotenv import load_dotenv
 
 directory_client = get_blob_client()
@@ -135,19 +135,24 @@ def home():
     return jsonify({"message": "Flask server with CORS is running on port 3000."})
 
 
+def _extract_bearer_token():
+    """Extract JWT from the Authorization header."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return None
+
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = request.headers.get("Authorization")
+        token = _extract_bearer_token()
 
         if not token:
-            return jsonify({"message": "Token is missing"}), 401
+            return jsonify({"message": "Authentication required"}), 401
 
         try:
-            if token.startswith("Bearer "):
-                token = token[7:]
-
-            data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+            jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
             return jsonify({"message": "Token has expired"}), 401
         except jwt.InvalidTokenError:
@@ -168,28 +173,18 @@ def login():
 
     if check_password_hash(app.config["PASSWORD_HASH"], password):
         token = jwt.encode(
-            {"exp": datetime.now(timezone.utc) + timedelta(minutes=30)},
+            {"exp": datetime.now(timezone.utc) + timedelta(hours=24)},
             app.config["SECRET_KEY"],
             algorithm="HS256",
         )
-
-        response = make_response(jsonify({"message": "Login successful"}))
-        response.set_cookie(
-            "auth_token",
-            token,
-            max_age=30 * 60,
-            httponly=True,
-            secure=True,
-            samesite="Lax",
-        )
-        return response
+        return jsonify({"message": "Login successful", "token": token})
 
     return jsonify({"message": "Invalid password"}), 401
 
 
 @app.route("/auth/verify", methods=["GET"])
 def verify():
-    token = request.cookies.get("auth_token")
+    token = _extract_bearer_token()
 
     if not token:
         return jsonify({"authenticated": False}), 200
@@ -203,9 +198,7 @@ def verify():
 
 @app.route("/auth/logout", methods=["POST"])
 def logout():
-    response = make_response(jsonify({"message": "Logout successful"}))
-    response.set_cookie("auth_token", "", expires=0)
-    return response
+    return jsonify({"message": "Logout successful"})
 
 
 @app.route("/pull_requests")
@@ -360,7 +353,7 @@ def get_runs():
 
 
 @app.route("/api/runs/<run_id>", methods=["DELETE"])
-# @token_required
+@token_required
 def delete_run(run_id):
     """Delete a workflow run, its artifact, and its trigger."""
     try:
@@ -412,6 +405,7 @@ def get_artifact_by_run_id(blob_name):
 
 
 @app.route("/workflow/pr/trigger", methods=["POST"])
+@token_required
 def trigger_pr_workflow():
     """Trigger a benchmark workflow for a pull request."""
     response_data = request.get_json()
@@ -460,6 +454,7 @@ def trigger_pr_workflow():
 
 
 @app.route("/workflow/manual/trigger", methods=["POST"])
+@token_required
 def trigger_manual_workflow():
     """Trigger a manual benchmark workflow."""
     response_data = request.get_json()
@@ -539,6 +534,7 @@ def trigger_manual_workflow():
 
 
 @app.route("/workflow/cancel", methods=["POST"])
+@token_required
 def cancel_workflow():
     payload = request.get_json()
     run_id = int(payload["runId"])
@@ -550,6 +546,7 @@ def cancel_workflow():
 
 
 @app.route("/rebase", methods=["POST"])
+@token_required
 def rebase_prs():
     # rebase_all()
     rebase_pull_requests()
@@ -565,6 +562,7 @@ def rebase_prs():
 
 
 @app.route("/tune", methods=["POST"])
+@token_required
 def tune_kernels():
     payload = request.get_json()
     kernel_ids = [str(id) for id in payload["kernel_ids"]]
@@ -660,7 +658,7 @@ def get_all_kernel_types():
 
 
 @app.route("/kernel_types", methods=["POST"])
-# @token_required
+@token_required
 def add_kernel_type():
     """Add a new kernel type to the database."""
     try:
@@ -694,7 +692,7 @@ def add_kernel_type():
 
 
 @app.route("/kernel_types/<kernel_type_id>", methods=["PUT"])
-# @token_required
+@token_required
 def update_kernel_type(kernel_type_id):
     """Update an existing kernel type."""
     try:
@@ -718,7 +716,7 @@ def update_kernel_type(kernel_type_id):
 
 
 @app.route("/kernel_types/<kernel_type_id>", methods=["DELETE"])
-# @token_required
+@token_required
 def remove_kernel_type(kernel_type_id):
     """Remove a kernel type from the database."""
     try:
@@ -747,7 +745,7 @@ def get_all_kernels():
 
 
 @app.route("/kernels", methods=["POST"])
-# @token_required
+@token_required
 def add_kernels():
     """Add multiple new kernel configurations to the database."""
     try:
@@ -800,7 +798,7 @@ def add_kernels():
 
 
 @app.route("/kernels/<kernel_id>", methods=["PUT"])
-# @token_required
+@token_required
 def update_kernel(kernel_id):
     """Update an existing kernel configuration."""
     try:
@@ -825,7 +823,7 @@ def update_kernel(kernel_id):
 
 
 @app.route("/kernels/batch", methods=["PUT"])
-# @token_required
+@token_required
 def update_kernels_batch():
     """Update multiple kernel configurations using batched transactions."""
     try:
@@ -872,7 +870,7 @@ def update_kernels_batch():
 
 
 @app.route("/kernels", methods=["DELETE"])
-# @token_required
+@token_required
 def remove_kernels():
     """Remove multiple kernel configurations from the database."""
     try:
@@ -932,7 +930,7 @@ def get_trackers():
 
 
 @app.route("/api/trackers", methods=["POST"])
-# @token_required
+@token_required
 def create_tracker():
     """Create a new tracker."""
     try:
@@ -1015,7 +1013,7 @@ def create_tracker():
 
 
 @app.route("/api/trackers/<tracker_id>", methods=["PUT"])
-# @token_required
+@token_required
 def update_tracker(tracker_id):
     """Update an existing tracker."""
     try:
@@ -1113,7 +1111,7 @@ def update_tracker(tracker_id):
 
 
 @app.route("/api/trackers/<tracker_id>", methods=["DELETE"])
-# @token_required
+@token_required
 def delete_tracker(tracker_id):
     """Delete a tracker."""
     try:
@@ -1136,7 +1134,7 @@ def delete_tracker(tracker_id):
 
 
 @app.route("/api/trackers/<tracker_id>/trigger", methods=["POST"])
-# @token_required
+@token_required
 def trigger_tracker_manually(tracker_id):
     """Manually trigger a tracker run before its scheduled time."""
     try:
