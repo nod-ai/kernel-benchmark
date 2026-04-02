@@ -80,7 +80,8 @@ export default function Dashboard() {
             if (item?.trigger?.metadata?.backendSpecs) {
               const specsMap: Record<string, any> = {};
               item.trigger.metadata.backendSpecs.forEach((spec: any) => {
-                specsMap[spec.backend] = spec;
+                const key = spec.backendParam || spec.backend;
+                specsMap[key] = spec;
               });
               setRunBackendSpecs(specsMap);
             }

@@ -1,12 +1,13 @@
 """
-8-wave rocroller transposed MXFP4 GEMM benchmark.
+8-wave rocroller MXFP4 GEMM benchmark.
 
-Replicates test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_transposed
+Replicates test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds
 from adedespirlet/wave@8wavepingpong:examples/python/7.1_schedule.py.
 
-Transposed MXFP4 GEMM: computes C^T = B * A^T instead of C = A * B^T.
-MFMA left operand ("A" role) = weight B, right operand ("B" role) = activation A.
-Activation A is preshuffled, A&B scales are preshuffled.
+Double-buffered MXFP4 GEMM, 8 waves, ping-pong with stagger.
+A&B scales are preshuffled and read from global memory directly to VGPRs.
+B data is preshuffled and loaded to LDS (shared memory).
+A data is read from global memory directly to LDS.
 """
 
 import traceback
@@ -46,10 +47,10 @@ from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from ..gemm_utils import GemmConfig
 
 
-# Block for the transposed 8-wave ping-pong schedule.
+# Block for the 8-wave ping-pong schedule.
 _BLOCK = (256, 192, 256)
 
-# MLIR override file (generated from 7.1_schedule.py reference test)
+# MLIR override file (from 7.1_schedule.py test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds)
 _MLIR_OVERRIDE_FILE = Path(__file__).parent / "wave_8wave_transposed.mlir"
 
 # Loop unrolling postprocess transform
@@ -109,21 +110,17 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(WaveKernelBenchmark):
         config = self.config
         shape = (config.M, config.N, config.K)
 
-        # Transpose shapes: C^T = B * A^T
-        shape_t = (config.N, config.M, config.K)
-        block_t = (_BLOCK[1], _BLOCK[0], _BLOCK[2])
-
-        wave_shape = _get_8wave_shape_from_block(block_t)
+        wave_shape = _get_8wave_shape_from_block(_BLOCK)
         gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales_and_B(
-            shape_t,
-            block_t,
+            shape,
+            _BLOCK,
             wave_shape=wave_shape,
             b_address_space=SHARED_ADDRESS_SPACE,
             output_dtype=tkl.bf16,
         )
 
         schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds(
-            use_stagger=True, shape=shape_t, block=block_t
+            use_stagger=True, shape=shape, block=_BLOCK
         )
 
         # Set UNROLL_FACTOR
@@ -188,14 +185,15 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(WaveKernelBenchmark):
                 compile_options, kernel.launchable, kernel.schedule
             )
 
-            # Transposed roles: B is left ("A" role), A is right ("B" role)
-            w_t = w.T.contiguous().cuda()  # [N, K/2]
-            x_ps = b_preshuffle(x).cuda()  # [M, K/2] preshuffled
-            w_scales_ps = e8m0_shuffle(w_scales).cuda()  # [N, K/32]
-            x_scales_ps = e8m0_shuffle(x_scales).cuda()  # [M, K/32]
+            w_t = w.T.contiguous()
+            # Preshuffle B and both scales (all=True equivalent)
+            w_t_ps = b_preshuffle(w_t).cuda()
+            x_scales_ps = e8m0_shuffle(x_scales).cuda()
+            w_scales_ps = e8m0_shuffle(w_scales).cuda()
+            x = x.cuda()
 
             out = torch.zeros(M, N, dtype=torch.bfloat16, device="cuda")
-            wave_gemm(w_t, w_scales_ps, x_ps, x_scales_ps, out)
+            wave_gemm(x, x_scales_ps, w_t_ps, w_scales_ps, out)
 
             assert_close(
                 torch_out, out.cpu(), check_dtype=False, check_device=False
@@ -221,19 +219,18 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(WaveKernelBenchmark):
     def get_runtime_args(self):
         config = self.config
 
-        # Transposed: B[N, K/2] is left operand, A[M, K/2] is right operand
-        # Scales are preshuffled
-        inp_b       = shape_to_iree((config.N, config.K // 2),  "i8",  self.device_ctx)
-        inp_b_scale = shape_to_iree((config.N, config.K // 32), "i8",  self.device_ctx)
+        # A[M, K/2], A_scale[M, K/32], B[N, K/2] (preshuffled), B_scale[N, K/32], C[M, N]
         inp_a       = shape_to_iree((config.M, config.K // 2),  "i8",  self.device_ctx)
         inp_a_scale = shape_to_iree((config.M, config.K // 32), "i8",  self.device_ctx)
+        inp_b       = shape_to_iree((config.N, config.K // 2),  "i8",  self.device_ctx)
+        inp_b_scale = shape_to_iree((config.N, config.K // 32), "i8",  self.device_ctx)
         out_c       = shape_to_iree((config.M, config.N),       "bf16", self.device_ctx)
 
         return [
-            f"--input={inp_b}",
-            f"--input={inp_b_scale}",
             f"--input={inp_a}",
             f"--input={inp_a_scale}",
+            f"--input={inp_b}",
+            f"--input={inp_b_scale}",
             f"--input={out_c}",
             "--function=isolated_benchmark",
         ]

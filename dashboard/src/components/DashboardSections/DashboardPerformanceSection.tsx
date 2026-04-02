@@ -63,10 +63,11 @@ export default function DashboardPerformanceSection({
           console.log("Latest point backendSpecs:", latestPoint.backendSpecs);
           
           if (latestPoint.backendSpecs && Array.isArray(latestPoint.backendSpecs)) {
-            // Convert array to Record<backend, spec>
+            // Convert array to Record<backendParam, spec> to match filter option values
             const specsMap: Record<string, BackendSpec> = {};
             latestPoint.backendSpecs.forEach((spec: BackendSpec) => {
-              specsMap[spec.backend] = spec;
+              const key = (spec as any).backendParam || spec.backend;
+              specsMap[key] = spec;
             });
             setTrackerBackendSpecs(specsMap);
           }
