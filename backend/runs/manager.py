@@ -3,11 +3,11 @@ from typing import List, Optional
 
 from backend.github_utils.auth import get_repo
 from backend.runs import RunType
-from backend.runs.run_utils import find_incomplete_runs
+from backend.runs.run_utils import find_incomplete_runs, parse_run_from_gh
 from backend.runs.tracker import get_run_tracker
 from backend.storage.auth import get_blob_client
 from backend.storage.triggers import RunTriggerDb, TriggerStatus, link_trigger_to_run
-from backend.storage.types import WorkflowRunState
+from backend.storage.types import WorkflowRunDb, WorkflowRunState
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,8 @@ class RunManager:
         
         This is the backup mechanism for when webhook events are missed.
         It queries GitHub for recent runs and tries to match them to unlinked triggers.
+        When a match is found, it ensures a WorkflowRunState exists in the database
+        so the run can be tracked and artifacts can be downloaded.
         """
         try:
             # Find triggers that have been dispatched but not linked
@@ -91,13 +93,16 @@ class RunManager:
                         logger.info(f"Found matching run {gh_run.id} for trigger {trigger_id}")
                         run_id = str(gh_run.id)
                         
+                        # Ensure WorkflowRunState exists in the database.
+                        # When webhooks are missed, this is the only path that
+                        # creates the run record needed for tracking & artifacts.
+                        self._ensure_workflow_run_exists(gh_run, trigger)
+                        
                         # Link trigger to run
                         if link_trigger_to_run(trigger_id, run_id):
-                            # Also update the WorkflowRunState if it exists
                             try:
-                                from backend.storage.types import WorkflowRunDb
                                 WorkflowRunDb.update_by_id(run_id, {"triggerId": trigger_id})
-                            except:
+                            except Exception:
                                 pass
                             
                             linked_count += 1
@@ -108,6 +113,31 @@ class RunManager:
                 
         except Exception as e:
             logger.error(f"Error during trigger reconciliation: {e}")
+    
+    def _ensure_workflow_run_exists(self, gh_run, trigger):
+        """
+        Create a WorkflowRunState in the database if one doesn't already exist.
+        
+        This is critical for the backup reconciliation path: when webhooks are
+        missed, the WorkflowRunState is never created, so the event loop can't
+        track the run or download artifacts. This method fills that gap.
+        """
+        run_id = str(gh_run.id)
+        existing = WorkflowRunDb.find_by_id(run_id)
+        if existing:
+            return
+        
+        try:
+            run = parse_run_from_gh(gh_run)
+            run.triggerId = trigger._id
+            run.machine = trigger.machine
+            WorkflowRunDb.upsert(run)
+            logger.info(
+                f"Created WorkflowRunState for run {run_id} "
+                f"(status={run.status}, conclusion={run.conclusion})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to create WorkflowRunState for run {run_id}: {e}")
     
     def _extract_trigger_id_from_run(self, gh_run) -> Optional[str]:
         """
