@@ -68,6 +68,7 @@ ARG BACKENDS
 ARG GPU_ARCH
 ARG ROCM_LIBRARIES_REPO
 ARG ROCM_LIBRARIES_BRANCH
+ARG BACKEND_SPECS_URL
 
 # Optional rocroller fork (setup_hipblaslt.sh reads these; empty leaves script defaults)
 ENV ROCM_LIBRARIES_REPO=${ROCM_LIBRARIES_REPO}
@@ -76,6 +77,12 @@ ENV ROCM_LIBRARIES_BRANCH=${ROCM_LIBRARIES_BRANCH}
 # Copy the repository files
 COPY . /workspace
 WORKDIR /workspace
+
+# Download backend specs JSON if URL is provided (for per-backend wave repo/branch overrides)
+RUN if [ -n "$BACKEND_SPECS_URL" ]; then \
+        curl -sL "$BACKEND_SPECS_URL" -o /workspace/backend_specs.json && \
+        echo "Downloaded backend specs to /workspace/backend_specs.json"; \
+    fi
 
 # Install Rust for wave compilation (if needed and wave backend is requested)
 RUN if echo "$BACKENDS" | grep -qE '(^|,)(all|wave|wave_[^,]*)(,|$)'; then \
@@ -115,21 +122,25 @@ RUN SETUP_CMD="bash setup.sh"; \
     if [ -n "$GPU_ARCH" ]; then \
         SETUP_CMD="$SETUP_CMD --gpu-arch $GPU_ARCH"; \
     fi; \
+    if [ -f "/workspace/backend_specs.json" ]; then \
+        SETUP_CMD="$SETUP_CMD --backend-specs-file /workspace/backend_specs.json"; \
+    fi; \
     SETUP_CMD="$SETUP_CMD --strict"; \
     echo "Running: $SETUP_CMD"; \
     eval "$SETUP_CMD"
 
 # Install standalone compilation scripts for wave rocroller backends
-RUN if [ -d "/workspace/wave/wave_lang/kernel/wave/perf" ]; then \
-        cp /workspace/scripts/benchmark_mxfp4_4wave.py \
-           /workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py && \
-        echo "Installed 4-wave compilation script"; \
-        cp /workspace/scripts/benchmark_mxfp4_8wave.py \
-           /workspace/wave/wave_lang/kernel/wave/perf/benchmark_mxfp4_8wave.py && \
-        echo "Installed 8-wave compilation script"; \
-    else \
-        echo "Wave perf directory not found, skipping wave script install"; \
-    fi
+# Copy to all wave installation directories (per-variant and default)
+RUN for wave_dir in /workspace/wave /workspace/wave-*; do \
+        if [ -d "$wave_dir/wave_lang/kernel/wave/perf" ]; then \
+            cp /workspace/scripts/benchmark_mxfp4_4wave.py \
+               "$wave_dir/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py" 2>/dev/null && \
+            echo "Installed 4-wave script in $wave_dir"; \
+            cp /workspace/scripts/benchmark_mxfp4_8wave.py \
+               "$wave_dir/wave_lang/kernel/wave/perf/benchmark_mxfp4_8wave.py" 2>/dev/null && \
+            echo "Installed 8-wave script in $wave_dir"; \
+        fi; \
+    done
 
 # Set environment variables for backends
 ENV PATH="/workspace/rocm-libraries/projects/hipblaslt/build/clients:/opt/rocm/llvm/bin:${PATH}"

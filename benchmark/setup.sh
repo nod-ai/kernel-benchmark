@@ -15,6 +15,7 @@ INSTALL_FROM_SOURCE=false
 BACKENDS="all"  # Default to all backends
 GPU_ARCH="${GPU_ARCH:-}"  # No default, required for hipblaslt/all backends
 STRICT=false  # If true, exit non-zero when any requested backend fails (e.g. Docker/CI)
+BACKEND_SPECS_FILE=""  # Optional JSON file with per-backend specs (repo/branch overrides)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --wave-branch)
             WAVE_BRANCH="$2"
+            shift 2
+            ;;
+        --backend-specs-file)
+            BACKEND_SPECS_FILE="$2"
             shift 2
             ;;
         --venv-path)
@@ -204,7 +209,24 @@ echo ""
 # Track which backends succeeded/failed
 declare -a SUCCESSFUL_BACKENDS=()
 declare -a FAILED_BACKENDS=()
-WAVE_INSTALLED=false
+declare -A WAVE_INSTALLED_DIRS=()  # Map of install_dir -> true (tracks per-variant installations)
+
+# Look up per-backend wave repo from backend specs file
+get_spec_field_for_backend() {
+    local backend="$1"
+    local field="$2"
+    if [[ -n "$BACKEND_SPECS_FILE" && -f "$BACKEND_SPECS_FILE" ]]; then
+        python3 -c "
+import json, sys
+specs = json.load(open('$BACKEND_SPECS_FILE'))
+for s in specs:
+    bp = s.get('backendParam', s.get('backend', ''))
+    if bp == '$backend':
+        print(s.get('$field', ''))
+        break
+" 2>/dev/null
+    fi
+}
 
 # Install each backend
 for backend in "${BACKEND_LIST[@]}"; do
@@ -218,26 +240,51 @@ for backend in "${BACKEND_LIST[@]}"; do
         wave_4wave_rocroller|wave_8wave_rocroller)
             echo "$backend requires Wave (wave_lang) + hipblaslt with rocroller support"
 
-            if [[ "$WAVE_INSTALLED" != "true" ]]; then
+            # Determine per-backend wave repo/branch from specs file or defaults
+            BACKEND_WAVE_REPO=$(get_spec_field_for_backend "$backend" "remoteRepository")
+            BACKEND_WAVE_BRANCH=$(get_spec_field_for_backend "$backend" "branch")
+
+            # Fall back to CLI args if no spec found
+            if [[ -z "$BACKEND_WAVE_REPO" ]]; then
+                BACKEND_WAVE_REPO="$WAVE_REPO"
+            fi
+            if [[ -z "$BACKEND_WAVE_BRANCH" ]]; then
+                BACKEND_WAVE_BRANCH="$WAVE_BRANCH"
+            fi
+
+            # Install wave into a per-backend directory
+            WAVE_INSTALL_DIR="wave-${backend}"
+            if [[ -z "${WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]+_}" ]]; then
                 if [[ ! -f "backends/setup_wave.sh" ]]; then
                     echo "Error: setup_wave.sh not found in backends/"
                     FAILED_BACKENDS+=("$backend")
                     continue
                 fi
-                if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
-                    if ! bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH"; then
-                        echo "Warning: Wave install failed (required for $backend)"
+                if [[ -n "$BACKEND_WAVE_REPO" && -n "$BACKEND_WAVE_BRANCH" ]]; then
+                    echo "Installing wave for $backend: $BACKEND_WAVE_REPO @ $BACKEND_WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$BACKEND_WAVE_REPO" "$BACKEND_WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                elif [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
+                    echo "Installing wave for $backend: $WAVE_REPO @ $WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
                         FAILED_BACKENDS+=("$backend")
                         continue
                     fi
                 else
-                    if ! bash backends/setup_wave.sh; then
-                        echo "Warning: Wave install failed (required for $backend)"
+                    echo "Installing wave for $backend (default) -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "" "" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
                         FAILED_BACKENDS+=("$backend")
                         continue
                     fi
                 fi
-                WAVE_INSTALLED=true
+                WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]=true
+            else
+                echo "Wave already installed at $WAVE_INSTALL_DIR, skipping"
             fi
 
             if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
@@ -255,8 +302,8 @@ for backend in "${BACKEND_LIST[@]}"; do
             ;;
 
         wave*)
-            if [[ "$WAVE_INSTALLED" == "true" ]]; then
-                echo "Wave already installed, skipping reinstall for $backend"
+            if [[ -n "${WAVE_INSTALLED_DIRS[wave]+_}" ]]; then
+                echo "Wave already installed at /workspace/wave, skipping reinstall for $backend"
                 SUCCESSFUL_BACKENDS+=("$backend")
                 continue
             fi
@@ -268,17 +315,17 @@ for backend in "${BACKEND_LIST[@]}"; do
             fi
             
             if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
-                if bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH"; then
+                if bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH" "wave"; then
                     SUCCESSFUL_BACKENDS+=("$backend")
-                    WAVE_INSTALLED=true
+                    WAVE_INSTALLED_DIRS[wave]=true
                 else
                     echo "Warning: Failed to install $backend backend"
                     FAILED_BACKENDS+=("$backend")
                 fi
             else
-                if bash backends/setup_wave.sh; then
+                if bash backends/setup_wave.sh "" "" "wave"; then
                     SUCCESSFUL_BACKENDS+=("$backend")
-                    WAVE_INSTALLED=true
+                    WAVE_INSTALLED_DIRS[wave]=true
                 else
                     echo "Warning: Failed to install $backend backend"
                     FAILED_BACKENDS+=("$backend")

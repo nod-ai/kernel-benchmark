@@ -18,7 +18,8 @@ _MACROTILES = [
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
 HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
 INTEGRATE_SCRIPT = f"{HIPBLASLT_DIR}/integrate_wave_kernels.py"
-WAVE_DIR = "/workspace/wave"
+# Per-variant wave directory: setup.sh installs wave for each rocroller backend separately
+WAVE_DIR = os.environ.get("WAVE_DIR_WAVE_4WAVE_ROCROLLER", "/workspace/wave-wave_4wave_rocroller")
 # Compile flags match Wave test test_dbuf_4wave_mxfp_dynamic_preshuffle_b_gemm_asm
 # (preshuffle-B, wave_shape 2×2, reorder_workgroups, dynamic M/N/K, ASM backend).
 BENCH_SCRIPT = f"{WAVE_DIR}/wave_lang/kernel/wave/perf/benchmark_mxfp4_4wave.py"
@@ -43,6 +44,8 @@ def _get_compile_env() -> dict:
     undefined-symbol crashes when torch loads libhipblaslt.so."""
     env = os.environ.copy()
     env["WAVE_CACHE_ON"] = "0"
+    # Ensure subprocess uses this backend's wave installation
+    env["PYTHONPATH"] = f"{WAVE_DIR}:{env.get('PYTHONPATH', '')}"
     ld = env.get("LD_LIBRARY_PATH", "")
     if "/opt/rocm/lib" not in ld:
         env["LD_LIBRARY_PATH"] = f"/opt/rocm/lib:{ld}"

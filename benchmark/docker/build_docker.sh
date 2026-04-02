@@ -13,6 +13,7 @@ WAVE_REPO=""
 WAVE_BRANCH=""
 ROCM_LIBRARIES_REPO=""
 ROCM_LIBRARIES_BRANCH=""
+BACKEND_SPECS_URL=""
 IMAGE_TAG="kernel-bench:latest"
 
 # Parse command line arguments
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --rocm-libraries-branch)
             ROCM_LIBRARIES_BRANCH="$2"
+            shift 2
+            ;;
+        --backend-specs-url)
+            BACKEND_SPECS_URL="$2"
             shift 2
             ;;
         -t)
@@ -106,6 +111,10 @@ fi
 
 if [ -n "$ROCM_LIBRARIES_BRANCH" ]; then
     BUILD_CMD="$BUILD_CMD --build-arg ROCM_LIBRARIES_BRANCH=$ROCM_LIBRARIES_BRANCH"
+fi
+
+if [ -n "$BACKEND_SPECS_URL" ]; then
+    BUILD_CMD="$BUILD_CMD --build-arg BACKEND_SPECS_URL=$BACKEND_SPECS_URL"
 fi
 
 BUILD_CMD="$BUILD_CMD -t $IMAGE_TAG -f docker/Dockerfile ."

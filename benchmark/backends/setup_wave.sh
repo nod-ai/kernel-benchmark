@@ -7,6 +7,7 @@ echo "Installing Wave backend dependencies..."
 
 WAVE_REPO=${1:-""}
 WAVE_BRANCH=${2:-""}
+INSTALL_DIR=${3:-"wave"}  # Directory name under /workspace (e.g., "wave", "wave-wave_4wave_rocroller")
 
 if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
     echo "Installing wave from source..."
@@ -26,14 +27,14 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
     fi
 
     # Install wave from source
-    echo "Cloning wave repository..."
-    if [[ -d "wave" ]]; then
-        echo "Removing existing wave directory..."
-        rm -rf wave
+    echo "Cloning wave repository into $INSTALL_DIR..."
+    if [[ -d "$INSTALL_DIR" ]]; then
+        echo "Removing existing $INSTALL_DIR directory..."
+        rm -rf "$INSTALL_DIR"
     fi
 
-    git clone "https://github.com/$WAVE_REPO.git"
-    cd wave
+    git clone "https://github.com/$WAVE_REPO.git" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
     git checkout "$WAVE_BRANCH"
 
     echo "Installing wave dependencies..."
@@ -161,14 +162,14 @@ else
         echo "Rust is already installed."
     fi
 
-    echo "Cloning wave repository..."
-    if [[ -d "wave" ]]; then
-        echo "Removing existing wave directory..."
-        rm -rf wave
+    echo "Cloning wave repository into $INSTALL_DIR..."
+    if [[ -d "$INSTALL_DIR" ]]; then
+        echo "Removing existing $INSTALL_DIR directory..."
+        rm -rf "$INSTALL_DIR"
     fi
 
-    git clone "https://github.com/iree-org/wave.git"
-    cd wave
+    git clone "https://github.com/iree-org/wave.git" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
     git checkout main
 
     echo "Installing wave dependencies..."

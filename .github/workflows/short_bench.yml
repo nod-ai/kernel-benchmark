@@ -153,6 +153,7 @@ jobs:
             ${WAVE_BRANCH:+--wave-branch $WAVE_BRANCH} \
             ${ROCM_LIBRARIES_REPO:+--rocm-libraries-repo $ROCM_LIBRARIES_REPO} \
             ${ROCM_LIBRARIES_BRANCH:+--rocm-libraries-branch $ROCM_LIBRARIES_BRANCH} \
+            ${{ inputs.backend_specs_url && format('--backend-specs-url {0}', inputs.backend_specs_url) || '' }} \
             -t ${{ env.DOCKER_IMAGE }}
 
       - name: Run Benchmarks

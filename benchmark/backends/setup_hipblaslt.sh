@@ -26,9 +26,15 @@ mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
 # Full recursive clone (rocroller requires submodules)
-echo "Cloning ROCm libraries with rocroller support..."
-git clone --recursive -b "${ROCM_LIBRARIES_BRANCH}" "${ROCM_LIBRARIES_REPO}" rocm-libraries
-cd rocm-libraries/projects/hipblaslt
+# Skip if already cloned (supports multiple backends sharing the same rocm-libraries)
+if [ -d "rocm-libraries" ]; then
+    echo "rocm-libraries already exists, skipping clone (reusing existing build)"
+    cd rocm-libraries/projects/hipblaslt
+else
+    echo "Cloning ROCm libraries with rocroller support..."
+    git clone --recursive -b "${ROCM_LIBRARIES_BRANCH}" "${ROCM_LIBRARIES_REPO}" rocm-libraries
+    cd rocm-libraries/projects/hipblaslt
+fi
 
 # Install Python Requirements for Tensile
 if [ -f "tensilelite/requirements.txt" ]; then
