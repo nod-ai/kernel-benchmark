@@ -1,163 +1,95 @@
-from typing import override, Optional
-import subprocess
-import csv
-import os
-import tempfile
-import threading
-from pathlib import Path
+"""
+8-wave rocroller transposed MXFP4 GEMM benchmark.
 
-from kernel_bench.core.template import KernelBenchmark
-from .hipblaslt_gemm import parse_hipblaslt_us
+Replicates test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_transposed
+from adedespirlet/wave@8wavepingpong:examples/python/7.1_schedule.py.
+
+Transposed MXFP4 GEMM: computes C^T = B * A^T instead of C = A * B^T.
+MFMA left operand ("A" role) = weight B, right operand ("B" role) = activation A.
+Activation A is preshuffled, A&B scales are preshuffled.
+"""
+
+import traceback
+from typing import override
+from pathlib import Path
+import torch
+import warnings
+from torch.testing import assert_close
+
+WAVE_AVAILABLE = False
+try:
+    import wave_lang.kernel.lang as tkl
+    from wave_lang.kernel.lang.global_symbols import (
+        SHARED_ADDRESS_SPACE,
+    )
+    from wave_lang.kernel.wave.compile import WaveCompileOptions, wave_compile
+    from wave_lang.kernel.wave.scheduling.schedule_enums import SchedulingType
+    from wave_lang.kernel.wave.templates import (
+        get_tagged_mxfp4_gemm_preshuffle_scales_and_B,
+    )
+    from wave_lang.kernel.wave.schedules import (
+        get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds,
+    )
+    from wave_lang.kernel.wave.utils.mxfp_utils import (
+        generate_gemm_afp4wfp4_inputs,
+        torchScaledGemmMXFP4,
+        b_preshuffle,
+        e8m0_shuffle,
+    )
+
+    WAVE_AVAILABLE = True
+except Exception as e:
+    warnings.warn(f"Wave backend dependencies not available: {e}")
+
+from kernel_bench.utils.iree_utils import shape_to_iree
+from kernel_bench.core.template import WaveKernelBenchmark, WaveTemplate
 from ..gemm_utils import GemmConfig
 
-_MACROTILES = [
-    (256, 256, 256),
-]
 
-ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
-HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
-INTEGRATE_SCRIPT = f"{HIPBLASLT_DIR}/integrate_wave_kernels.py"
-WAVE_DIR = "/workspace/wave"
-BENCH_SCRIPT = f"{WAVE_DIR}/wave_lang/kernel/wave/perf/benchmark_mxfp4_8wave.py"
+# Block for the transposed 8-wave ping-pong schedule.
+_BLOCK = (256, 192, 256)
 
-_integration_lock = threading.Lock()
-_integration_attempted = False
-_integration_succeeded = False
+# MLIR override file (generated from 7.1_schedule.py reference test)
+_MLIR_OVERRIDE_FILE = Path(__file__).parent / "wave_8wave_transposed.mlir"
 
-
-def _get_hipblaslt_env() -> dict:
-    env = os.environ.copy()
-    env["LD_LIBRARY_PATH"] = (
-        f"{HIPBLASLT_DIR}/build/library:"
-        f"{HIPBLASLT_DIR}/build/rocroller:"
-        f"/opt/rocm/lib:{env.get('LD_LIBRARY_PATH', '')}"
-    )
-    return env
+# Loop unrolling postprocess transform
+_POSTPROCESS_TEMPLATE = """
+module attributes {transform.with_named_sequence} {
+    transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+        %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+        transform.loop.unroll %0 { factor = %%UNROLL_FACTOR%% } : !transform.any_op
+        transform.yield
+    }
+}
+"""
 
 
-def _get_compile_env() -> dict:
-    """Clean env for Wave compilation — no custom hipblaslt to avoid
-    undefined-symbol crashes when torch loads libhipblaslt.so."""
-    env = os.environ.copy()
-    env["WAVE_CACHE_ON"] = "0"
-    ld = env.get("LD_LIBRARY_PATH", "")
-    if "/opt/rocm/lib" not in ld:
-        env["LD_LIBRARY_PATH"] = f"/opt/rocm/lib:{ld}"
-    return env
-
-
-def _try_compile_and_integrate(device_id: int, logger) -> bool:
-    """One-time compile + integrate. Returns True on success."""
-    global _integration_attempted, _integration_succeeded
-
-    with _integration_lock:
-        if _integration_attempted:
-            return _integration_succeeded
-        _integration_attempted = True
-
-    bench_script = Path(BENCH_SCRIPT)
-    integrate_script = Path(INTEGRATE_SCRIPT)
-
-    if not bench_script.exists():
-        logger.info(
-            f"Wave 8-wave perf script not found at {bench_script} "
-            f"(install benchmark_mxfp4_8wave.py into wave or use Wave tree with perf script); "
-            f"skipping compile"
+def _get_8wave_shape_from_block(block):
+    """Choose an 8-wave shape (4x2 or 2x4) from block M/N dims."""
+    m_blk, n_blk = block[0], block[1]
+    if m_blk == 32 and n_blk == 32:
+        raise ValueError(
+            "Cannot satisfy both M and N=32 with an 8-wave shape "
+            "constrained to (4, 2) or (2, 4)."
         )
-        return False
-    if not integrate_script.exists():
-        logger.info(
-            f"integrate_wave_kernels.py not found at {integrate_script} "
-            f"(need rocm-libraries hipBLASLt fork); skipping integration"
-        )
-        return False
-
-    work_dir = Path(tempfile.mkdtemp(prefix="rocroller_8w_"))
-    asm_dir = work_dir / "wave_asm"
-    shapes_csv = work_dir / "wave_shapes.csv"
-
-    with open(shapes_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["M", "N", "K", "MT_M", "MT_N", "MT_K"])
-        for mt in _MACROTILES:
-            writer.writerow([
-                max(mt[0], 512), max(mt[1], 512), max(mt[2], 512),
-                mt[0], mt[1], mt[2],
-            ])
-
-    # Step 1: Compile wave kernel with CLEAN env (no custom hipblaslt)
-    compile_env = _get_compile_env()
-    compile_env["HIP_VISIBLE_DEVICES"] = str(device_id)
-
-    compile_cmd = [
-        "python", "-u", str(bench_script),
-        "--shapes", str(shapes_csv),
-        "--dynamic",
-        "--skip-validate",
-        "--asm-dir", str(asm_dir),
-        "-o", str(work_dir / "wave_compile_results.csv"),
-    ]
-
-    logger.info(f"Compiling 8-wave kernel: {' '.join(compile_cmd)}")
-    try:
-        proc = subprocess.run(
-            compile_cmd,
-            capture_output=True, text=True, timeout=600,
-            cwd=WAVE_DIR, env=compile_env,
-        )
-        if proc.returncode != 0:
-            logger.warning(
-                f"Wave 8-wave compilation failed (rc={proc.returncode}). "
-                f"Using pre-integrated kernels from rocm-libraries fork.\n"
-                f"stderr: {proc.stderr[-4000:]}\nstdout: {proc.stdout[-2000:]}"
-            )
-            return False
-    except Exception as e:
-        logger.warning(f"Wave 8-wave compilation error: {e}. Using pre-integrated kernels.")
-        return False
-
-    if not asm_dir.exists() or not list(asm_dir.glob("*.s")):
-        logger.warning("No assembly files produced. Using pre-integrated kernels.")
-        return False
-
-    # Step 2: Integrate into hipBLASLt with hipblaslt env
-    integrate_env = _get_hipblaslt_env()
-    integrate_env["HIP_VISIBLE_DEVICES"] = str(device_id)
-
-    integrate_cmd = [
-        "python", str(integrate_script),
-        "--asm-dir", str(asm_dir),
-        "--flip-macrotiles",
-        "--build",
-    ]
-
-    logger.info(f"Integrating 8-wave kernels: {' '.join(integrate_cmd)}")
-    try:
-        proc = subprocess.run(
-            integrate_cmd,
-            capture_output=True, text=True, timeout=1800,
-            cwd=HIPBLASLT_DIR, env=integrate_env,
-        )
-        if proc.returncode != 0:
-            logger.warning(
-                f"Integration failed (rc={proc.returncode}). "
-                f"Using pre-integrated kernels.\n"
-                f"stderr: {proc.stderr[-2000:]}"
-            )
-            return False
-    except Exception as e:
-        logger.warning(f"Integration error: {e}. Using pre-integrated kernels.")
-        return False
-
-    logger.info("Wave 8-wave kernel compilation and integration succeeded")
-    _integration_succeeded = True
-    return True
+    if m_blk == 32:
+        return (2, 4)
+    if n_blk == 32:
+        return (4, 2)
+    return (4, 2)
 
 
-class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
+class WaveMxfp4Gemm8WaveRocrollerBenchmark(WaveKernelBenchmark):
     config: GemmConfig
 
+    def __post_init__(self):
+        self.kernel_regex = "gemm"
+        super().__post_init__()
+
     def validate_config(self):
+        if not WAVE_AVAILABLE:
+            return False
+
         config = self.config
         if config.M < 4 or config.N < 4 or config.K < 4:
             return False
@@ -169,82 +101,139 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
             return False
         return True
 
+    def setup_parameters(self):
+        pass
+
     @override
-    def run_bench(self, device, num_iterations=1, timeout=None):
-        if device.startswith("hip://"):
-            device_id = int(device.split("hip://")[1])
-        else:
-            device_id = 0
-
-        _try_compile_and_integrate(device_id, self.logger)
-
-        return self._run_hipblaslt_bench(device_id, num_iterations, timeout)
-
-    def _run_hipblaslt_bench(self, device_id: int, num_iterations: int, timeout: Optional[float]):
+    def load_wave_kernel(self):
         config = self.config
-        cmd = _get_rocroller_hipblaslt_cmd(config, device_id, num_iterations)
+        shape = (config.M, config.N, config.K)
 
-        env = _get_hipblaslt_env()
-        env["HIP_VISIBLE_DEVICES"] = str(device_id)
+        # Transpose shapes: C^T = B * A^T
+        shape_t = (config.N, config.M, config.K)
+        block_t = (_BLOCK[1], _BLOCK[0], _BLOCK[2])
 
-        self.logger.info(f"Running hipblaslt-bench: {' '.join(cmd)}")
+        wave_shape = _get_8wave_shape_from_block(block_t)
+        gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales_and_B(
+            shape_t,
+            block_t,
+            wave_shape=wave_shape,
+            b_address_space=SHARED_ADDRESS_SPACE,
+            output_dtype=tkl.bf16,
+        )
+
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds(
+            use_stagger=True, shape=shape_t, block=block_t
+        )
+
+        # Set UNROLL_FACTOR
+        UNROLL_FACTOR = tkl.sym.UNROLL_FACTOR
+        options.subs[UNROLL_FACTOR] = 2
+
+        # Dynamic symbols
+        dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in dynamic_symbols:
+            if sym in options.subs:
+                del options.subs[sym]
+
+        hyperparams = options.subs
+        return WaveTemplate(
+            launchable=gemm,
+            hyperparams=hyperparams,
+            dynamic_symbols=dynamic_symbols,
+            schedule=schedule,
+        )
+
+    @override
+    def extra_compile_options(self):
+        opts = WaveCompileOptions(
+            canonicalize=True,
+            schedule=SchedulingType.MANUAL,
+            specialize=True,
+            use_buffer_ops=True,
+            minimize_shared_allocs=False,
+            linearize_shared_access=True,
+            wave_runtime=True,
+        )
+
+        # Override MLIR from the reference test
+        if _MLIR_OVERRIDE_FILE.exists():
+            opts.override_mlir = _MLIR_OVERRIDE_FILE.read_text()
+
+        # Postprocess transform for loop unrolling
+        opts.postprocess = _POSTPROCESS_TEMPLATE
+
+        return opts
+
+    @override
+    def validate_numerics(self, device):
+        config = self.config
+        M, N, K = config.M, config.N, config.K
+
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=timeout or 600, env=env,
-            )
-
-            if result.returncode != 0:
-                self.logger.error(
-                    f"hipblaslt-bench failed (rc={result.returncode})\n"
-                    f"stderr: {result.stderr[-4000:]}\nstdout: {result.stdout[-2000:]}"
-                )
-                return self.get_bench_result(0.0, False)
-
-            mean_time_us = parse_hipblaslt_us(result.stdout)
-            if mean_time_us is None or mean_time_us <= 0:
-                self.logger.error(
-                    f"Could not parse timing from hipblaslt-bench output:\n{result.stdout[-1000:]}"
-                )
-                return self.get_bench_result(0.0, False)
-
-            self.logger.info(
-                f"hipblaslt-bench result: {mean_time_us:.2f} us "
-                f"for M={config.M} N={config.N} K={config.K}"
-            )
-            return self.get_bench_result(mean_time_us, True)
-
-        except subprocess.TimeoutExpired:
-            self.logger.error("hipblaslt-bench timed out")
-            return self.get_bench_result(0.0, False)
+            x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs((M, N, K))
         except Exception as e:
-            self.logger.error(f"Error running hipblaslt-bench: {e}")
-            return self.get_bench_result(0.0, False)
+            self.logger.warn(
+                f"Failed to generate inputs for {self.config.get_name()}",
+                "".join(traceback.format_exception(e)),
+            )
+            return True
 
+        try:
+            torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)
 
-def _get_rocroller_hipblaslt_cmd(
-    config: GemmConfig, device_id: int = 0, num_iterations: int = 3,
-):
-    return [
-        f"{HIPBLASLT_DIR}/build/clients/hipblaslt-bench",
-        "--api_method", "c",
-        "-m", str(config.M),
-        "-n", str(config.N),
-        "-k", str(config.K),
-        "--alpha", "1",
-        "--beta", "0",
-        "--transA", "T",
-        "--transB", "N",
-        "--batch_count", "1",
-        "--scaleA", "1001",
-        "--scaleB", "1001",
-        "--a_type", "f4_r",
-        "--b_type", "f4_r",
-        "--c_type", "bf16_r",
-        "--d_type", "bf16_r",
-        "--compute_type", "f32_r",
-        "--cold_iters", "2",
-        "--iters", str(num_iterations),
-        "--swizzleA",
-        "--device", str(device_id),
-    ]
+            kernel = self.load_wave_kernel()
+            compile_options = self.get_compile_options(kernel)
+            wave_gemm = wave_compile(
+                compile_options, kernel.launchable, kernel.schedule
+            )
+
+            # Transposed roles: B is left ("A" role), A is right ("B" role)
+            w_t = w.T.contiguous().cuda()  # [N, K/2]
+            x_ps = b_preshuffle(x).cuda()  # [M, K/2] preshuffled
+            w_scales_ps = e8m0_shuffle(w_scales).cuda()  # [N, K/32]
+            x_scales_ps = e8m0_shuffle(x_scales).cuda()  # [M, K/32]
+
+            out = torch.zeros(M, N, dtype=torch.bfloat16, device="cuda")
+            wave_gemm(w_t, w_scales_ps, x_ps, x_scales_ps, out)
+
+            assert_close(
+                torch_out, out.cpu(), check_dtype=False, check_device=False
+            )
+            return True
+
+        except AssertionError as e:
+            self.logger.error(
+                f"Numerical accuracy failed for {self.config.get_name()} "
+                f"on backend {self.backend}",
+                f"{e}",
+            )
+            return False
+        except Exception as e:
+            self.logger.warn(
+                f"Could not validate numerics for {self.config.get_name()} "
+                f"on backend {self.backend}",
+                "".join(traceback.format_exception(e)),
+            )
+            return True
+
+    @override
+    def get_runtime_args(self):
+        config = self.config
+
+        # Transposed: B[N, K/2] is left operand, A[M, K/2] is right operand
+        # Scales are preshuffled
+        inp_b       = shape_to_iree((config.N, config.K // 2),  "i8",  self.device_ctx)
+        inp_b_scale = shape_to_iree((config.N, config.K // 32), "i8",  self.device_ctx)
+        inp_a       = shape_to_iree((config.M, config.K // 2),  "i8",  self.device_ctx)
+        inp_a_scale = shape_to_iree((config.M, config.K // 32), "i8",  self.device_ctx)
+        out_c       = shape_to_iree((config.M, config.N),       "bf16", self.device_ctx)
+
+        return [
+            f"--input={inp_b}",
+            f"--input={inp_b_scale}",
+            f"--input={inp_a}",
+            f"--input={inp_a_scale}",
+            f"--input={out_c}",
+            "--function=isolated_benchmark",
+        ]
