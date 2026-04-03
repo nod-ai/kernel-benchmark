@@ -101,7 +101,7 @@ def _get_backend_classes():
             if param.startswith("wave_") and param not in backends:
                 base_cls = backends.get("wave")
                 if base_cls is not None:
-                    backends[param] = type(param, (base_cls,), {})
+                    backends[param] = base_cls
                     warnings.warn(
                         f"Auto-registered unknown wave backend '{param}' as WaveGemmBenchmark variant"
                     )
