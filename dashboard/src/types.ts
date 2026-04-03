@@ -19,6 +19,10 @@ export interface BackendSpec {
   commitHash?: string; // specific commit, or use latest if not specified
   isDefault?: boolean; // whether this is the default spec for this backend
   parentSpecId?: string; // if this is a variant, reference to the parent spec (inherits repo/branch)
+  buildMeta?: {
+    rocmLibrariesRepo?: string; // e.g., "ROCm/rocm-libraries" — overrides default for this spec
+    rocmLibrariesBranch?: string; // e.g., "develop"
+  };
 }
 
 // Runtime configuration for kernels

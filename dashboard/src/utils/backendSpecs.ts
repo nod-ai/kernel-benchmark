@@ -73,6 +73,10 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     remoteRepository: "panditsa/wave",
     branch: "4waveasm-256x192x256",
     parentSpecId: "wave-default",
+    buildMeta: {
+      rocmLibrariesRepo: "ROCm/rocm-libraries",
+      rocmLibrariesBranch: "develop",
+    },
   },
   {
     id: "wave-4wave-rocroller",
