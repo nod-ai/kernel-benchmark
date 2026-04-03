@@ -83,8 +83,8 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     name: "Wave 4-wave (baseline)",
     backend: "wave",
     backendParam: "wave_4wave_rocroller",
-    remoteRepository: "panditsa/wave",
-    branch: "reduce_reg_pres",
+    remoteRepository: "iree-org/wave",
+    branch: "main",
     parentSpecId: "wave-default",
   },
   {
@@ -92,8 +92,8 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     name: "Wave 4-wave (rocroller)",
     backend: "wave",
     backendParam: "wave_4wave_rocroller",
-    remoteRepository: "panditsa/wave",
-    branch: "reduce_reg_pres",
+    remoteRepository: "suryajasper/wave",
+    branch: "4waveasm-256x192x256",
     parentSpecId: "wave-default",
   },
   {
