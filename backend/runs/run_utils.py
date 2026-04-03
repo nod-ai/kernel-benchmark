@@ -47,7 +47,7 @@ def parse_run_from_gh(gh_run: GhWorkflowRun) -> WorkflowRunState:
         numSteps=10,
         steps=steps,
         machine=machine,  # Required field
-        completed=gh_run.completed,
+        completed=False,
         hasArtifact=False,
         triggerId=None,  # Will be linked when trigger is found
     )
@@ -86,7 +86,7 @@ def find_incomplete_runs(run_type: Optional[RunType] = None) -> List[WorkflowRun
     incomplete_query = " or ".join(
         [f"status eq '{status}'" for status in RUN_INCOMPLETE_STATUSES]
     )
-    artifactless_query = f"conclusion eq 'success' and hasArtifact eq false"
+    artifactless_query = f"conclusion eq 'success' and hasArtifact eq false and completed eq false"
 
     if run_type:
         run_type_query = f"type eq '{run_type.name}'"

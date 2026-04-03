@@ -52,6 +52,10 @@ class RunManager:
                 completed_runs.append(run_id)
 
         for completed_run_id in completed_runs:
+            try:
+                WorkflowRunDb.update_by_id(completed_run_id, {"completed": True})
+            except Exception as e:
+                logger.warning(f"Failed to mark run_{completed_run_id} as completed: {e}")
             self.remove_run(completed_run_id)
         
         # Reconcile unlinked triggers (backup path when webhooks are missed)

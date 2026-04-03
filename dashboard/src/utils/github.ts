@@ -9,6 +9,7 @@ import type {
   BenchmarkRuntimeConfig,
   KernelSelection,
   RunWithTrigger,
+  BackendSpec,
 } from "../types";
 
 const API_URL = import.meta.env.VITE_BACKEND_SERVER_URL;
@@ -425,6 +426,7 @@ export interface TrackerData {
   dashboardName?: string;
   tags: string[];
   backends: string[];
+  backendSpecs?: BackendSpec[];
   machine: string;
   schedule: ScheduleData;
   branch: string;
