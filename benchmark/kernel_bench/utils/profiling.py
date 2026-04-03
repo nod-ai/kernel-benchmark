@@ -7,7 +7,7 @@ mapping kernel identifiers to their dump directories.
 
 Output structure:
     profiling/
-    ├── manifest.json         # {dump_key: {backend, kernelName, dumpDir}}
+    ├── manifest.json         # {backend: {kernelName: dumpDir, ...}, ...}
     └── dumps/
         ├── wave__kernel_1/   # rocprof dump for kernel_1 on wave
         │   ├── *_kernel_stats.csv
@@ -15,7 +15,11 @@ Output structure:
         └── iree__kernel_2/
             └── ...
 
-The dump key format is "{backend}__{kernel_name}" to ensure uniqueness across backends.
+Manifest is keyed by backend, then by kernel name (matching OpConfig.get_name()
+and the benchmark result ``name`` field), so the frontend can look up profiling
+data with ``manifest[backend]?.[name]``.
+
+The physical dump directory name is "{backend}__{kernel_name}".
 """
 
 import json
@@ -41,10 +45,10 @@ def collect_profiling_data(
         output_dir: Destination for the organized profiling data.
 
     Returns:
-        Manifest dict mapping dump keys to their metadata.
+        Manifest dict: ``{backend: {kernel_name: dump_dir_name, ...}, ...}``
     """
     logger = get_logger()
-    manifest: dict[str, dict] = {}
+    manifest: dict[str, dict[str, str]] = {}
 
     dumps_output_dir = output_dir / "dumps"
     dumps_output_dir.mkdir(parents=True, exist_ok=True)
@@ -82,16 +86,13 @@ def collect_profiling_data(
                 logger.error(f"Failed to copy profiling dump {dump_key}: {e}")
                 continue
 
-            manifest[dump_key] = {
-                "backend": backend,
-                "kernelName": kernel_name,
-                "dumpDir": dump_key,
-            }
+            manifest.setdefault(backend, {})[kernel_name] = dump_key
             logger.debug(f"Collected profiling data for {dump_key}")
 
     _write_manifest(output_dir, manifest)
+    total = sum(len(kernels) for kernels in manifest.values())
     logger.info(
-        f"Collected profiling data for {len(manifest)} kernel(s) into {output_dir}"
+        f"Collected profiling data for {total} kernel(s) into {output_dir}"
     )
     return manifest
 

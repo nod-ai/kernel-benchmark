@@ -214,8 +214,9 @@ def _extract_and_upload_profiling(
                     f"Failed to upload profiling dump {dump_dir.name}: {e}"
                 )
 
+    total_kernels = sum(len(kernels) for kernels in manifest.values())
     logger.info(
-        f"Uploaded profiling data for {uploaded_count}/{len(manifest)} kernel(s) "
+        f"Uploaded profiling data for {uploaded_count}/{total_kernels} kernel(s) "
         f"under {blob_name}_profiling"
     )
     return manifest
