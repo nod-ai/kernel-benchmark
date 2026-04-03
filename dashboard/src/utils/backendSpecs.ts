@@ -66,6 +66,15 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     parentSpecId: "wave-default",
   },
   {
+    id: "wave-4wave-baseline",
+    name: "Wave 4-wave (baseline)",
+    backend: "wave",
+    backendParam: "wave_4wave_baseline",
+    remoteRepository: "panditsa/wave",
+    branch: "4waveasm-256x192x256",
+    parentSpecId: "wave-default",
+  },
+  {
     id: "wave-4wave-rocroller",
     name: "Wave 4-wave (rocroller)",
     backend: "wave",
