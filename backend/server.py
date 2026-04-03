@@ -74,6 +74,15 @@ def _generate_default_backend_specs(backends: list[str]) -> list[dict]:
             "branch": "4waveasm-256x192x256",
             "isDefault": False,
         },
+        "wave_4wave_baseline": {
+            "id": "wave-4wave-baseline",
+            "name": "Wave 4-wave (baseline)",
+            "backend": "wave",
+            "backendParam": "wave_4wave_baseline",
+            "remoteRepository": "panditsa/wave",
+            "branch": "4waveasm-256x192x256",
+            "isDefault": False,
+        },
         "wave_8wave_rocroller": {
             "id": "wave-8wave-rocroller",
             "name": "Wave 8-wave (rocroller)",

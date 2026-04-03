@@ -237,6 +237,72 @@ for backend in "${BACKEND_LIST[@]}"; do
     echo "-----------------------------------"
     
     case "$backend" in
+        wave_4wave_baseline)
+            echo "$backend requires Wave (wave_lang) + hipblaslt from ROCm/rocm-libraries @ develop (aiter baseline, no rocroller)"
+
+            # Determine per-backend wave repo/branch from specs file or defaults
+            BACKEND_WAVE_REPO=$(get_spec_field_for_backend "$backend" "remoteRepository")
+            BACKEND_WAVE_BRANCH=$(get_spec_field_for_backend "$backend" "branch")
+
+            if [[ -z "$BACKEND_WAVE_REPO" ]]; then
+                BACKEND_WAVE_REPO="$WAVE_REPO"
+            fi
+            if [[ -z "$BACKEND_WAVE_BRANCH" ]]; then
+                BACKEND_WAVE_BRANCH="$WAVE_BRANCH"
+            fi
+
+            # Install wave into a per-backend directory
+            WAVE_INSTALL_DIR="wave-${backend}"
+            if [[ -z "${WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]+_}" ]]; then
+                if [[ ! -f "backends/setup_wave.sh" ]]; then
+                    echo "Error: setup_wave.sh not found in backends/"
+                    FAILED_BACKENDS+=("$backend")
+                    continue
+                fi
+                if [[ -n "$BACKEND_WAVE_REPO" && -n "$BACKEND_WAVE_BRANCH" ]]; then
+                    echo "Installing wave for $backend: $BACKEND_WAVE_REPO @ $BACKEND_WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$BACKEND_WAVE_REPO" "$BACKEND_WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                elif [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
+                    echo "Installing wave for $backend: $WAVE_REPO @ $WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                else
+                    echo "Installing wave for $backend (default) -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "" "" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                fi
+                WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]=true
+            else
+                echo "Wave already installed at $WAVE_INSTALL_DIR, skipping"
+            fi
+
+            if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
+                echo "Error: setup_hipblaslt.sh not found in backends/"
+                FAILED_BACKENDS+=("$backend")
+                continue
+            fi
+
+            # Use ROCm/rocm-libraries @ develop (standard hipBLASLt, no rocroller)
+            if ROCM_LIBRARIES_REPO="https://github.com/ROCm/rocm-libraries.git" \
+               ROCM_LIBRARIES_BRANCH="develop" \
+               bash backends/setup_hipblaslt.sh; then
+                SUCCESSFUL_BACKENDS+=("$backend")
+            else
+                echo "Warning: Failed to install $backend backend"
+                FAILED_BACKENDS+=("$backend")
+            fi
+            ;;
+
         wave_4wave_rocroller|wave_8wave_rocroller)
             echo "$backend requires Wave (wave_lang) + hipblaslt with rocroller support"
 

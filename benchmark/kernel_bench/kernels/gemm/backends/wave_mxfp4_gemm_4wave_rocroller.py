@@ -7,12 +7,19 @@ import threading
 from pathlib import Path
 
 from kernel_bench.core.template import KernelBenchmark
+from kernel_bench.tuning.hyperparam import IntegerBounds
 from .hipblaslt_gemm import parse_hipblaslt_us
 from ..gemm_utils import GemmConfig
 
 _MACROTILES = [
+    (256, 224, 256),
     (256, 192, 256),
-    (64, 64, 256),
+    (192, 224, 256),
+    (256, 160, 256),
+    (224, 224, 256),
+    (192, 192, 256),
+    (224, 192, 256),
+    (224, 160, 256),
 ]
 
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
@@ -162,6 +169,22 @@ def _try_compile_and_integrate(device_id: int, logger) -> bool:
 
 class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
     config: GemmConfig
+
+    def setup_parameters(self):
+        # Record the macrotile used for this problem shape so it appears in tuningConfig.
+        mt = self._select_macrotile()
+        if mt is not None:
+            self.add_param("BLOCK_M", IntegerBounds(mt[0], mt[0]), initial_value=mt[0])
+            self.add_param("BLOCK_N", IntegerBounds(mt[1], mt[1]), initial_value=mt[1])
+            self.add_param("BLOCK_K", IntegerBounds(mt[2], mt[2]), initial_value=mt[2])
+
+    def _select_macrotile(self):
+        """Pick the first macrotile whose (MT_M, MT_N) divides the problem, else first entry."""
+        config = self.config
+        for mt in _MACROTILES:
+            if config.M % mt[0] == 0 and config.N % mt[1] == 0:
+                return mt
+        return _MACROTILES[0]
 
     def validate_config(self):
         config = self.config
