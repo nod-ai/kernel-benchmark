@@ -80,6 +80,35 @@ export default function Dashboard() {
         setIsTrackerDashboard(false);
         const runIdOrBlobName = location.pathname.split('/').pop();
         setSelectedRunBlobName(runIdOrBlobName || null);
+
+        // Fetch run data to get backendSpecs
+        if (runIdOrBlobName) {
+          try {
+            const response = await fetch(
+              `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs?page=1&page_size=1000&completed_only=true`
+            );
+            const data = await response.json();
+            const runs = data.runs || [];
+
+            // Find matching run by blobName or ID
+            const item = runs.find((item: any) =>
+              item.run?.blobName === runIdOrBlobName || item.run?._id === runIdOrBlobName
+            );
+
+            // Extract backendSpecs from trigger metadata
+            if (item?.trigger?.metadata?.backendSpecs) {
+              const specsMap: Record<string, any> = {};
+              item.trigger.metadata.backendSpecs.forEach((spec: any) => {
+                const key = spec.backendParam || spec.backend;
+                specsMap[key] = spec;
+              });
+              setRunBackendSpecs(specsMap);
+            }
+          } catch (error) {
+            console.error("Failed to fetch run data:", error);
+          }
+        }
+
         setIsLoading(false);
       }
     };
