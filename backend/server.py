@@ -70,7 +70,7 @@ def _generate_default_backend_specs(backends: list[str]) -> list[dict]:
             "name": "Wave 4-wave (rocroller)",
             "backend": "wave",
             "backendParam": "wave_4wave_rocroller",
-            "remoteRepository": "suryajasper/wave",
+            "remoteRepository": "panditsa/wave",
             "branch": "4waveasm-256x192x256",
             "isDefault": False,
         },
