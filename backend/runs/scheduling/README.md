@@ -421,6 +421,33 @@ if upcoming:
 
 ## Testing Considerations
 
+### Local Development with `--handlers`
+
+The event loop supports selective handler execution to avoid conflicts with the production event loop. Both instances share the same Azure Table Storage and GitHub API, so running all handlers locally alongside production will cause duplicate dispatches and wasted resources.
+
+```bash
+# Safe: only run_manager (idempotent — status updates + trigger reconciliation)
+python -m backend.event_loop --handlers run_manager
+
+# Single iteration for debugging
+python -m backend.event_loop --handlers run_manager --once
+
+# Test scheduling logic only (stop production loop first!)
+python -m backend.event_loop --handlers tracker_scheduler run_scheduler --once
+```
+
+**Handler idempotency:**
+
+| Handler | Idempotent? | Why |
+|---|---|---|
+| `run_manager` | Yes | Status writes overwrite with same data; `link_trigger_to_run` is a no-op if already linked; `_ensure_workflow_run_exists` checks before creating |
+| `tracker_scheduler` | No | Creates a new `RunTrigger` with a fresh UUID each invocation; in-memory dedup (`_last_triggered`) is per-process |
+| `run_scheduler` | Race condition | Two processes can query the same `QUEUED` trigger before either flips it to `DISPATCHED`, causing a double-dispatch |
+
+**Rule of thumb:** Use `--handlers run_manager` for local testing. Only enable `tracker_scheduler` or `run_scheduler` locally after stopping them on production.
+
+### General Testing Guidelines
+
 When testing the scheduler:
 
 1. **Time-based tests:** Use fixed datetimes instead of `datetime.now()` to avoid flaky tests

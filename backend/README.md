@@ -10,7 +10,12 @@ The backend consists of three main services that work together:
 Flask-based REST API (port 3000) that serves the dashboard, manages kernel configurations, and triggers workflow runs.
 
 ### 2. **Event Loop** (`event_loop.py`)
-Background service that monitors ongoing benchmark runs, provides webhook redundancy, and downloads artifacts.
+Background service composed of three independent handlers:
+- **`run_manager`**: Monitors ongoing runs, updates status, downloads artifacts, reconciles unlinked triggers (idempotent)
+- **`tracker_scheduler`**: Triggers scheduled tracker runs when due (NOT idempotent)
+- **`run_scheduler`**: Dispatches queued triggers to GitHub Actions when machines are available (NOT idempotent)
+
+Supports `--handlers` and `--once` flags for selective execution during local development (see [Local Development](#local-development)).
 
 ### 3. **Webhook Listener** (`listener.py`)
 Pyramid-based service (port 2500) that receives GitHub webhook events for real-time run tracking and PR monitoring.
@@ -232,7 +237,7 @@ All three services must run concurrently:
 # Terminal 1: API Server (port 3000)
 python -m backend.server
 
-# Terminal 2: Event Loop (10s polling)
+# Terminal 2: Event Loop (all handlers, 10s polling)
 python -m backend.event_loop
 
 # Terminal 3: Webhook Listener (port 2500)
@@ -261,6 +266,36 @@ directory=/path/to/backend
 autostart=true
 autorestart=true
 ```
+
+### Local Development
+
+The API server (`server.py`) can safely run locally alongside production since there is no overlap. The event loop requires care because all three handlers share the same Azure Table Storage and GitHub API as the production server. Running the full event loop locally while the production loop is active can cause duplicate workflow dispatches, duplicate trigger linking, and wasted GPU time.
+
+Use the `--handlers` and `--once` flags to run only the handlers you need:
+
+```bash
+# Safe: only run tracking/reconciliation (idempotent)
+python -m backend.event_loop --handlers run_manager
+
+# Single iteration then exit (great for debugging)
+python -m backend.event_loop --handlers run_manager --once
+
+# Test scheduling logic (will create triggers — stop production loop first)
+python -m backend.event_loop --handlers tracker_scheduler --once
+
+# See all options
+python -m backend.event_loop --help
+```
+
+**Handler idempotency reference:**
+
+| Handler | Idempotent? | Safe alongside production? |
+|---|---|---|
+| `run_manager` | Yes — status writes and trigger linking are idempotent | Yes |
+| `tracker_scheduler` | No — creates a new trigger (fresh UUID) each time | No — causes duplicate scheduled runs |
+| `run_scheduler` | Race condition — two processes can dispatch the same queued trigger | Mostly, but can double-dispatch |
+
+**Rule of thumb:** Use `--handlers run_manager` for local testing. Only enable `tracker_scheduler` or `run_scheduler` locally if you have stopped them on the production server first.
 
 ## Configuration
 

@@ -25,7 +25,7 @@ Chart.register(
   Legend,
   LineController,
   LineElement,
-  zoomPlugin
+  zoomPlugin,
 );
 
 interface MachineRooflineStats {
@@ -114,7 +114,7 @@ export default function RooflinePlot({
 
     const xMin = Math.max(
       0.01,
-      Math.min(...kernels.map((k) => k.arithmeticIntensity))
+      Math.min(...kernels.map((k) => k.arithmeticIntensity)),
     );
     const xMax = Math.max(...kernels.map((k) => k.arithmeticIntensity)) * 2;
 
@@ -123,7 +123,7 @@ export default function RooflinePlot({
     const peakCompute = ROOFLINE_BY_MACHINE[machine].compute;
     const xRoofline = Array.from(
       { length: 100 },
-      (_, i) => xMin * Math.pow(xMax / xMin, i / 99)
+      (_, i) => xMin * Math.pow(xMax / xMin, i / 99),
     );
 
     const yMemory = xRoofline.map((x) => x * peakMemoryBandwidth);
@@ -162,6 +162,7 @@ export default function RooflinePlot({
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         scales: {
           x: {
             type: "logarithmic",
@@ -224,5 +225,9 @@ export default function RooflinePlot({
     });
   }, [kernels, selectedKernel]);
 
-  return <canvas ref={canvasRef} className="w-full h-[500px]" />;
+  return (
+    <div className="relative w-full h-[600px]">
+      <canvas ref={canvasRef} />
+    </div>
+  );
 }

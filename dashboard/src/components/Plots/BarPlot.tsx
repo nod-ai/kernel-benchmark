@@ -19,7 +19,7 @@ Chart.register(
   LinearScale,
   Tooltip,
   Legend,
-  Title
+  Title,
 );
 
 interface BarComparisonPlotProps {
@@ -40,7 +40,7 @@ export function BarComparisonPlot({ kernels, metric }: BarComparisonPlotProps) {
     for (const kernel of kernels) {
       if (!backendGroups[kernel.backend]) backendGroups[kernel.backend] = [];
       backendGroups[kernel.backend].push(
-        metric === "tflops" ? kernel.tflops : kernel.meanMicroseconds
+        metric === "tflops" ? kernel.tflops : kernel.meanMicroseconds,
       );
     }
 
@@ -59,13 +59,14 @@ export function BarComparisonPlot({ kernels, metric }: BarComparisonPlotProps) {
             label: metric === "tflops" ? "Avg TFLOPs" : "Avg Mean Time (μs)",
             data,
             backgroundColor: labels.map((label) =>
-              getBackendColor(label).string()
+              getBackendColor(label).string(),
             ),
           },
         ],
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         scales: {
           y: {
             title: {
@@ -84,5 +85,9 @@ export function BarComparisonPlot({ kernels, metric }: BarComparisonPlotProps) {
     });
   }, [kernels, metric]);
 
-  return <canvas ref={canvasRef} className="w-full h-[500px]" />;
+  return (
+    <div className="relative w-full h-[400px]">
+      <canvas ref={canvasRef} />
+    </div>
+  );
 }
