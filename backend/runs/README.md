@@ -287,6 +287,15 @@ manager = RunManager()
 manager.update_runs()  # Poll GitHub and download artifacts
 ```
 
+To test run monitoring locally without conflicting with the production event loop, use the `--handlers` flag to run only the idempotent `run_manager` handler:
+
+```bash
+python -m backend.event_loop --handlers run_manager        # continuous
+python -m backend.event_loop --handlers run_manager --once  # single iteration
+```
+
+See [backend/README.md](../README.md#local-development) for the full handler idempotency reference.
+
 ### Querying Runs
 
 ```python

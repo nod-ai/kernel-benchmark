@@ -155,6 +155,7 @@ export function BellComparisonPlot({
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         scales: {
           x: {
             type: "linear",
@@ -232,5 +233,9 @@ export function BellComparisonPlot({
     };
   }, [kernels, metric]);
 
-  return <canvas ref={canvasRef} className="w-full h-[500px]" />;
+  return (
+    <div className="relative w-full h-[500px]">
+      <canvas ref={canvasRef} />
+    </div>
+  );
 }

@@ -104,7 +104,7 @@ class BenchmarkArtifactParser(RunArtifactParser):
             stats = BenchmarkRunStats(
                 _id=str(uuid4()),
                 runId=run_id,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=run.timestamp,
                 machine=run.machine,
                 performance=performance,
                 trackerId=tracker_id,

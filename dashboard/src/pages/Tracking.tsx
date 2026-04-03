@@ -30,6 +30,7 @@ import {
   ExternalLink,
   GitBranch,
 } from "lucide-react";
+import DayTimeline from "../components/DayTimeline";
 
 interface Tracker {
   id: string;
@@ -239,6 +240,20 @@ export default function Tracking() {
               Add Tracker
             </button>
           </div>
+
+          {/* Day Timeline */}
+          {!isLoading && trackers.length > 0 && (
+            <DayTimeline
+              trackers={trackers.map((t) => ({
+                id: t.id,
+                name: t.name,
+                machine: t.machine,
+                isActive: t.isActive,
+                schedule: t.schedule,
+                tags: t.tags,
+              }))}
+            />
+          )}
 
           {/* Trackers List */}
           {!isLoading && trackers.length === 0 ? (

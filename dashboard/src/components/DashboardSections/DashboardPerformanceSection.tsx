@@ -31,38 +31,54 @@ export default function DashboardPerformanceSection({
   const [graphType, setGraphType] = useState<string>("bar");
   const [comparisonMetric, setComparisonMetric] = useState<string>("tflops");
   const [percentile, setPercentile] = useState<number>(90);
-  const [trackerBackendSpecs, setTrackerBackendSpecs] = useState<Record<string, BackendSpec>>({});
+  const [trackerBackendSpecs, setTrackerBackendSpecs] = useState<
+    Record<string, BackendSpec>
+  >({});
 
   const kernelDims = useKernelDims();
   // Use the filter hook
-  const { filters, availableOptions, filteredKernels, updateFilter, filterConfigs } =
-    useKernelFilters(kernels);
-  
+  const {
+    filters,
+    availableOptions,
+    filteredKernels,
+    updateFilter,
+    filterConfigs,
+  } = useKernelFilters(kernels);
+
   // Determine which backend specs to use: prop (from run) or tracker (fetched)
   const latestBackendSpecs = propBackendSpecs || trackerBackendSpecs;
-  
+
   // Fetch backend specs from tracker if trackerId is provided
   useEffect(() => {
     const fetchTrackerBackendSpecs = async () => {
       if (!trackerId) return;
-      
+
       try {
         const response = await fetch(
-          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance`
+          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance`,
         );
         const timeline = await response.json();
-        
+
         if (timeline.length > 0) {
           // Find the latest point that has backendSpecs, fallback to last point
-          const latestPoint = [...timeline].reverse().find(point => 
-            point.backendSpecs && Array.isArray(point.backendSpecs) && point.backendSpecs.length > 0
-          ) || timeline[timeline.length - 1];
-          
+          const latestPoint =
+            [...timeline]
+              .reverse()
+              .find(
+                (point) =>
+                  point.backendSpecs &&
+                  Array.isArray(point.backendSpecs) &&
+                  point.backendSpecs.length > 0,
+              ) || timeline[timeline.length - 1];
+
           console.log("Timeline points:", timeline.length);
           console.log("Latest point with specs:", latestPoint);
           console.log("Latest point backendSpecs:", latestPoint.backendSpecs);
-          
-          if (latestPoint.backendSpecs && Array.isArray(latestPoint.backendSpecs)) {
+
+          if (
+            latestPoint.backendSpecs &&
+            Array.isArray(latestPoint.backendSpecs)
+          ) {
             // Convert array to Record<backend, spec>
             // Use backendParam as key if available (e.g., wave_4wave), otherwise use backend
             const specsMap: Record<string, BackendSpec> = {};
@@ -77,13 +93,13 @@ export default function DashboardPerformanceSection({
         console.error("Failed to fetch tracker backend specs:", error);
       }
     };
-    
+
     fetchTrackerBackendSpecs();
   }, [trackerId]);
 
   const selectedKernel = useMemo(
     () => kernels.find((k) => k.id === selectedKernelId),
-    [kernels, selectedKernelId]
+    [kernels, selectedKernelId],
   );
 
   const sameShapeKernels = useMemo(() => {
@@ -91,16 +107,15 @@ export default function DashboardPerformanceSection({
     const dims = getDimensionsForKernelType(
       selectedKernel.kernelType,
       kernelDims,
-      selectedKernel.shape
+      selectedKernel.shape,
     );
     return kernels.filter((k) => {
       if (k.kernelType !== selectedKernel.kernelType) return false;
       if (k.dtype !== selectedKernel.dtype) return false;
-      return dims.every(
-        (dimName) =>
-          (dimName === "dtype"
-            ? k.dtype === selectedKernel.dtype
-            : k.shape[dimName] === selectedKernel.shape[dimName])
+      return dims.every((dimName) =>
+        dimName === "dtype"
+          ? k.dtype === selectedKernel.dtype
+          : k.shape[dimName] === selectedKernel.shape[dimName],
       );
     });
   }, [kernels, selectedKernel, kernelDims]);
@@ -109,9 +124,9 @@ export default function DashboardPerformanceSection({
     () =>
       filterKernelsByPercentile(
         getCommonKernels(filteredKernels, kernelDims),
-        Math.min(Math.max(percentile / 100, 0), 1)
+        Math.min(Math.max(percentile / 100, 0), 1),
       ),
-    [filteredKernels, percentile, kernelDims]
+    [filteredKernels, percentile, kernelDims],
   );
 
   if (isLoading) {
@@ -156,18 +171,15 @@ export default function DashboardPerformanceSection({
               <TrendingUp className="w-12 h-12 mb-3 text-gray-300" />
               <p className="text-lg font-medium">No Common Kernels Found</p>
               <p className="text-sm text-center">
-                Try adjusting your filters to see results on the roofline
-                plot.
+                Try adjusting your filters to see results on the roofline plot.
               </p>
             </div>
           ) : (
-            <div className="flex justify-center">
-              <RooflinePlot
-                kernels={commonKernels}
-                setSelected={setSelectedKernelId}
-                selectedKernel={selectedKernel}
-              />
-            </div>
+            <RooflinePlot
+              kernels={commonKernels}
+              setSelected={setSelectedKernelId}
+              selectedKernel={selectedKernel}
+            />
           )}
         </div>
 
@@ -209,9 +221,7 @@ export default function DashboardPerformanceSection({
                   <select
                     className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
                     value={comparisonMetric}
-                    onChange={(e) =>
-                      setComparisonMetric(e.currentTarget.value)
-                    }
+                    onChange={(e) => setComparisonMetric(e.currentTarget.value)}
                   >
                     <option value="tflops">TFLOPs</option>
                     <option value="runtime">Runtime (μs)</option>
@@ -261,24 +271,16 @@ export default function DashboardPerformanceSection({
                 Adjust your filters to see performance comparison data.
               </p>
             </div>
+          ) : graphType === "bar" || selectedKernelId ? (
+            <BarComparisonPlot
+              kernels={selectedKernelId ? sameShapeKernels : commonKernels}
+              metric={comparisonMetric}
+            />
           ) : (
-            <div className="flex justify-center">
-              {graphType === "bar" || selectedKernelId ? (
-                <BarComparisonPlot
-                  kernels={
-                    selectedKernelId ? sameShapeKernels : commonKernels
-                  }
-                  metric={comparisonMetric}
-                />
-              ) : (
-                <BellComparisonPlot
-                  kernels={
-                    selectedKernelId ? sameShapeKernels : commonKernels
-                  }
-                  metric={comparisonMetric}
-                />
-              )}
-            </div>
+            <BellComparisonPlot
+              kernels={selectedKernelId ? sameShapeKernels : commonKernels}
+              metric={comparisonMetric}
+            />
           )}
         </div>
       </div>
@@ -293,7 +295,7 @@ export default function DashboardPerformanceSection({
             dimensions={getDimensionsForKernelType(
               selectedKernel.kernelType,
               kernelDims,
-              selectedKernel.shape
+              selectedKernel.shape,
             )}
           />
         </div>
