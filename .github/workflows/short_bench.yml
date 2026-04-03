@@ -103,30 +103,25 @@ jobs:
                   print(s['branch'])
                   break
           " 2>/dev/null || echo "")
-          # Extract rocm-libraries repo/branch for rocroller variants (backend id or params)
+          # Extract rocm-libraries repo/branch: prefer any spec with buildMeta set,
+          # fall back to rocroller variants for backward compatibility
           ROCM_LIBRARIES_REPO=$(echo "$SPECS" | python3 -c "
           import json, sys
           specs = json.load(sys.stdin)
           for s in specs:
-              b = str(s.get('backend', '')).lower()
-              bp = str(s.get('backendParam', '')).lower()
-              if 'rocroller' in b or 'rocroller' in bp:
-                  meta = s.get('buildMeta', {})
-                  if meta.get('rocmLibrariesRepo'):
-                      print(meta['rocmLibrariesRepo'])
-                      break
+              meta = s.get('buildMeta', {})
+              if meta.get('rocmLibrariesRepo'):
+                  print(meta['rocmLibrariesRepo'])
+                  break
           " 2>/dev/null || echo "")
           ROCM_LIBRARIES_BRANCH=$(echo "$SPECS" | python3 -c "
           import json, sys
           specs = json.load(sys.stdin)
           for s in specs:
-              b = str(s.get('backend', '')).lower()
-              bp = str(s.get('backendParam', '')).lower()
-              if 'rocroller' in b or 'rocroller' in bp:
-                  meta = s.get('buildMeta', {})
-                  if meta.get('rocmLibrariesBranch'):
-                      print(meta['rocmLibrariesBranch'])
-                      break
+              meta = s.get('buildMeta', {})
+              if meta.get('rocmLibrariesBranch'):
+                  print(meta['rocmLibrariesBranch'])
+                  break
           " 2>/dev/null || echo "")
           echo "wave_repo=$WAVE_REPO" >> $GITHUB_OUTPUT
           echo "wave_branch=$WAVE_BRANCH" >> $GITHUB_OUTPUT

@@ -1,4 +1,5 @@
 from typing import List, Tuple
+import sys
 import warnings
 
 # Import config from new location
@@ -84,6 +85,28 @@ def _get_backend_classes():
         backends["wave_8wave_rocroller"] = WaveMxfp4Gemm8WaveRocrollerBenchmark
     except Exception as e:
         warnings.warn(f"Wave MXFP4 8-wave rocroller GEMM backend not available: {e}")
+
+    # Auto-register any unknown wave_* backend params passed via --backend CLI arg.
+    # This allows custom wave specs (e.g. wave_sanket) created in the dashboard to
+    # run without requiring a hardcoded entry here.
+    try:
+        requested = []
+        for i, arg in enumerate(sys.argv):
+            if arg in ("--backend", "--backends") and i + 1 < len(sys.argv):
+                requested = sys.argv[i + 1].split(",")
+            elif arg.startswith("--backend=") or arg.startswith("--backends="):
+                requested = arg.split("=", 1)[1].split(",")
+        for param in requested:
+            param = param.strip()
+            if param.startswith("wave_") and param not in backends:
+                base_cls = backends.get("wave")
+                if base_cls is not None:
+                    backends[param] = type(param, (base_cls,), {})
+                    warnings.warn(
+                        f"Auto-registered unknown wave backend '{param}' as WaveGemmBenchmark variant"
+                    )
+    except Exception as e:
+        warnings.warn(f"Could not auto-register custom wave backends: {e}")
 
     return backends
 
