@@ -44,47 +44,14 @@ export const DEFAULT_BACKEND_SPECS: Record<string, BackendSpec> = {
   },
 };
 
-// Example variant backend specs (can be extended by users)
-// When parentSpecId is specified, remoteRepository and branch are inherited from parent
 export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
-  {
-    id: "triton-fav3",
-    name: "Triton FAV3",
-    backend: "triton",
-    parentSpecId: "triton-default", // Inherits remoteRepository and branch from triton-default
-    branch: "fav3", // Override branch (uses triton-lang/triton @ fav3)
-  },
-  {
-    id: "wave-experimental",
-    name: "Wave Experimental",
-    backend: "wave",
-    parentSpecId: "wave-default", // Inherits remoteRepository and branch from wave-default
-    branch: "experimental", // Override just the branch
-  },
-  // Example: Variant that inherits everything and only changes the commit
-  {
-    id: "triton-pinned",
-    name: "Triton (Pinned v2.1)",
-    backend: "triton",
-    parentSpecId: "triton-default", // Inherits repo and branch
-    commitHash: "abc123def456", // Use a specific commit
-  },
-  {
-    id: "wave-4wave-reduce-reg-pres",
-    name: "Wave 4-wave (reduce_reg_pres)",
-    backend: "wave",
-    backendParam: "wave_4wave",
-    remoteRepository: "panditsa/wave",
-    branch: "reduce_reg_pres",
-    parentSpecId: "wave-default",
-  },
   {
     id: "wave-4wave-baseline",
     name: "Wave 4-wave (baseline)",
     backend: "wave",
-    backendParam: "wave_4wave_rocroller",
-    remoteRepository: "iree-org/wave",
-    branch: "main",
+    backendParam: "wave_4wave_baseline",
+    remoteRepository: "panditsa/wave",
+    branch: "4waveasm-256x192x256",
     parentSpecId: "wave-default",
   },
   {
