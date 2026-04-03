@@ -370,7 +370,16 @@ def delete_run(run_id):
                 logger.info(f"Deleted blob artifact: {run.blobName}")
             except Exception as blob_error:
                 logger.warning(f"Failed to delete blob {run.blobName}: {blob_error}")
-                # Continue with database deletion even if blob deletion fails
+
+            # Clean up profiling blobs
+            try:
+                directory_client.rm(f"{run.blobName}_profiling_manifest")
+            except Exception:
+                pass
+            try:
+                directory_client.rmdir(f"{run.blobName}_profiling")
+            except Exception:
+                pass
 
         # Delete the corresponding trigger if it exists
         if run.triggerId:
@@ -402,6 +411,43 @@ def get_artifact_by_run_id(blob_name):
         return jsonify(new_kernels)
     else:
         return "Failed to gather artifact data", 500
+
+
+@app.route("/profiling/<run_id>/manifest")
+def get_profiling_manifest(run_id):
+    """Return the rocprof profiling manifest for a benchmark run."""
+    try:
+        all_stats = BenchmarkRunStatsDb.query(f"runId eq '{run_id}'")
+        if not all_stats:
+            return jsonify({"error": "No stats found for this run"}), 404
+
+        manifest = all_stats[0].profilingManifest
+        if not manifest:
+            return jsonify({"error": "No profiling data for this run"}), 404
+
+        return jsonify(manifest)
+    except Exception as e:
+        logger.error(f"Error fetching profiling manifest for run {run_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/profiling/<blob_name>/dump/<dump_key>")
+def get_profiling_dump(blob_name, dump_key):
+    """Return the file listing and contents of a single kernel's rocprof dump."""
+    try:
+        profiling_blob_path = f"{blob_name}_profiling/{dump_key}"
+        files = directory_client.ls_files(profiling_blob_path, recursive=True)
+        if not files:
+            return jsonify({"error": "Profiling dump not found"}), 404
+
+        return jsonify({
+            "dumpKey": dump_key,
+            "blobPath": profiling_blob_path,
+            "files": files,
+        })
+    except Exception as e:
+        logger.error(f"Error fetching profiling dump {dump_key}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/workflow/pr/trigger", methods=["POST"])

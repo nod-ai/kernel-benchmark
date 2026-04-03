@@ -75,6 +75,7 @@ class BenchmarkRunStats:
     trackerId: Optional[str] = None  # Tracker._id for scheduled runs
     trackerName: Optional[str] = None
     backendSpecs: Optional[list[dict[str, Any]]] = None  # Backend specifications used in this run
+    profilingManifest: Optional[dict[str, Any]] = None  # Maps dump keys to rocprof dump info
 
 
 @dataclass

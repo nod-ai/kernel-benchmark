@@ -8,6 +8,7 @@ on:
         description: Which machine to run benchmarks on
         options:
           - mi325
+          - mi350
           - mi355
         default: mi325
       selected_backend:

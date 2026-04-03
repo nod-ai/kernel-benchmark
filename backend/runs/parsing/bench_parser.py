@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 import traceback
-from typing import Dict, List, override
+from typing import Any, Dict, List, Optional, override
 from uuid import uuid4
 
 import pandas as pd
@@ -19,6 +19,8 @@ from .artifact_parsing import RunArtifactParser
 
 logger = logging.getLogger(__name__)
 
+PROFILING_DIR_NAME = "profiling"
+
 
 class BenchmarkArtifactParser(RunArtifactParser):
     @override
@@ -29,6 +31,8 @@ class BenchmarkArtifactParser(RunArtifactParser):
         Supports both formats:
         - New format: single merged_kernels.json file
         - Old format: nested directory structure with multiple JSON files
+
+        The profiling/ subdirectory is excluded from benchmark JSON scanning.
         """
         local_path = Path(local_path)
 
@@ -99,6 +103,9 @@ class BenchmarkArtifactParser(RunArtifactParser):
             except Exception as e:
                 logger.warning(f"Failed to check trigger for tracker info: {e}")
 
+        # Extract and upload profiling data (rocprof dumps)
+        profiling_manifest = _extract_and_upload_profiling(local_path, blob_name)
+
         # Save performance statistics
         try:
             stats = BenchmarkRunStats(
@@ -110,6 +117,7 @@ class BenchmarkArtifactParser(RunArtifactParser):
                 trackerId=tracker_id,
                 trackerName=tracker_name,
                 backendSpecs=backend_specs,
+                profilingManifest=profiling_manifest,
             )
             BenchmarkRunStatsDb.upsert(stats)
             logger.info(f"Saved performance statistics for run {run_id}")
@@ -122,19 +130,125 @@ class BenchmarkArtifactParser(RunArtifactParser):
             return False
 
 
+# ---------------------------------------------------------------------------
+# Profiling data extraction
+# ---------------------------------------------------------------------------
+
+def _find_profiling_dir(local_path: Path) -> Optional[Path]:
+    """
+    Locate the profiling directory inside the extracted artifact.
+
+    The artifact is extracted to local_path/benchmark-results/. The profiling
+    data lives at benchmark-results/profiling/ (placed there by run_bench.sh).
+    """
+    candidates = [
+        local_path / "benchmark-results" / PROFILING_DIR_NAME,
+        local_path / PROFILING_DIR_NAME,
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    # Recursive fallback: look for a profiling dir with a manifest anywhere
+    for manifest in local_path.rglob(f"{PROFILING_DIR_NAME}/manifest.json"):
+        return manifest.parent
+    return None
+
+
+def _extract_and_upload_profiling(
+    local_path: Path, blob_name: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Find profiling data in the extracted artifact, upload each kernel's
+    dump directory as a separate blob, and return the manifest.
+
+    Blob layout:
+        {blob_name}_profiling_manifest   -> manifest JSON file
+        {blob_name}_profiling/{dump_key} -> individual kernel dump dirs
+    """
+    profiling_dir = _find_profiling_dir(local_path)
+    if not profiling_dir:
+        logger.debug("No profiling directory found in artifact")
+        return None
+
+    manifest_path = profiling_dir / "manifest.json"
+    if not manifest_path.exists():
+        logger.debug("No profiling manifest.json found")
+        return None
+
+    try:
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to read profiling manifest: {e}")
+        return None
+
+    if not manifest:
+        logger.debug("Profiling manifest is empty")
+        return None
+
+    dir_client = get_blob_client()
+
+    # Upload the manifest itself as a blob for direct retrieval
+    try:
+        dir_client.upload_file(
+            str(manifest_path), f"{blob_name}_profiling_manifest"
+        )
+        logger.debug(f"Uploaded profiling manifest for {blob_name}")
+    except Exception as e:
+        logger.warning(f"Failed to upload profiling manifest blob: {e}")
+
+    # Upload each kernel's dump directory as a separate blob directory
+    dumps_dir = profiling_dir / "dumps"
+    uploaded_count = 0
+    if dumps_dir.is_dir():
+        for dump_dir in sorted(dumps_dir.iterdir()):
+            if not dump_dir.is_dir():
+                continue
+            try:
+                dir_client.upload_dir(
+                    str(dump_dir), f"{blob_name}_profiling"
+                )
+                uploaded_count += 1
+            except Exception as e:
+                logger.warning(
+                    f"Failed to upload profiling dump {dump_dir.name}: {e}"
+                )
+
+    logger.info(
+        f"Uploaded profiling data for {uploaded_count}/{len(manifest)} kernel(s) "
+        f"under {blob_name}_profiling"
+    )
+    return manifest
+
+
+# ---------------------------------------------------------------------------
+# Benchmark JSON parsing
+# ---------------------------------------------------------------------------
+
 def parse_bench_kernels_from_path(artifact_path: Path) -> List[Dict]:
     results = []
     logger.debug(f"Artifact path: {artifact_path}")
 
     for result_json in get_nested_files(artifact_path, "json"):
-        result_data = load_bench_result_json(result_json)
-        results.extend(result_data)
+        if _is_profiling_path(result_json):
+            continue
+        try:
+            result_data = load_bench_result_json(result_json)
+            results.extend(result_data)
+        except Exception as e:
+            logger.debug(f"Skipping non-benchmark JSON {result_json}: {e}")
+            continue
 
     if len(results) == 0:
         raise RuntimeError(
             f"Could not find kernels in local artifact directory {artifact_path}"
         )
     return results
+
+
+def _is_profiling_path(path: Path) -> bool:
+    """Return True if the path is inside a profiling directory."""
+    return PROFILING_DIR_NAME in path.parts
 
 
 def load_bench_result_json(json_path: os.PathLike) -> List[Dict]:
