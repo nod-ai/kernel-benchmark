@@ -149,6 +149,7 @@ jobs:
             --kernel-types ${{ inputs.selected_kernel }} \
             --problems-url ${{ inputs.problems_url }} \
             ${{ inputs.tuned_config_url && format('--tuned-configs-url {0}', inputs.tuned_config_url) || '' }} \
+            ${{ inputs.backend_specs_url && format('--backend-specs-url {0}', inputs.backend_specs_url) || '' }} \
             -o $(pwd)/benchmark_results
 
       - name: Upload benchmark results

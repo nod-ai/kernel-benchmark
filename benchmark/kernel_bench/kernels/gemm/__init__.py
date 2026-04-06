@@ -1,4 +1,6 @@
 from typing import List, Tuple
+import os
+import re
 import sys
 import warnings
 
@@ -87,9 +89,17 @@ def _get_backend_classes():
         warnings.warn(f"Wave MXFP4 8-wave rocroller GEMM backend not available: {e}")
 
     # Auto-register any unknown wave_* backend params passed via --backend CLI arg.
-    # This allows custom wave specs (e.g. wave_sanket) created in the dashboard to
-    # run without requiring a hardcoded entry here.
+    # The benchmark class is read from env var WAVE_BENCHMARK_CLASS_<PARAM> (set by
+    # run_bench.sh from the backend spec's benchmarkClass field). Falls back to
+    # WaveGemmBenchmark. Uses a direct alias (not a new type) to stay picklable.
     try:
+        _class_map = {
+            "WaveGemmBenchmark": backends.get("wave"),
+            "WaveMxfp4Gemm4WaveBenchmark": backends.get("wave_4wave"),
+            "WaveMxfp4Gemm8WaveBenchmark": backends.get("wave_8wave"),
+            "WaveMxfp4Gemm4WaveRocrollerBenchmark": backends.get("wave_4wave_rocroller"),
+            "WaveMxfp4Gemm4WaveBaselineBenchmark": backends.get("wave_4wave_baseline"),
+        }
         requested = []
         for i, arg in enumerate(sys.argv):
             if arg in ("--backend", "--backends") and i + 1 < len(sys.argv):
@@ -99,12 +109,12 @@ def _get_backend_classes():
         for param in requested:
             param = param.strip()
             if param.startswith("wave_") and param not in backends:
-                base_cls = backends.get("wave")
-                if base_cls is not None:
-                    backends[param] = type(param, (base_cls,), {})
-                    warnings.warn(
-                        f"Auto-registered unknown wave backend '{param}' as WaveGemmBenchmark variant"
-                    )
+                env_key = "WAVE_BENCHMARK_CLASS_" + re.sub(r"[^A-Z0-9]", "_", param.upper())
+                class_name = os.environ.get(env_key, "WaveGemmBenchmark")
+                cls = _class_map.get(class_name) or backends.get("wave")
+                if cls is not None:
+                    backends[param] = cls
+                    warnings.warn(f"Auto-registered unknown wave backend '{param}' as {class_name}")
     except Exception as e:
         warnings.warn(f"Could not auto-register custom wave backends: {e}")
 

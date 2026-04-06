@@ -260,8 +260,17 @@ function CustomBackendSpecModal({ backend, onSave, onCancel }: CustomBackendSpec
   const [backendParam, setBackendParam] = useState("");
   const [rocmLibrariesRepo, setRocmLibrariesRepo] = useState("");
   const [rocmLibrariesBranch, setRocmLibrariesBranch] = useState("");
+  const [benchmarkClass, setBenchmarkClass] = useState("WaveGemmBenchmark");
 
   const isWave = backend === "wave";
+
+  const WAVE_BENCHMARK_CLASSES = [
+    { value: "WaveGemmBenchmark", label: "WaveGemmBenchmark (f16, compile + run)" },
+    { value: "WaveMxfp4Gemm4WaveBenchmark", label: "WaveMxfp4Gemm4WaveBenchmark (mxfp4, 4-wave)" },
+    { value: "WaveMxfp4Gemm8WaveBenchmark", label: "WaveMxfp4Gemm8WaveBenchmark (mxfp4, 8-wave)" },
+    { value: "WaveMxfp4Gemm4WaveRocrollerBenchmark", label: "WaveMxfp4Gemm4WaveRocrollerBenchmark (rocroller, hipblaslt-bench)" },
+    { value: "WaveMxfp4Gemm4WaveBaselineBenchmark", label: "WaveMxfp4Gemm4WaveBaselineBenchmark (baseline, hipblaslt-bench)" },
+  ];
 
   const handleSave = () => {
     if (!repository.trim()) {
@@ -279,11 +288,14 @@ function CustomBackendSpecModal({ backend, onSave, onCancel }: CustomBackendSpec
       isDefault: false,
     };
 
-    if (isWave && (rocmLibrariesRepo.trim() || rocmLibrariesBranch.trim())) {
-      customSpec.buildMeta = {
-        rocmLibrariesRepo: rocmLibrariesRepo.trim() || undefined,
-        rocmLibrariesBranch: rocmLibrariesBranch.trim() || undefined,
-      };
+    if (isWave) {
+      customSpec.benchmarkClass = benchmarkClass;
+      if (rocmLibrariesRepo.trim() || rocmLibrariesBranch.trim()) {
+        customSpec.buildMeta = {
+          rocmLibrariesRepo: rocmLibrariesRepo.trim() || undefined,
+          rocmLibrariesBranch: rocmLibrariesBranch.trim() || undefined,
+        };
+      }
     }
 
     onSave(customSpec);
@@ -358,6 +370,26 @@ function CustomBackendSpecModal({ backend, onSave, onCancel }: CustomBackendSpec
           {isWave && (
             <div className="border-t border-gray-200 pt-4 space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Wave Configuration
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Benchmark Class
+                </label>
+                <select
+                  value={benchmarkClass}
+                  onChange={(e) => setBenchmarkClass(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none text-sm"
+                >
+                  {WAVE_BENCHMARK_CLASSES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Which Python benchmark class to run for this spec
+                </p>
+              </div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide pt-2">
                 ROCm Libraries (optional)
               </p>
               <div>

@@ -12,6 +12,7 @@ BACKENDS="all"
 KERNEL_TYPES="all"
 PROBLEMS_URL=""
 TUNED_CONFIGS_URL=""
+BACKEND_SPECS_URL=""
 OUTPUT_DIR=""
 
 # Parse command line arguments
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --tuned-configs-url)
             TUNED_CONFIGS_URL="$2"
+            shift 2
+            ;;
+        --backend-specs-url)
+            BACKEND_SPECS_URL="$2"
             shift 2
             ;;
         -o)
@@ -111,6 +116,24 @@ else
     TUNED_ARG=""
 fi
 
+# Build env vars for benchmark class overrides from backend specs
+BENCH_CLASS_ENV_ARGS=""
+if [ -n "$BACKEND_SPECS_URL" ]; then
+    SPECS=$(curl -sL "$BACKEND_SPECS_URL")
+    while IFS= read -r line; do
+        BENCH_CLASS_ENV_ARGS="$BENCH_CLASS_ENV_ARGS -e $line"
+    done < <(echo "$SPECS" | python3 -c "
+import json, sys, re
+specs = json.load(sys.stdin)
+for s in specs:
+    cls = s.get('benchmarkClass', '')
+    param = s.get('backendParam', '') or s.get('backend', '')
+    if cls and param:
+        key = 'WAVE_BENCHMARK_CLASS_' + re.sub(r'[^A-Z0-9]', '_', param.upper())
+        print(f'{key}={cls}')
+" 2>/dev/null)
+fi
+
 # Execute the docker command directly using a here-document
 docker run --rm \
     --device=/dev/kfd \
@@ -120,6 +143,7 @@ docker run --rm \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     -e WAVE_CACHE_ON=0 \
+    $BENCH_CLASS_ENV_ARGS \
     -v "$OUTPUT_DIR:/data" \
     -w /workspace \
     "$IMAGE" \
