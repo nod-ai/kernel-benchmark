@@ -188,6 +188,9 @@ export default function KernelView({
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                     TFLOP/s
                   </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Macrotile
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -252,6 +255,11 @@ export default function KernelView({
                         }`}
                       >
                         {k.tflops.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500 font-mono">
+                        {k.tuningConfig?.BLOCK_M != null
+                          ? `${k.tuningConfig.BLOCK_M}×${k.tuningConfig.BLOCK_N}×${k.tuningConfig.BLOCK_K}`
+                          : "—"}
                       </td>
                     </tr>
                   );

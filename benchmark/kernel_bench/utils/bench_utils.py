@@ -31,6 +31,7 @@ class BenchmarkResult:
     arithmetic_intensity: float
     tflops: float
     ok: bool
+    error_msg: Optional[str] = None
 
     def __eq__(self, other):
         if isinstance(other, BenchmarkResult):

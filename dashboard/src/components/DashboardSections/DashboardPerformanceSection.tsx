@@ -3,7 +3,7 @@ import { BarComparisonPlot } from "../Plots/BarPlot";
 import { BellComparisonPlot } from "../Plots/BellPlot";
 import { DashboardFilterControls } from "../FilterControls";
 import { useMemo, useState, useEffect } from "react";
-import { BarChart3, Filter, Settings, TrendingUp } from "lucide-react";
+import { AlertTriangle, BarChart3, Filter, Settings, TrendingUp } from "lucide-react";
 import type { Kernel, BackendSpec } from "../../types";
 import KernelView from "../Kernels/KernelView";
 import {
@@ -137,6 +137,7 @@ export default function DashboardPerformanceSection({
           latestBackendSpecs={latestBackendSpecs}
           isTrackerDashboard={!!trackerId}
           filterConfigs={filterConfigs}
+          kernels={kernels}
         />
       </div>
 
@@ -297,6 +298,64 @@ export default function DashboardPerformanceSection({
           />
         </div>
       )}
+
+      <FailurePanel kernels={kernels} />
+    </div>
+  );
+}
+
+function FailurePanel({ kernels }: { kernels: Kernel[] }) {
+  const failedKernels = useMemo(
+    () => kernels.filter((k) => !k.ok),
+    [kernels]
+  );
+
+  if (failedKernels.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-red-200 p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <AlertTriangle className="w-5 h-5 text-red-500" />
+        <h2 className="text-lg font-semibold text-gray-800">
+          Failed Kernels
+          <span className="ml-2 text-sm font-normal text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+            {failedKernels.length}
+          </span>
+        </h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-red-50 border-b border-red-200">
+              <th className="px-4 py-2 text-left font-semibold text-gray-700">Backend</th>
+              <th className="px-4 py-2 text-left font-semibold text-gray-700">Shape</th>
+              <th className="px-4 py-2 text-left font-semibold text-gray-700">Macrotile</th>
+              <th className="px-4 py-2 text-left font-semibold text-gray-700">Error</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-red-100">
+            {failedKernels.map((k) => {
+              const macrotile =
+                k.tuningConfig?.BLOCK_M != null
+                  ? `${k.tuningConfig.BLOCK_M}×${k.tuningConfig.BLOCK_N}×${k.tuningConfig.BLOCK_K}`
+                  : "—";
+              const shapeParts = Object.entries(k.shape)
+                .map(([dim, val]) => `${dim}=${val}`)
+                .join(", ");
+              return (
+                <tr key={k.id} className="hover:bg-red-50">
+                  <td className="px-4 py-2 font-mono text-xs text-gray-700">{k.backend}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-600">{shapeParts}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-600">{macrotile}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-red-700 max-w-md truncate" title={k.errorMsg}>
+                    {k.errorMsg ?? "Unknown error"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

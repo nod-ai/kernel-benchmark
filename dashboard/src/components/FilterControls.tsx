@@ -465,6 +465,7 @@ interface DashboardFilterControlsProps {
   latestBackendSpecs?: Record<string, any>; // Backend specs from latest run indexed by backend name
   isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
   filterConfigs: FilterDefinition[];
+  kernels?: import("../types").Kernel[];
 }
 
 export function DashboardFilterControls({
@@ -474,12 +475,13 @@ export function DashboardFilterControls({
   latestBackendSpecs,
   isTrackerDashboard = false,
   filterConfigs: filterDefinitions,
+  kernels = [],
 }: DashboardFilterControlsProps) {
   // Build filter configurations dynamically (filter by condition, then map to UI config)
   const filterConfigs: FilterConfig[] = filterDefinitions
     .filter(
       (config: FilterDefinition) =>
-        !config.condition || config.condition(filters)
+        !config.condition || config.condition(filters, kernels)
     )
     .map((config: FilterDefinition) => {
     // Map filter keys to available options keys
@@ -503,6 +505,9 @@ export function DashboardFilterControls({
         break;
       case "variants":
         options = availableOptions.variants;
+        break;
+      case "macrotiles":
+        options = availableOptions.macrotiles;
         break;
       default:
         options = [];

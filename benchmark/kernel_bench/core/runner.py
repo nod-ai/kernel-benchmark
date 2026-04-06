@@ -112,7 +112,15 @@ class BenchmarkRunner:
 
     def _load_benches(self):
         """Create benchmark instances for all configurations."""
-        benches = [self._create_benchmark(tag, config) for tag, config in self.configs]
+        from kernel_bench.core.base import BENCHMARKS
+        bench_cls = BENCHMARKS.get(self.kernel_type, {}).get(self.backend)
+        expanded = []
+        for tag, config in self.configs:
+            if bench_cls is not None:
+                expanded.extend(bench_cls.expand_configs(tag, config))
+            else:
+                expanded.append((tag, config))
+        benches = [self._create_benchmark(tag, config) for tag, config in expanded]
         self._benches = [bench for bench in benches if bench]
         if len(self._benches) != len(self.configs):
             self.logger.info(
