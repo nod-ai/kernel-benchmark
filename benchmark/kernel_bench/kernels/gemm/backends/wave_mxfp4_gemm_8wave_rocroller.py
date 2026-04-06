@@ -227,13 +227,16 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
         env = _get_hipblaslt_env()
         env["HIP_VISIBLE_DEVICES"] = str(device_id)
 
-        kernel_source = "wave" if _integration_succeeded else "aiter"
-
         self.logger.info(f"Running hipblaslt-bench: {' '.join(cmd)}")
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True,
                 timeout=timeout or 600, env=env,
+            )
+
+            # Determine kernel source from output; fall back to integration flag
+            kernel_source = _parse_kernel_source(result.stdout, result.stderr) or (
+                "wave" if _integration_succeeded else "aiter"
             )
 
             if result.returncode != 0:
@@ -252,8 +255,7 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
 
             self.logger.info(
                 f"hipblaslt-bench result: {mean_time_us:.2f} us "
-                f"for M={config.M} N={config.N} K={config.K}\n"
-                f"stdout:\n{result.stdout}"
+                f"for M={config.M} N={config.N} K={config.K} (source: {kernel_source})"
             )
             return self.get_bench_result(mean_time_us, True, kernel_source=kernel_source)
 
@@ -263,6 +265,34 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
         except Exception as e:
             self.logger.error(f"Error running hipblaslt-bench: {e}")
             return self.get_bench_result(0.0, False, error_msg=str(e), kernel_source=kernel_source)
+
+
+def _parse_kernel_source(stdout: str, stderr: str) -> str | None:
+    """
+    Determine kernel source from hipblaslt-bench output.
+
+    Primary: parse '[KERNEL_SOURCE] <source>' from stderr.
+    Fallback: infer from 'Loading kernel from cache: <symbol>' in stdout.
+    """
+    for line in stderr.splitlines():
+        s = line.strip()
+        if s.startswith("[KERNEL_SOURCE]"):
+            parts = s.split()
+            if len(parts) >= 2:
+                src = parts[1].lower()
+                if src in ("wave", "aiter", "rocroller"):
+                    return src
+    # Fallback: symbol name in stdout contains backend identifier
+    for line in stdout.splitlines():
+        s = line.strip()
+        if s.startswith("Loading kernel from cache:"):
+            symbol = s.split(":", 1)[1].strip()
+            if "aiter" in symbol:
+                return "aiter"
+            if "rocroller" in symbol.lower():
+                return "rocroller"
+            return "wave"
+    return None
 
 
 def _get_rocroller_hipblaslt_cmd(
@@ -289,6 +319,5 @@ def _get_rocroller_hipblaslt_cmd(
         "--cold_iters", "2",
         "--iters", str(num_iterations),
         "--swizzleA",
-        "--print_kernel_info",
         "--device", str(device_id),
     ]
