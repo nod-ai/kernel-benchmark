@@ -45,7 +45,8 @@ export interface Kernel {
   tflops: number;
   shape: Record<string, any>;
   tuningConfig: Record<string, any> | undefined | null;
-  ok: string;
+  ok: boolean;
+  errorMsg?: string;
 }
 
 export interface KernelConfig {
