@@ -13,6 +13,35 @@ from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 
 
+def _get_macrotile_key(kernel: Dict) -> str | None:
+    """Extract macrotile string (e.g. '256x192x256') from kernel's tuningConfig."""
+    tc = kernel.get("tuningConfig")
+    if not tc:
+        return None
+    bm = tc.get("BLOCK_M")
+    bn = tc.get("BLOCK_N")
+    bk = tc.get("BLOCK_K")
+    if bm is None or bn is None or bk is None:
+        return None
+    return f"{bm}x{bn}x{bk}"
+
+
+def _compute_stats_for_list(kernel_list: List[Dict]) -> Dict[str, Any]:
+    tflops_values = [k["tflops"] for k in kernel_list]
+    runtime_values = [k["meanMicroseconds"] for k in kernel_list]
+    return {
+        "geoMean": {
+            "tflops": calculate_geometric_mean(tflops_values),
+            "runtimeUs": calculate_geometric_mean(runtime_values),
+        },
+        "average": {
+            "tflops": calculate_arithmetic_mean(tflops_values),
+            "runtimeUs": calculate_arithmetic_mean(runtime_values),
+        },
+        "numKernels": len(kernel_list),
+    }
+
+
 def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
     """
     Compute performance statistics for a list of kernels.
@@ -21,6 +50,7 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
     - Geometric mean of tflops and runtime
     - Arithmetic average of tflops and runtime
     - Count of valid kernels
+    - Per-macrotile breakdown (byMacrotile key)
 
     Args:
         kernels: List of kernel dictionaries with performance data
@@ -33,13 +63,19 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
                     "backend": {
                         "geoMean": {"tflops": float, "runtimeUs": float},
                         "average": {"tflops": float, "runtimeUs": float},
-                        "numKernels": int
+                        "numKernels": int,
+                        "byMacrotile": {
+                            "256x192x256": {
+                                "geoMean": {...}, "average": {...}, "numKernels": int
+                            },
+                            ...
+                        }
                     }
                 }
             }
         }
     """
-    # Group kernels by machine → kernel_type → backend
+    # Group kernels by machine → kernel_type → backend → macrotile
     grouped = {}
 
     for kernel in kernels:
@@ -59,9 +95,16 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
         if kernel_type not in grouped[machine]:
             grouped[machine][kernel_type] = {}
         if backend not in grouped[machine][kernel_type]:
-            grouped[machine][kernel_type][backend] = []
+            grouped[machine][kernel_type][backend] = {"_all": [], "byMacrotile": {}}
 
-        grouped[machine][kernel_type][backend].append(kernel)
+        grouped[machine][kernel_type][backend]["_all"].append(kernel)
+
+        macrotile = _get_macrotile_key(kernel)
+        if macrotile:
+            by_mt = grouped[machine][kernel_type][backend]["byMacrotile"]
+            if macrotile not in by_mt:
+                by_mt[macrotile] = []
+            by_mt[macrotile].append(kernel)
 
     # Calculate statistics for each group
     stats = {}
@@ -72,21 +115,14 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
         for kernel_type, backends in kernel_types.items():
             stats[machine][kernel_type] = {}
 
-            for backend, kernel_list in backends.items():
-                tflops_values = [k["tflops"] for k in kernel_list]
-                runtime_values = [k["meanMicroseconds"] for k in kernel_list]
-
-                stats[machine][kernel_type][backend] = {
-                    "geoMean": {
-                        "tflops": calculate_geometric_mean(tflops_values),
-                        "runtimeUs": calculate_geometric_mean(runtime_values),
-                    },
-                    "average": {
-                        "tflops": calculate_arithmetic_mean(tflops_values),
-                        "runtimeUs": calculate_arithmetic_mean(runtime_values),
-                    },
-                    "numKernels": len(kernel_list),
+            for backend, data in backends.items():
+                kernel_list = data["_all"]
+                backend_stats = _compute_stats_for_list(kernel_list)
+                backend_stats["byMacrotile"] = {
+                    mt: _compute_stats_for_list(mt_kernels)
+                    for mt, mt_kernels in data["byMacrotile"].items()
                 }
+                stats[machine][kernel_type][backend] = backend_stats
 
     return stats
 

@@ -227,6 +227,8 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
         env = _get_hipblaslt_env()
         env["HIP_VISIBLE_DEVICES"] = str(device_id)
 
+        kernel_source = "wave" if _integration_succeeded else "aiter"
+
         self.logger.info(f"Running hipblaslt-bench: {' '.join(cmd)}")
         try:
             result = subprocess.run(
@@ -240,26 +242,27 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
                     f"hipblaslt-bench failed (rc={result.returncode})\n"
                     f"stderr: {result.stderr[-4000:]}\nstdout: {result.stdout[-2000:]}"
                 )
-                return self.get_bench_result(0.0, False, error_msg=err)
+                return self.get_bench_result(0.0, False, error_msg=err, kernel_source=kernel_source)
 
             mean_time_us = parse_hipblaslt_us(result.stdout)
             if mean_time_us is None or mean_time_us <= 0:
                 err = "Could not parse timing from hipblaslt-bench output"
                 self.logger.error(f"{err}:\n{result.stdout[-1000:]}")
-                return self.get_bench_result(0.0, False, error_msg=err)
+                return self.get_bench_result(0.0, False, error_msg=err, kernel_source=kernel_source)
 
             self.logger.info(
                 f"hipblaslt-bench result: {mean_time_us:.2f} us "
-                f"for M={config.M} N={config.N} K={config.K}"
+                f"for M={config.M} N={config.N} K={config.K}\n"
+                f"stdout:\n{result.stdout}"
             )
-            return self.get_bench_result(mean_time_us, True)
+            return self.get_bench_result(mean_time_us, True, kernel_source=kernel_source)
 
         except subprocess.TimeoutExpired:
             self.logger.error("hipblaslt-bench timed out")
-            return self.get_bench_result(0.0, False, error_msg="Timeout")
+            return self.get_bench_result(0.0, False, error_msg="Timeout", kernel_source=kernel_source)
         except Exception as e:
             self.logger.error(f"Error running hipblaslt-bench: {e}")
-            return self.get_bench_result(0.0, False, error_msg=str(e))
+            return self.get_bench_result(0.0, False, error_msg=str(e), kernel_source=kernel_source)
 
 
 def _get_rocroller_hipblaslt_cmd(
@@ -286,5 +289,6 @@ def _get_rocroller_hipblaslt_cmd(
         "--cold_iters", "2",
         "--iters", str(num_iterations),
         "--swizzleA",
+        "--print_kernel_info",
         "--device", str(device_id),
     ]

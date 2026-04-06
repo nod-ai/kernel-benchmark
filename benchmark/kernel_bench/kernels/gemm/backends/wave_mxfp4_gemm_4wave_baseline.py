@@ -136,14 +136,14 @@ class WaveMxfp4Gemm4WaveBaselineBenchmark(KernelBenchmark):
                 f"hipblaslt-bench result: {mean_time_us:.2f} us "
                 f"for M={config.M} N={config.N} K={config.K}"
             )
-            return self.get_bench_result(mean_time_us, True)
+            return self.get_bench_result(mean_time_us, True, kernel_source="aiter")
 
         except subprocess.TimeoutExpired:
             self.logger.error("hipblaslt-bench timed out")
-            return self.get_bench_result(0.0, False, error_msg="Timeout")
+            return self.get_bench_result(0.0, False, error_msg="Timeout", kernel_source="aiter")
         except Exception as e:
             self.logger.error(f"Error running hipblaslt-bench: {e}")
-            return self.get_bench_result(0.0, False, error_msg=str(e))
+            return self.get_bench_result(0.0, False, error_msg=str(e), kernel_source="aiter")
 
 
 def _get_baseline_hipblaslt_cmd(

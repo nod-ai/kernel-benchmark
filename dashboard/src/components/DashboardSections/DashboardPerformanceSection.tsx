@@ -328,6 +328,7 @@ function FailurePanel({ kernels }: { kernels: Kernel[] }) {
           <thead>
             <tr className="bg-red-50 border-b border-red-200">
               <th className="px-4 py-2 text-left font-semibold text-gray-700">Backend</th>
+              <th className="px-4 py-2 text-left font-semibold text-gray-700">Source</th>
               <th className="px-4 py-2 text-left font-semibold text-gray-700">Shape</th>
               <th className="px-4 py-2 text-left font-semibold text-gray-700">Macrotile</th>
               <th className="px-4 py-2 text-left font-semibold text-gray-700">Error</th>
@@ -345,6 +346,17 @@ function FailurePanel({ kernels }: { kernels: Kernel[] }) {
               return (
                 <tr key={k.id} className="hover:bg-red-50">
                   <td className="px-4 py-2 font-mono text-xs text-gray-700">{k.backend}</td>
+                  <td className="px-4 py-2 text-xs">
+                    {k.kernelSource ? (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        k.kernelSource === "wave"
+                          ? "bg-purple-100 text-purple-800"
+                          : k.kernelSource === "aiter"
+                            ? "bg-orange-100 text-orange-800"
+                            : "bg-gray-100 text-gray-600"
+                      }`}>{k.kernelSource}</span>
+                    ) : "—"}
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-600">{shapeParts}</td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-600">{macrotile}</td>
                   <td className="px-4 py-2 font-mono text-xs text-red-700 max-w-md truncate" title={k.errorMsg}>

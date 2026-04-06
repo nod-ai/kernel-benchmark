@@ -42,6 +42,7 @@ export interface Kernel {
   tuningConfig: Record<string, any> | undefined | null;
   ok: boolean;
   errorMsg?: string;
+  kernelSource?: string; // "wave", "aiter", or null if unknown
 }
 
 export interface KernelConfig {
@@ -252,6 +253,7 @@ export interface TrackerPerformancePoint {
     numKernels: number;
   }>;
   backendSpecs?: BackendSpec[]; // Backend specifications with commit hashes
+  availableMacrotiles?: string[]; // e.g. ["256x192x256", "256x224x256"]
 }
 
 export interface Tracker {

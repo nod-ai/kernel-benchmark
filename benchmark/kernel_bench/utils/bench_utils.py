@@ -32,6 +32,7 @@ class BenchmarkResult:
     tflops: float
     ok: bool
     error_msg: Optional[str] = None
+    kernel_source: Optional[str] = None  # e.g. "wave", "aiter", "rocroller"
 
     def __eq__(self, other):
         if isinstance(other, BenchmarkResult):

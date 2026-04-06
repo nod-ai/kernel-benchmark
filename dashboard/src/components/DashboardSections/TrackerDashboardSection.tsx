@@ -44,6 +44,7 @@ export default function TrackerDashboardSection({
   const [aggregation, setAggregation] = useState<"avg" | "geomean">("avg");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [selectedMacrotile, setSelectedMacrotile] = useState<string>("");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -64,7 +65,8 @@ export default function TrackerDashboardSection({
         const params = new URLSearchParams();
         if (startDate) params.append("start_date", startDate);
         if (endDate) params.append("end_date", endDate);
-        
+        if (selectedMacrotile) params.append("macrotile", selectedMacrotile);
+
         const timelineResponse = await fetch(
           `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
             params.toString() ? `?${params.toString()}` : ""
@@ -80,7 +82,7 @@ export default function TrackerDashboardSection({
     };
 
     fetchData();
-  }, [trackerId, startDate, endDate]);
+  }, [trackerId, startDate, endDate, selectedMacrotile]);
 
   // Sync selectedRunId with the current selectedRunBlobName
   useEffect(() => {
@@ -120,6 +122,15 @@ export default function TrackerDashboardSection({
       Object.keys(point.backends).forEach((backend) => backendSet.add(backend));
     });
     return Array.from(backendSet).sort();
+  }, [timeline]);
+
+  // Collect all available macrotiles across timeline points
+  const availableMacrotiles = useMemo(() => {
+    const mtSet = new Set<string>();
+    timeline.forEach((point) => {
+      (point.availableMacrotiles ?? []).forEach((mt) => mtSet.add(mt));
+    });
+    return Array.from(mtSet).sort();
   }, [timeline]);
 
   // Create/update chart when data changes
@@ -314,7 +325,7 @@ export default function TrackerDashboardSection({
             <h3 className="font-medium text-gray-700">Chart Settings</h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="flex flex-col gap-2">
               <label className="font-medium text-gray-600 text-sm">
                 Metric:
@@ -342,6 +353,24 @@ export default function TrackerDashboardSection({
                 <option value="geomean">Geometric Mean</option>
               </select>
             </div>
+
+            {availableMacrotiles.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-600 text-sm">
+                  Macrotile:
+                </label>
+                <select
+                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  value={selectedMacrotile}
+                  onChange={(e) => setSelectedMacrotile(e.target.value)}
+                >
+                  <option value="">All (aggregate)</option>
+                  {availableMacrotiles.map((mt) => (
+                    <option key={mt} value={mt}>{mt}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="flex flex-col gap-2">
               <label className="font-medium text-gray-600 text-sm">

@@ -143,7 +143,7 @@ class KernelBenchmark(ABC):
         """Validate numerical accuracy of kernel before benchmarking"""
         return True
 
-    def get_bench_result(self, runtime_us: float, ok: bool, error_msg: str = None):
+    def get_bench_result(self, runtime_us: float, ok: bool, error_msg: str = None, kernel_source: str = None):
         arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
             self.config, runtime_us if ok else math.inf
         )
@@ -165,6 +165,7 @@ class KernelBenchmark(ABC):
             tflops=round(tflops_per_second, 4),
             ok=ok,
             error_msg=error_msg,
+            kernel_source=kernel_source,
         )
 
     @property
@@ -515,9 +516,17 @@ def batch_benchmark(
             vmfb_path, compile_success = compilation_results[id(bench)]
             numerical_success = validation_results[id(bench)]
             should_run = compile_success and vmfb_path and numerical_success
+            if not compile_success:
+                error_msg = "Compilation failed"
+            elif not numerical_success:
+                error_msg = "Numerical validation failed"
+            else:
+                error_msg = None
         else:
             vmfb_path = None
-            should_run = validation_results[id(bench)]
+            numerical_success = validation_results[id(bench)]
+            should_run = numerical_success
+            error_msg = None if numerical_success else "Numerical validation failed"
 
         if should_run:
             _, result = _run_single_benchmark_helper(
@@ -525,8 +534,7 @@ def batch_benchmark(
             )
             results[i] = result
         else:
-            # Mark failed benches immediately
-            results[i] = bench.get_bench_result(0, False)
+            results[i] = bench.get_bench_result(0, False, error_msg=error_msg)
 
     # Return results
     return results
