@@ -69,7 +69,7 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
             cd llvm-project
             git sparse-checkout init --cone
-            git sparse-checkout set llvm mlir cmake clang third-party
+            git sparse-checkout set llvm mlir cmake clang third-party libunwind
             git checkout "$LLVM_COMMIT"
 
             # Step 2: Build LLVM with MLIR and clang (needed for WaveASM)
@@ -78,7 +78,7 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             LLVM_INSTALL_DIR="$(pwd)/install"
             mkdir -p build && cd build
             cmake -GNinja ../llvm \
-                -DLLVM_ENABLE_PROJECTS="mlir;clang" \
+                -DLLVM_ENABLE_PROJECTS="mlir;clang;lld" \
                 -DLLVM_TARGETS_TO_BUILD="host;AMDGPU" \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX="$LLVM_INSTALL_DIR" \

@@ -277,11 +277,11 @@ def _parse_kernel_source(stdout: str, stderr: str) -> str | None:
     for line in stderr.splitlines():
         s = line.strip()
         if s.startswith("[KERNEL_SOURCE]"):
-            parts = s.split()
-            if len(parts) >= 2:
-                src = parts[1].lower()
-                if src in ("wave", "aiter", "rocroller"):
-                    return src
+            for token in s.split():
+                if token.startswith("source="):
+                    src = token.split("=", 1)[1].lower()
+                    if src in ("wave", "aiter", "rocroller"):
+                        return src
     # Fallback: symbol name in stdout contains backend identifier
     for line in stdout.splitlines():
         s = line.strip()
