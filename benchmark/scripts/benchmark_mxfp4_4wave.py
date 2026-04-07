@@ -156,6 +156,7 @@ def get_mxfp4_gemm_4wave(
         block_shape=macrotiles,
         wave_shape=_WAVE_SHAPE,
         reorder_workgroups=True,
+        output_dtype=tkl.bf16,
     )
     options.use_buffer_ops = True
     options.backend = "asm"

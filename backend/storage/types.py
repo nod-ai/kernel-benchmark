@@ -28,9 +28,9 @@ class WorkflowRunState:
     blobName: str
     timestamp: datetime
     status: str
+    conclusion: str
     numSteps: int
     steps: list[dict]
-    conclusion: Optional[str] = None
     machine: Optional[str] = None
     completed: bool = False
     hasArtifact: bool = False
