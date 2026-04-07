@@ -187,10 +187,10 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
 
     @classmethod
     def expand_configs(cls, tag, config):
-        """Yield one entry per macrotile that evenly divides this problem shape."""
+        """Yield one entry per macrotile that fits this problem shape."""
         entries = []
         for i, mt in enumerate(_MACROTILES):
-            if config.M % mt[0] == 0 and config.N % mt[1] == 0:
+            if config.M >= mt[0] and config.N >= mt[1]:
                 entries.append((f"{tag}__mt{i}", config))
         return entries if entries else [(f"{tag}__mt0", config)]
 
@@ -288,11 +288,11 @@ def _parse_kernel_source(stdout: str, stderr: str) -> str | None:
     for line in stderr.splitlines():
         s = line.strip()
         if s.startswith("[KERNEL_SOURCE]"):
-            for token in s.split():
-                if token.startswith("source="):
-                    src = token.split("=", 1)[1].lower()
-                    if src in ("wave", "aiter", "rocroller"):
-                        return src
+            parts = s.split()
+            if len(parts) >= 2:
+                src = parts[1].lower()
+                if src in ("wave", "aiter", "rocroller"):
+                    return src
     # Fallback: symbol name in stdout contains backend identifier
     for line in stdout.splitlines():
         s = line.strip()
