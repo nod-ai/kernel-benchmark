@@ -69,11 +69,11 @@ if [[ -n "$WAVE_REPO" && -n "$WAVE_BRANCH" ]]; then
             git clone --filter=blob:none --no-checkout https://github.com/llvm/llvm-project.git
             cd llvm-project
             git sparse-checkout init --cone
-            git sparse-checkout set llvm mlir cmake clang third-party libunwind
+            git sparse-checkout set llvm mlir cmake clang third-party libunwind lld
             git checkout "$LLVM_COMMIT"
 
             # Step 2: Build LLVM with MLIR and clang (needed for WaveASM)
-            # Note: lld is excluded — its MachO linker requires macOS headers
+            # Note: lld's MachO linker needs libunwind/include/mach-o/ (included via sparse checkout)
             echo "Building LLVM with MLIR support (this will take a while)..."
             LLVM_INSTALL_DIR="$(pwd)/install"
             mkdir -p build && cd build
