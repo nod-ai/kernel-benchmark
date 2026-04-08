@@ -278,19 +278,26 @@ def get_runs():
                 if item["run"] and item["run"].hasArtifact == has_artifact_bool
             ]
 
-        # Completed filter - check run.completed
+        # Completed filter - a run is considered completed if either
+        # run.completed is True OR run.status == "completed" (handles cases
+        # where the webhook missed updating the completed boolean)
+        def _is_run_completed(item):
+            run = item["run"]
+            if not run:
+                return False
+            return run.completed or run.status == "completed"
+
         if completed_only is not None:
             completed_only_bool = completed_only.lower() == "true"
             if completed_only_bool:
                 filtered_items = [
                     item for item in filtered_items
-                    if item["run"] and item["run"].completed
+                    if _is_run_completed(item)
                 ]
             else:
-                # Ongoing means either no run yet or run not completed
                 filtered_items = [
                     item for item in filtered_items
-                    if not item["run"] or not item["run"].completed
+                    if not _is_run_completed(item)
                 ]
 
         # Step 5: Sort by trigger.timestamp (most recent first)
@@ -313,11 +320,11 @@ def get_runs():
         
         ongoing_count = sum(
             1 for item in items_for_counts
-            if not item["run"] or not item["run"].completed
+            if not _is_run_completed(item)
         )
         completed_count = sum(
             1 for item in items_for_counts
-            if item["run"] and item["run"].completed
+            if _is_run_completed(item)
         )
 
         # Step 6: Paginate
@@ -1443,6 +1450,164 @@ def get_run_trigger(run_id):
         logger.error(f"Error getting trigger for run {run_id}: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to get trigger: {str(e)}"}), 500
+
+
+###############################################################################
+# Dashboard Configs
+###############################################################################
+
+
+@app.route("/api/dashboards", methods=["GET"])
+def list_dashboards():
+    """List all saved dashboard configurations (summary only)."""
+    try:
+        configs = DashboardConfigDb.find_all()
+        summaries = [
+            {
+                "_id": c._id,
+                "name": c.name,
+                "slug": c.slug,
+                "updatedAt": c.updatedAt,
+            }
+            for c in configs
+        ]
+        summaries.sort(key=lambda s: s["updatedAt"], reverse=True)
+        return jsonify(summaries)
+    except Exception as e:
+        logger.error(f"Error listing dashboards: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<slug>", methods=["GET"])
+def get_dashboard(slug):
+    """Get a full dashboard configuration by slug."""
+    try:
+        results = DashboardConfigDb.query(f"slug eq '{slug}'")
+        if not results:
+            return jsonify({"error": "Dashboard not found"}), 404
+        return jsonify(asdict(results[0]))
+    except Exception as e:
+        logger.error(f"Error getting dashboard '{slug}': {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards", methods=["POST"])
+@token_required
+def create_dashboard():
+    """Create a new dashboard configuration."""
+    try:
+        data = request.get_json()
+        if not data or "name" not in data:
+            return jsonify({"error": "name is required"}), 400
+
+        slug = data.get("slug", data["name"].lower().replace(" ", "-"))
+
+        existing = DashboardConfigDb.query(f"slug eq '{slug}'")
+        if existing:
+            return jsonify({"error": f"Dashboard with slug '{slug}' already exists"}), 409
+
+        now = datetime.now(timezone.utc).isoformat()
+        config = DashboardConfig(
+            _id=str(uuid4()),
+            name=data["name"],
+            slug=slug,
+            createdAt=now,
+            updatedAt=now,
+            layout=data.get("layout", []),
+            widgets=data.get("widgets", []),
+            globalFilters=data.get("globalFilters", []),
+        )
+        DashboardConfigDb.upsert(config)
+        return jsonify(asdict(config)), 201
+    except Exception as e:
+        logger.error(f"Error creating dashboard: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>", methods=["PUT"])
+@token_required
+def update_dashboard(dashboard_id):
+    """Update an existing dashboard configuration."""
+    try:
+        existing = DashboardConfigDb.find_by_id(dashboard_id)
+        if not existing:
+            return jsonify({"error": "Dashboard not found"}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        new_slug = data.get("slug", existing.slug)
+        if new_slug != existing.slug:
+            conflicts = DashboardConfigDb.query(f"slug eq '{new_slug}'")
+            if conflicts:
+                return jsonify({"error": f"Slug '{new_slug}' is already taken"}), 409
+
+        updated = DashboardConfig(
+            _id=dashboard_id,
+            name=data.get("name", existing.name),
+            slug=new_slug,
+            createdAt=existing.createdAt,
+            updatedAt=datetime.now(timezone.utc).isoformat(),
+            layout=data.get("layout", existing.layout),
+            widgets=data.get("widgets", existing.widgets),
+            globalFilters=data.get("globalFilters", existing.globalFilters),
+        )
+        DashboardConfigDb.upsert(updated)
+        return jsonify(asdict(updated))
+    except Exception as e:
+        logger.error(f"Error updating dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>", methods=["DELETE"])
+@token_required
+def delete_dashboard(dashboard_id):
+    """Delete a dashboard configuration."""
+    try:
+        existing = DashboardConfigDb.find_by_id(dashboard_id)
+        if not existing:
+            return jsonify({"error": "Dashboard not found"}), 404
+        DashboardConfigDb.delete_by_id(dashboard_id)
+        return jsonify({"message": "Dashboard deleted"})
+    except Exception as e:
+        logger.error(f"Error deleting dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>/clone", methods=["POST"])
+@token_required
+def clone_dashboard(dashboard_id):
+    """Clone an existing dashboard configuration."""
+    try:
+        source = DashboardConfigDb.find_by_id(dashboard_id)
+        if not source:
+            return jsonify({"error": "Source dashboard not found"}), 404
+
+        data = request.get_json() or {}
+        new_name = data.get("name", f"{source.name} (Copy)")
+        new_slug = data.get("slug", f"{source.slug}-copy")
+
+        existing = DashboardConfigDb.query(f"slug eq '{new_slug}'")
+        if existing:
+            new_slug = f"{new_slug}-{str(uuid4())[:8]}"
+
+        now = datetime.now(timezone.utc).isoformat()
+        clone = DashboardConfig(
+            _id=str(uuid4()),
+            name=new_name,
+            slug=new_slug,
+            createdAt=now,
+            updatedAt=now,
+            layout=source.layout,
+            widgets=source.widgets,
+            globalFilters=source.globalFilters,
+        )
+        DashboardConfigDb.upsert(clone)
+        return jsonify(asdict(clone)), 201
+    except Exception as e:
+        logger.error(f"Error cloning dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 def serve_backend(port=3000):

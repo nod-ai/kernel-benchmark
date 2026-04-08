@@ -13,6 +13,7 @@ import {
 import { Calendar, TrendingUp, Settings } from "lucide-react";
 import type { TrackerPerformancePoint, TrackerRunHistory } from "../../types";
 import { getBackendColor } from "../../utils/color";
+import { fetchTrackerRuns, fetchTrackerPerformanceTimeline } from "../../utils/github";
 
 Chart.register(
   LineController,
@@ -53,24 +54,15 @@ export default function TrackerDashboardSection({
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Fetch runs
-        const runsResponse = await fetch(
-          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/runs`
-        );
-        const runsData = await runsResponse.json();
+        const [runsData, timelineData] = await Promise.all([
+          fetchTrackerRuns(trackerId),
+          fetchTrackerPerformanceTimeline(
+            trackerId,
+            startDate || undefined,
+            endDate || undefined
+          ),
+        ]);
         setRuns(runsData);
-
-        // Fetch performance timeline
-        const params = new URLSearchParams();
-        if (startDate) params.append("start_date", startDate);
-        if (endDate) params.append("end_date", endDate);
-        
-        const timelineResponse = await fetch(
-          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
-            params.toString() ? `?${params.toString()}` : ""
-          }`
-        );
-        const timelineData = await timelineResponse.json();
         setTimeline(timelineData);
       } catch (error) {
         console.error("Failed to fetch tracker data:", error);

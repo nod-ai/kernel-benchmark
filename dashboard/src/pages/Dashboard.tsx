@@ -1,11 +1,31 @@
-import { useEffect, useState } from "react";
-import type { Kernel, Tracker, TrackerRunHistory } from "../types";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import type { Kernel, Tracker } from "../types";
+import type { DashboardConfig } from "../types/dashboard";
 import { fetchData } from "../utils/csv";
 import PageContainer from "../components/PageContainer";
 import { useLocation } from "react-router-dom";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, LayoutDashboard, BarChart3 } from "lucide-react";
 import DashboardPerformanceSection from "../components/DashboardSections/DashboardPerformanceSection";
 import TrackerDashboardSection from "../components/DashboardSections/TrackerDashboardSection";
+import DashboardRenderer from "../components/DashboardRenderer";
+import { DEFAULT_MODULAR_CONFIG } from "../widgets/defaults";
+import {
+  fetchTrackerByDashboardName,
+  fetchTrackerRuns,
+  fetchAllRuns,
+  fetchDashboard,
+  saveDashboard,
+} from "../utils/github";
+
+type DashboardView = "classic" | "modular";
+
+function deriveConfigSlug(pathname: string): string {
+  if (pathname.includes("/dashboard/tracker/")) {
+    const name = pathname.split("/").pop();
+    return name ? `tracker-${name}` : "__default__";
+  }
+  return "__default__";
+}
 
 export default function Dashboard() {
   const [kernels, setKernels] = useState<Kernel[]>([]);
@@ -15,7 +35,28 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [runBackendSpecs, setRunBackendSpecs] = useState<Record<string, any>>({});
 
+  const [view, setView] = useState<DashboardView>("classic");
+  const [modularConfig, setModularConfig] = useState<DashboardConfig>(DEFAULT_MODULAR_CONFIG);
+  const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
+
   const location = useLocation();
+  const configSlug = useMemo(() => deriveConfigSlug(location.pathname), [location.pathname]);
+
+  // Load saved modular config for this context, or fall back to the hardcoded default.
+  useEffect(() => {
+    setGlobalFilterValues({});
+    fetchDashboard(configSlug)
+      .then((saved) => setModularConfig(saved))
+      .catch(() => {
+        setModularConfig({
+          ...DEFAULT_MODULAR_CONFIG,
+          slug: configSlug,
+          name: configSlug === "__default__"
+            ? DEFAULT_MODULAR_CONFIG.name
+            : `Dashboard (${configSlug})`,
+        });
+      });
+  }, [configSlug]);
 
   // Detect dashboard type from URL and load initial data
   useEffect(() => {
@@ -23,30 +64,15 @@ export default function Dashboard() {
       setIsLoading(true);
       
       if (location.pathname.includes('/dashboard/tracker/')) {
-        // Tracker dashboard mode
         setIsTrackerDashboard(true);
         const dashboardName = location.pathname.split('/').pop();
         
         try {
-          // Fetch tracker info
-          const trackerResponse = await fetch(
-            `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/dashboard/${dashboardName}`
-          );
+          const trackerData = await fetchTrackerByDashboardName(dashboardName!);
+          setTracker(trackerData as unknown as Tracker);
           
-          if (!trackerResponse.ok) {
-            throw new Error("Tracker not found");
-          }
+          const runsData = await fetchTrackerRuns(trackerData._id!);
           
-          const trackerData = await trackerResponse.json();
-          setTracker(trackerData);
-          
-          // Fetch tracker runs to get the latest run
-          const runsResponse = await fetch(
-            `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerData._id}/runs`
-          );
-          const runsData: TrackerRunHistory[] = await runsResponse.json();
-          
-          // Auto-select the latest run (first in sorted array)
           if (runsData.length > 0) {
             const latestRun = runsData[0];
             setSelectedRunBlobName(latestRun.run.blobName);
@@ -57,30 +83,22 @@ export default function Dashboard() {
           setIsLoading(false);
         }
       } else {
-        // Artifact-only dashboard mode
         setIsTrackerDashboard(false);
         const runIdOrBlobName = location.pathname.split('/').pop();
         setSelectedRunBlobName(runIdOrBlobName || null);
         
-        // Fetch run data to get backendSpecs
         if (runIdOrBlobName) {
           try {
-            const response = await fetch(
-              `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs?page=1&page_size=1000&completed_only=true`
-            );
-            const data = await response.json();
+            const data = await fetchAllRuns({ page: 1, page_size: 1000, completed_only: true });
             const runs = data.runs || [];
             
-            // Find matching run by blobName or ID
-            const item = runs.find((item: any) => 
-              item.run?.blobName === runIdOrBlobName || item.run?._id === runIdOrBlobName
+            const item = runs.find((r: any) => 
+              r.run?.blobName === runIdOrBlobName || r.run?._id === runIdOrBlobName
             );
             
-            // Extract backendSpecs from trigger metadata
             if (item?.trigger?.metadata?.backendSpecs) {
               const specsMap: Record<string, any> = {};
               item.trigger.metadata.backendSpecs.forEach((spec: any) => {
-                // Use backendParam as key if available (e.g., wave_4wave), otherwise use backend
                 const key = spec.backendParam || spec.backend;
                 specsMap[key] = spec;
               });
@@ -98,16 +116,48 @@ export default function Dashboard() {
     detectDashboardType();
   }, [location.pathname]);
 
-  // Load kernel data when blobName is available
   useEffect(() => {
     if (selectedRunBlobName) {
       fetchData(selectedRunBlobName).then(setKernels);
     }
   }, [selectedRunBlobName]);
 
+  // Initialize global filter defaults once kernel data arrives, and
+  // fill in values for any newly-added filters.
+  useEffect(() => {
+    if (kernels.length === 0) return;
+    setGlobalFilterValues((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const gf of modularConfig.globalFilters) {
+        if (next[gf.id] !== undefined) continue;
+        changed = true;
+        if (gf.defaultValue !== undefined) {
+          next[gf.id] = gf.defaultValue;
+        } else {
+          const unique = [...new Set(kernels.map((k: any) => k[gf.field]).filter(Boolean))];
+          next[gf.id] = gf.type === "single" ? unique[0] ?? "" : unique;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [kernels, modularConfig.globalFilters]);
+
   const handleRunSelected = (_runId: string, blobName: string) => {
     setSelectedRunBlobName(blobName);
   };
+
+  const handleGlobalFilterChange = useCallback((filterId: string, value: any) => {
+    setGlobalFilterValues((prev) => ({ ...prev, [filterId]: value }));
+  }, []);
+
+  const handleModularSave = useCallback(async (cfg: DashboardConfig) => {
+    const toSave = { ...cfg, slug: configSlug };
+    const saved = await saveDashboard(toSave);
+    if (cfg._id.startsWith("__")) {
+      setModularConfig((prev) => ({ ...prev, _id: saved._id, slug: saved.slug }));
+    }
+  }, [configSlug]);
 
   return (
     <PageContainer activePage="dashboard" isLoading={isLoading}>
@@ -126,13 +176,53 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-        
-        {/* Performance Results - Main Focus */}
+
+        {/* View toggle */}
         {kernels.length > 0 && (
-          <DashboardPerformanceSection 
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setView("classic")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                view === "classic"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              Classic
+            </button>
+            <button
+              onClick={() => setView("modular")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                view === "modular"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Modular
+            </button>
+          </div>
+        )}
+
+        {/* Classic view -- existing fixed dashboard */}
+        {view === "classic" && kernels.length > 0 && (
+          <DashboardPerformanceSection
             kernels={kernels}
             latestBackendSpecs={isTrackerDashboard ? undefined : runBackendSpecs}
             trackerId={isTrackerDashboard ? tracker?._id : undefined}
+          />
+        )}
+
+        {/* Modular widget view */}
+        {view === "modular" && kernels.length > 0 && (
+          <DashboardRenderer
+            config={modularConfig}
+            rawData={kernels as unknown as Record<string, any>[]}
+            globalFilterValues={globalFilterValues}
+            onGlobalFilterChange={handleGlobalFilterChange}
+            onConfigChange={setModularConfig}
+            onSave={handleModularSave}
           />
         )}
         

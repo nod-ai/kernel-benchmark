@@ -8,9 +8,10 @@ from .repository import create_repository
 class BackendSpec:
     """
     Backend specification with version control metadata.
-    
+
     Defines which version of a backend to use for benchmarking.
     """
+
     id: str  # Unique identifier (e.g., "triton-fav3")
     name: str  # Display name (e.g., "Triton FAV3")
     backend: str  # Base backend type (e.g., "triton")
@@ -28,9 +29,9 @@ class WorkflowRunState:
     blobName: str
     timestamp: datetime
     status: str
-    conclusion: str
     numSteps: int
     steps: list[dict]
+    conclusion: Optional[str] = None
     machine: Optional[str] = None
     completed: bool = False
     hasArtifact: bool = False
@@ -74,8 +75,12 @@ class BenchmarkRunStats:
     performance: dict[str, Any]  # machine → kernel_type → backend → stats
     trackerId: Optional[str] = None  # Tracker._id for scheduled runs
     trackerName: Optional[str] = None
-    backendSpecs: Optional[list[dict[str, Any]]] = None  # Backend specifications used in this run
-    profilingManifest: Optional[dict[str, Any]] = None  # Maps dump keys to rocprof dump info
+    backendSpecs: Optional[list[dict[str, Any]]] = (
+        None  # Backend specifications used in this run
+    )
+    profilingManifest: Optional[dict[str, Any]] = (
+        None  # Maps dump keys to rocprof dump info
+    )
 
 
 @dataclass
@@ -154,8 +159,33 @@ class Tracker:
     branch: str
     isActive: bool = True
     createdAt: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    backendSpecs: Optional[list[dict[str, Any]]] = None  # Backend specifications with full metadata
+    backendSpecs: Optional[list[dict[str, Any]]] = (
+        None  # Backend specifications with full metadata
+    )
 
+
+@dataclass
+class DashboardConfig:
+    """
+    User-customizable dashboard configuration.
+
+    Stores the layout, widget definitions, and global filter configs
+    for a modular dashboard view. Persisted in Azure Table Storage
+    and referenced by slug in dashboard URLs.
+    """
+
+    _id: str
+    name: str
+    slug: str
+    createdAt: str
+    updatedAt: str
+    layout: list  # WidgetLayout[] as JSON
+    widgets: list  # WidgetConfig[] as JSON
+    globalFilters: list  # GlobalFilterConfig[] as JSON
+
+
+DashboardConfigDb = create_repository(DashboardConfig, "dashboardconfigs")
+"""Repository for user-customizable dashboard configurations."""
 
 KernelTypeDb = create_repository(KernelTypeDefinition, "kerneltypes")
 """Repository for kernel types and their respective attributes"""

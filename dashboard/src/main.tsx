@@ -10,6 +10,7 @@ import "./index.css";
 import { AuthProvider } from "./contexts/AuthContext";
 import { KernelTypesProvider } from "./contexts/KernelTypesContext";
 import Dashboard from "./pages/Dashboard";
+import CustomDashboard from "./pages/CustomDashboard";
 import History from "./pages/History";
 import AddKernels from "./pages/AddKernels";
 import Tuning from "./pages/Tuning";
@@ -22,6 +23,7 @@ createRoot(document.getElementById("root")!).render(
       <AuthProvider>
         <KernelTypesProvider>
           <Routes>
+          <Route path="/dashboard/config/:slug" element={<CustomDashboard />} />
           <Route path="/dashboard/tracker/:dashboardName" element={<Dashboard />} />
           <Route path="/dashboard/:runId" element={<Dashboard />} />
           <Route path="/history" element={<History />} />

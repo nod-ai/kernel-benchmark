@@ -1,6 +1,7 @@
 import type {
   RepoPullRequest,
   BenchmarkRun,
+  Kernel,
   KernelConfig,
   TuningResults,
   KernelTypeDefinition,
@@ -11,6 +12,7 @@ import type {
   RunWithTrigger,
   BackendSpec,
 } from "../types";
+import type { DashboardConfig, DashboardSummary } from "../types/dashboard";
 
 const API_URL = import.meta.env.VITE_BACKEND_SERVER_URL;
 const TOKEN_KEY = "auth_token";
@@ -19,7 +21,7 @@ const TOKEN_KEY = "auth_token";
  * Centralized fetch wrapper that attaches the auth token and emits
  * an `auth-required` event when the server responds with 401.
  */
-async function apiFetch(
+export async function apiFetch(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
@@ -553,4 +555,99 @@ export async function fetchBranches(): Promise<string[]> {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
   return response.json();
+}
+
+// Auth
+
+export async function authLogin(
+  password: string
+): Promise<{ token: string } | null> {
+  const response = await fetch(`${API_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+export async function authVerify(
+  token: string
+): Promise<{ authenticated: boolean }> {
+  const response = await fetch(`${API_URL}/auth/verify`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.json();
+}
+
+// Artifact / kernel data
+
+export async function fetchArtifact(runId: string): Promise<Kernel[]> {
+  const response = await apiFetch(`/artifact/${runId}`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+  return response.json();
+}
+
+// Dashboard CRUD
+
+export async function listDashboards(): Promise<DashboardSummary[]> {
+  const response = await apiFetch("/api/dashboards");
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchDashboard(slug: string): Promise<DashboardConfig> {
+  const response = await apiFetch(`/api/dashboards/${slug}`);
+  if (!response.ok) {
+    throw new Error(`Dashboard '${slug}' not found`);
+  }
+  return response.json();
+}
+
+export async function createDashboard(
+  config: Partial<DashboardConfig>
+): Promise<DashboardConfig> {
+  const response = await apiFetch("/api/dashboards", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to create dashboard (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function updateDashboard(
+  dashboardId: string,
+  config: DashboardConfig
+): Promise<DashboardConfig> {
+  const response = await apiFetch(`/api/dashboards/${dashboardId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to save dashboard (${response.status})`);
+  }
+  return response.json();
+}
+
+/**
+ * Save a dashboard config -- creates if `_id` starts with "__", updates otherwise.
+ * Returns the saved config (with the real `_id` after creation).
+ */
+export async function saveDashboard(
+  config: DashboardConfig
+): Promise<DashboardConfig> {
+  if (config._id.startsWith("__")) {
+    return createDashboard(config);
+  }
+  return updateDashboard(config._id, config);
 }

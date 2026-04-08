@@ -277,6 +277,20 @@ function RunCard({ item, onDelete, onCancel, onNavigate }: RunCardProps) {
             </div>
           )}
 
+          {/* IDs (for debugging) */}
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mb-1">
+            {run?._id && (
+              <span className="text-[10px] font-mono text-gray-400" title={`Run ID: ${run._id}`}>
+                Run: {run._id}
+              </span>
+            )}
+            {trigger?._id && (
+              <span className="text-[10px] font-mono text-gray-400" title={`Trigger ID: ${trigger._id}`}>
+                Trigger: {trigger._id.substring(0, 8)}...
+              </span>
+            )}
+          </div>
+
           {/* Timestamp */}
           <p className="text-xs text-gray-500 mb-3">
             {new Date(
