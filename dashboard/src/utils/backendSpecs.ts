@@ -70,8 +70,8 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     name: "Wave 4-wave (baseline)",
     backend: "wave",
     backendParam: "wave_4wave_baseline",
-    remoteRepository: "panditsa/wave",
-    branch: "4waveasm-256x192x256",
+    remoteRepository: "iree-org/wave",
+    branch: "main",
     parentSpecId: "wave-default",
     buildMeta: {
       rocmLibrariesRepo: "ROCm/rocm-libraries",

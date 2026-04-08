@@ -9,6 +9,11 @@ echo "Installing hipBLASLt backend dependencies..."
 ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/ROCm/rocm-libraries.git}"
 ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-develop}"
 
+# Normalize repo to full URL if a short "owner/repo" form was passed
+if [[ "$ROCM_LIBRARIES_REPO" != https://* ]]; then
+    ROCM_LIBRARIES_REPO="https://github.com/${ROCM_LIBRARIES_REPO}.git"
+fi
+
 # GPU_ARCH must be provided by setup.sh
 if [[ -z "$GPU_ARCH" ]]; then
     echo "Error: GPU_ARCH environment variable not set"
