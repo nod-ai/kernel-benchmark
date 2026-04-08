@@ -9,7 +9,7 @@ import RooflinePlot from "../components/Plots/RooflinePlot";
  * Expected pipeline output: an array of Kernel objects (or rows containing
  * the fields RooflinePlot needs: id, backend, tflops, arithmeticIntensity).
  */
-export default function RooflineWidget({ data }: WidgetProps) {
+export default function RooflineWidget({ config, data }: WidgetProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const kernels = data as unknown as Kernel[];
   const selectedKernel = kernels.find((k) => k.id === selectedId);
@@ -27,6 +27,7 @@ export default function RooflineWidget({ data }: WidgetProps) {
       kernels={kernels}
       setSelected={setSelectedId}
       selectedKernel={selectedKernel}
+      groupByField={config.mapping.color || "backend"}
     />
   );
 }

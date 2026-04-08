@@ -590,6 +590,23 @@ export async function fetchArtifact(runId: string): Promise<Kernel[]> {
   return response.json();
 }
 
+// Rocprof trace data
+
+import type { RocprofTraceResponse } from "./rocprof";
+
+export async function fetchRocprofTrace(
+  runId: string,
+  kernelName: string
+): Promise<RocprofTraceResponse> {
+  const response = await apiFetch(
+    `/api/trace/${encodeURIComponent(runId)}/${encodeURIComponent(kernelName)}`
+  );
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+  return response.json();
+}
+
 // Dashboard CRUD
 
 export async function listDashboards(): Promise<DashboardSummary[]> {

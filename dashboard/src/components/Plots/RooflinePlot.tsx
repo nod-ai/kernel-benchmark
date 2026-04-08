@@ -13,7 +13,7 @@ import {
 } from "chart.js";
 import zoomPlugin from "chartjs-plugin-zoom";
 import type { Kernel } from "../../types";
-import { getBackendColor } from "../../utils/color";
+import { getValueColor } from "../../utils/color";
 
 Chart.register(
   ScatterController,
@@ -56,12 +56,14 @@ interface RooflinePlotProps {
   kernels: Kernel[];
   selectedKernel?: Kernel;
   setSelected: (kernelId: string | null) => void;
+  groupByField?: string;
 }
 
 export default function RooflinePlot({
   kernels,
   setSelected,
   selectedKernel,
+  groupByField = "backend",
 }: RooflinePlotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -73,8 +75,9 @@ export default function RooflinePlot({
     const grouped = kernels.reduce<
       Record<string, { x: number; y: number; id: string; name: string }[]>
     >((acc, kernel) => {
-      if (!acc[kernel.backend]) acc[kernel.backend] = [];
-      acc[kernel.backend].push({
+      const groupKey = String((kernel as any)[groupByField] ?? kernel.backend);
+      if (!acc[groupKey]) acc[groupKey] = [];
+      acc[groupKey].push({
         x: kernel.arithmeticIntensity,
         y: kernel.tflops,
         id: kernel.id,
@@ -83,20 +86,21 @@ export default function RooflinePlot({
       return acc;
     }, {});
 
-    const datasets = Object.entries(grouped).map(([backend, points]) => ({
-      label: backend,
+    const datasets = Object.entries(grouped).map(([groupValue, points]) => ({
+      label: groupValue,
       data: points.filter((point) => point.id !== selectedKernel?.id),
-      borderColor: getBackendColor(backend).string(),
+      borderColor: getValueColor(groupValue).string(),
       backgroundColor: selectedKernel
         ? "rgba(200, 200, 200, 0.3)"
-        : getBackendColor(backend).string(),
+        : getValueColor(groupValue).string(),
       showLine: false,
       pointRadius: 5,
     }));
 
     if (selectedKernel) {
+      const selGroup = String((selectedKernel as any)[groupByField] ?? selectedKernel.backend);
       datasets.push({
-        label: selectedKernel.backend,
+        label: selGroup,
         data: [
           {
             x: selectedKernel.arithmeticIntensity,
@@ -105,8 +109,8 @@ export default function RooflinePlot({
             name: selectedKernel.name,
           },
         ],
-        borderColor: getBackendColor(selectedKernel.backend).string(),
-        backgroundColor: getBackendColor(selectedKernel.backend).string(),
+        borderColor: getValueColor(selGroup).string(),
+        backgroundColor: getValueColor(selGroup).string(),
         showLine: false,
         pointRadius: 5,
       });
@@ -223,7 +227,7 @@ export default function RooflinePlot({
         },
       },
     });
-  }, [kernels, selectedKernel]);
+  }, [kernels, selectedKernel, groupByField]);
 
   return (
     <div className="relative w-full h-[600px]">

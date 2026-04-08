@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useRef } from "react";
 import {
   ResponsiveGridLayout,
   useContainerWidth,
@@ -20,6 +20,7 @@ import GlobalFilterBar from "./GlobalFilterBar";
 import EditToolbar from "./DashboardEditor/EditToolbar";
 import WidgetCatalog from "./DashboardEditor/WidgetCatalog";
 import WidgetConfigModal from "./DashboardEditor/WidgetConfigModal";
+import { useAuth } from "../contexts/AuthContext";
 
 interface DashboardRendererProps {
   config: DashboardConfig;
@@ -71,15 +72,28 @@ export default function DashboardRenderer({
   onConfigChange,
   onSave,
 }: DashboardRendererProps) {
+  const { isAuthenticated, requestAuth } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const configSnapshotRef = useRef<DashboardConfig | null>(null);
   const [showCatalog, setShowCatalog] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | null>(null);
+  const [pendingWidget, setPendingWidget] = useState<WidgetConfig | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const { width, containerRef, mounted } = useContainerWidth();
 
   const rglLayout = useMemo(() => toRGLLayout(config.layout), [config.layout]);
+
+  const colorByFields = useMemo(() => {
+    const fields = new Set<string>();
+    for (const widget of config.widgets) {
+      if (widget.mapping.color) {
+        fields.add(widget.mapping.color);
+      }
+    }
+    return fields;
+  }, [config.widgets]);
 
   const mutateConfig = useCallback(
     (updater: (prev: DashboardConfig) => DashboardConfig) => {
@@ -104,23 +118,11 @@ export default function DashboardRenderer({
   const handleAddWidget = useCallback(
     (type: WidgetType) => {
       const widget = makeDefaultWidget(type);
-      const maxY = config.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
-      const layoutItem: WidgetLayout = {
-        widgetId: widget.id,
-        x: 0,
-        y: maxY,
-        w: 6,
-        h: 3,
-      };
-      mutateConfig((prev) => ({
-        ...prev,
-        widgets: [...prev.widgets, widget],
-        layout: [...prev.layout, layoutItem],
-      }));
+      setPendingWidget(widget);
       setShowCatalog(false);
       setEditingWidget(widget);
     },
-    [config.layout, mutateConfig]
+    []
   );
 
   const handleDeleteWidget = useCallback(
@@ -136,14 +138,36 @@ export default function DashboardRenderer({
 
   const handleSaveWidget = useCallback(
     (updated: WidgetConfig) => {
-      mutateConfig((prev) => ({
-        ...prev,
-        widgets: prev.widgets.map((w) => (w.id === updated.id ? updated : w)),
-      }));
+      if (pendingWidget && updated.id === pendingWidget.id) {
+        const maxY = config.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
+        const layoutItem: WidgetLayout = {
+          widgetId: updated.id,
+          x: 0,
+          y: maxY,
+          w: 6,
+          h: 3,
+        };
+        mutateConfig((prev) => ({
+          ...prev,
+          widgets: [...prev.widgets, updated],
+          layout: [...prev.layout, layoutItem],
+        }));
+        setPendingWidget(null);
+      } else {
+        mutateConfig((prev) => ({
+          ...prev,
+          widgets: prev.widgets.map((w) => (w.id === updated.id ? updated : w)),
+        }));
+      }
       setEditingWidget(null);
     },
-    [mutateConfig]
+    [pendingWidget, config.layout, mutateConfig]
   );
+
+  const handleCancelWidgetEdit = useCallback(() => {
+    setPendingWidget(null);
+    setEditingWidget(null);
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!onSave) return;
@@ -151,6 +175,7 @@ export default function DashboardRenderer({
     setSaveMessage(null);
     try {
       await onSave(config);
+      configSnapshotRef.current = null;
       setHasChanges(false);
       setIsEditing(false);
       setSaveMessage({ type: "success", text: "Dashboard saved" });
@@ -163,10 +188,19 @@ export default function DashboardRenderer({
     }
   }, [config, onSave]);
 
+  const enterEditMode = useCallback(() => {
+    configSnapshotRef.current = JSON.parse(JSON.stringify(config));
+    setIsEditing(true);
+  }, [config]);
+
   const handleDiscard = useCallback(() => {
+    if (configSnapshotRef.current) {
+      onConfigChange?.(configSnapshotRef.current);
+      configSnapshotRef.current = null;
+    }
     setHasChanges(false);
     setIsEditing(false);
-  }, []);
+  }, [onConfigChange]);
 
   const handleAddFilter = useCallback(
     (filter: GlobalFilterConfig) => {
@@ -201,7 +235,14 @@ export default function DashboardRenderer({
   );
 
   return (
-    <div className="flex flex-col gap-4" ref={containerRef}>
+    <div
+      className={`flex flex-col gap-4 transition-all ${
+        isEditing
+          ? "ring-2 ring-amber-300 ring-offset-2 rounded-xl bg-amber-50/30 p-3"
+          : ""
+      }`}
+      ref={containerRef}
+    >
       {/* Save feedback toast */}
       {saveMessage && (
         <div
@@ -216,17 +257,20 @@ export default function DashboardRenderer({
       )}
 
       {/* Edit toolbar */}
-      <div className="flex justify-end">
-        <EditToolbar
-          isEditing={isEditing}
-          isSaving={isSaving}
-          onToggleEdit={() => setIsEditing(true)}
-          onAddWidget={() => setShowCatalog(true)}
-          onSave={handleSave}
-          onDiscard={handleDiscard}
-          hasUnsavedChanges={hasChanges}
-        />
-      </div>
+      <EditToolbar
+        isEditing={isEditing}
+        isSaving={isSaving}
+        isAuthenticated={isAuthenticated}
+        onToggleEdit={enterEditMode}
+        onRequestAuth={async () => {
+          const ok = await requestAuth();
+          if (ok) enterEditMode();
+        }}
+        onAddWidget={() => setShowCatalog(true)}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+        hasUnsavedChanges={hasChanges}
+      />
 
       {/* Global filters */}
       {(config.globalFilters.length > 0 || isEditing) && (
@@ -239,6 +283,7 @@ export default function DashboardRenderer({
           onAddFilter={handleAddFilter}
           onUpdateFilter={handleUpdateFilter}
           onDeleteFilter={handleDeleteFilter}
+          colorByFields={colorByFields}
         />
       )}
 
@@ -258,7 +303,12 @@ export default function DashboardRenderer({
           margin={[16, 16]}
         >
           {config.widgets.map((widget) => (
-            <div key={widget.id} className="relative group">
+            <div
+              key={widget.id}
+              className={`relative group ${
+                isEditing ? "ring-1 ring-dashed ring-gray-300 rounded-lg" : ""
+              }`}
+            >
               {isEditing && (
                 <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
@@ -302,7 +352,7 @@ export default function DashboardRenderer({
           initial={editingWidget}
           rawData={rawData}
           onSave={handleSaveWidget}
-          onCancel={() => setEditingWidget(null)}
+          onCancel={handleCancelWidgetEdit}
         />
       )}
     </div>

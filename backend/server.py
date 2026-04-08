@@ -23,6 +23,8 @@ from functools import wraps
 import jwt
 from datetime import datetime, timezone, timedelta
 import os
+import re
+import glob
 from werkzeug.security import check_password_hash
 from dotenv import load_dotenv
 
@@ -454,6 +456,72 @@ def get_profiling_dump(blob_name, dump_key):
         })
     except Exception as e:
         logger.error(f"Error fetching profiling dump {dump_key}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trace/<run_id>/<kernel_name>")
+def get_trace_data(run_id, kernel_name):
+    """Return rocprof trace data for a kernel.
+
+    For testing, serves the example trace from backend/test/wave_3072x8192x184576
+    regardless of the run_id or kernel_name supplied.
+    """
+    test_dir = os.path.join(os.path.dirname(__file__), "test", "wave_3072x8192x184576")
+    if not os.path.isdir(test_dir):
+        return jsonify({"error": "Test trace directory not found"}), 404
+
+    try:
+        dispatches = []
+
+        stats_files = sorted(glob.glob(os.path.join(test_dir, "stats_*.csv")))
+        for stats_path in stats_files:
+            match = re.search(r"_dispatch_(\d+)\.csv$", os.path.basename(stats_path))
+            if not match:
+                continue
+            dispatch_id = match.group(1)
+
+            dispatch_folder = None
+            for name in os.listdir(test_dir):
+                folder_path = os.path.join(test_dir, name)
+                if os.path.isdir(folder_path) and f"_dispatch_{dispatch_id}" in name:
+                    dispatch_folder = folder_path
+                    break
+            if not dispatch_folder:
+                continue
+
+            code_json_path = os.path.join(dispatch_folder, "code.json")
+            if not os.path.exists(code_json_path):
+                continue
+
+            with open(stats_path, "r", encoding="utf-8") as f:
+                stats_content = f.read()
+            with open(code_json_path, "r", encoding="utf-8") as f:
+                code_json = f.read()
+
+            wave_pattern = re.compile(r"^se\d+_sm\d+_sl\d+_wv\d+\.json$")
+            waves = []
+            for fname in sorted(os.listdir(dispatch_folder)):
+                if wave_pattern.match(fname):
+                    wave_path = os.path.join(dispatch_folder, fname)
+                    with open(wave_path, "r", encoding="utf-8") as f:
+                        wave_content = f.read()
+                    wave_name = fname.replace(".json", "")
+                    waves.append({"name": wave_name, "content": wave_content})
+
+            dispatches.append({
+                "id": dispatch_id,
+                "statsContent": stats_content,
+                "codeJson": code_json,
+                "waves": waves,
+            })
+
+        return jsonify({
+            "kernelName": kernel_name,
+            "dispatches": dispatches,
+        })
+    except Exception as e:
+        logger.error(f"Error serving test trace data: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 

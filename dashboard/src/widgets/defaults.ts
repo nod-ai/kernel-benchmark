@@ -1,9 +1,5 @@
 import type { DashboardConfig } from "../types/dashboard";
 
-/**
- * The default "Performance Overview" modular dashboard that ships out-of-the-box.
- * Replicates the data the existing fixed dashboard shows, but using the widget system.
- */
 export const DEFAULT_MODULAR_CONFIG: DashboardConfig = {
   _id: "__default_modular__",
   name: "Performance Overview",
@@ -11,84 +7,79 @@ export const DEFAULT_MODULAR_CONFIG: DashboardConfig = {
   createdAt: "",
   updatedAt: "",
   layout: [
-    { widgetId: "success-pie", x: 0, y: 0, w: 4, h: 3 },
-    { widgetId: "kernel-count", x: 4, y: 0, w: 2, h: 3 },
-    { widgetId: "avg-tflops", x: 6, y: 0, w: 2, h: 3 },
-    { widgetId: "tflops-by-backend", x: 8, y: 0, w: 4, h: 3 },
-    { widgetId: "runtime-by-backend", x: 0, y: 3, w: 6, h: 4 },
+    { widgetId: "roofline-overview", x: 0, y: 0, w: 6, h: 7 },
+    { widgetId: "geomean-tflops-backend", x: 6, y: 0, w: 4, h: 3 },
+    { widgetId: "correct-kernels", x: 10, y: 0, w: 2, h: 3 },
     { widgetId: "kernel-table", x: 6, y: 3, w: 6, h: 4 },
   ],
   widgets: [
     {
-      id: "success-pie",
-      type: "pie_chart",
-      title: "Kernel Success Rate",
+      id: "roofline-overview",
+      type: "roofline",
+      title: "Roofline Analysis",
+      dataSource: {
+        type: "kernels",
+        transforms: [
+          {
+            type: "filter",
+            rules: [{ field: "ok", operator: "eq", value: "true" }],
+          },
+        ],
+      },
+      mapping: { color: "backend" },
+    },
+    {
+      id: "geomean-tflops-backend",
+      type: "bar_chart",
+      title: "Geometric Mean TFLOPs by Backend",
+      style: {
+        horizontal: true,
+      },
+      dataSource: {
+        type: "kernels",
+        transforms: [
+          {
+            type: "filter",
+            rules: [{ field: "ok", operator: "eq", value: "true" }],
+          },
+          { type: "group_by", fields: ["backend"] },
+          {
+            type: "aggregate",
+            function: "geo_mean",
+            field: "tflops",
+            as: "geoMeanTflops",
+          },
+          { type: "sort", field: "geoMeanTflops", direction: "desc" },
+        ],
+      },
+      mapping: { x: "backend", y: "geoMeanTflops", color: "backend" },
+    },
+    {
+      id: "correct-kernels",
+      type: "stat_card",
+      title: "Correct Kernels",
       dataSource: {
         type: "kernels",
         transforms: [
           { type: "group_by", fields: ["ok"] },
           { type: "aggregate", function: "count", field: "*", as: "count" },
-        ],
-      },
-      mapping: { segment: "ok", value: "count" },
-    },
-    {
-      id: "kernel-count",
-      type: "stat_card",
-      title: "Total Kernels",
-      dataSource: {
-        type: "kernels",
-        transforms: [
-          { type: "aggregate", function: "count", field: "*", as: "total" },
-        ],
-      },
-      mapping: { value: "total" },
-    },
-    {
-      id: "avg-tflops",
-      type: "stat_card",
-      title: "Avg TFLOPs",
-      dataSource: {
-        type: "kernels",
-        transforms: [
-          { type: "filter", rules: [{ field: "ok", operator: "eq", value: "true" }] },
-          { type: "aggregate", function: "avg", field: "tflops", as: "avg" },
-        ],
-      },
-      mapping: { value: "avg" },
-    },
-    {
-      id: "tflops-by-backend",
-      type: "bar_chart",
-      title: "Avg TFLOPs by Backend",
-      dataSource: {
-        type: "kernels",
-        transforms: [
-          { type: "filter", rules: [{ field: "ok", operator: "eq", value: "true" }] },
-          { type: "group_by", fields: ["backend"] },
-          { type: "aggregate", function: "avg", field: "tflops", as: "avgTflops" },
-        ],
-      },
-      mapping: { x: "backend", y: "avgTflops", color: "backend" },
-    },
-    {
-      id: "runtime-by-backend",
-      type: "bar_chart",
-      title: "Avg Runtime (us) by Backend",
-      dataSource: {
-        type: "kernels",
-        transforms: [
-          { type: "filter", rules: [{ field: "ok", operator: "eq", value: "true" }] },
-          { type: "group_by", fields: ["backend"] },
+          { type: "pivot", keyField: "ok", valueField: "count" },
           {
-            type: "aggregate",
-            function: "avg",
-            field: "meanMicroseconds",
-            as: "avgRuntime",
+            type: "compute",
+            expression: "true_count + false_count",
+            as: "total",
+          },
+          {
+            type: "format",
+            field: "",
+            as: "display",
+            preset: "fraction",
+            numerator: "true_count",
+            denominator: "total",
           },
         ],
       },
-      mapping: { x: "backend", y: "avgRuntime", color: "backend" },
+      mapping: { value: "display" },
     },
     {
       id: "kernel-table",
@@ -121,6 +112,12 @@ export const DEFAULT_MODULAR_CONFIG: DashboardConfig = {
       id: "gf-backend",
       field: "backend",
       label: "Backend",
+      type: "multi",
+    },
+    {
+      id: "gf-tag",
+      field: "tag",
+      label: "Tag",
       type: "multi",
     },
   ],

@@ -4,27 +4,23 @@ import type { DashboardConfig } from "../types/dashboard";
 import { fetchData } from "../utils/csv";
 import PageContainer from "../components/PageContainer";
 import { useLocation } from "react-router-dom";
-import { TrendingUp, LayoutDashboard, BarChart3 } from "lucide-react";
-import DashboardPerformanceSection from "../components/DashboardSections/DashboardPerformanceSection";
+import { TrendingUp } from "lucide-react";
 import TrackerDashboardSection from "../components/DashboardSections/TrackerDashboardSection";
 import DashboardRenderer from "../components/DashboardRenderer";
 import { DEFAULT_MODULAR_CONFIG } from "../widgets/defaults";
 import {
   fetchTrackerByDashboardName,
   fetchTrackerRuns,
-  fetchAllRuns,
   fetchDashboard,
   saveDashboard,
 } from "../utils/github";
 
-type DashboardView = "classic" | "modular";
-
 function deriveConfigSlug(pathname: string): string {
+  const segment = pathname.split("/").pop() ?? "";
   if (pathname.includes("/dashboard/tracker/")) {
-    const name = pathname.split("/").pop();
-    return name ? `tracker-${name}` : "__default__";
+    return `tracker-${segment}`;
   }
-  return "__default__";
+  return `run-${segment}`;
 }
 
 export default function Dashboard() {
@@ -33,9 +29,7 @@ export default function Dashboard() {
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [selectedRunBlobName, setSelectedRunBlobName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [runBackendSpecs, setRunBackendSpecs] = useState<Record<string, any>>({});
 
-  const [view, setView] = useState<DashboardView>("classic");
   const [modularConfig, setModularConfig] = useState<DashboardConfig>(DEFAULT_MODULAR_CONFIG);
   const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
 
@@ -51,9 +45,6 @@ export default function Dashboard() {
         setModularConfig({
           ...DEFAULT_MODULAR_CONFIG,
           slug: configSlug,
-          name: configSlug === "__default__"
-            ? DEFAULT_MODULAR_CONFIG.name
-            : `Dashboard (${configSlug})`,
         });
       });
   }, [configSlug]);
@@ -86,29 +77,6 @@ export default function Dashboard() {
         setIsTrackerDashboard(false);
         const runIdOrBlobName = location.pathname.split('/').pop();
         setSelectedRunBlobName(runIdOrBlobName || null);
-        
-        if (runIdOrBlobName) {
-          try {
-            const data = await fetchAllRuns({ page: 1, page_size: 1000, completed_only: true });
-            const runs = data.runs || [];
-            
-            const item = runs.find((r: any) => 
-              r.run?.blobName === runIdOrBlobName || r.run?._id === runIdOrBlobName
-            );
-            
-            if (item?.trigger?.metadata?.backendSpecs) {
-              const specsMap: Record<string, any> = {};
-              item.trigger.metadata.backendSpecs.forEach((spec: any) => {
-                const key = spec.backendParam || spec.backend;
-                specsMap[key] = spec;
-              });
-              setRunBackendSpecs(specsMap);
-            }
-          } catch (error) {
-            console.error("Failed to fetch run data:", error);
-          }
-        }
-        
         setIsLoading(false);
       }
     };
@@ -177,45 +145,8 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* View toggle */}
+        {/* Dashboard widgets */}
         {kernels.length > 0 && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setView("classic")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                view === "classic"
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
-              }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              Classic
-            </button>
-            <button
-              onClick={() => setView("modular")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                view === "modular"
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              Modular
-            </button>
-          </div>
-        )}
-
-        {/* Classic view -- existing fixed dashboard */}
-        {view === "classic" && kernels.length > 0 && (
-          <DashboardPerformanceSection
-            kernels={kernels}
-            latestBackendSpecs={isTrackerDashboard ? undefined : runBackendSpecs}
-            trackerId={isTrackerDashboard ? tracker?._id : undefined}
-          />
-        )}
-
-        {/* Modular widget view */}
-        {view === "modular" && kernels.length > 0 && (
           <DashboardRenderer
             config={modularConfig}
             rawData={kernels as unknown as Record<string, any>[]}

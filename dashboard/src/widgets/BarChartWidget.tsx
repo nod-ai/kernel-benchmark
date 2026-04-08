@@ -11,7 +11,7 @@ import {
 } from "chart.js";
 import type { WidgetProps } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
-import { getBackendColor } from "../utils/color";
+import { getValueColor } from "../utils/color";
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title);
 
@@ -26,6 +26,7 @@ export default function BarChartWidget({ config, data }: WidgetProps) {
   const chartRef = useRef<Chart | null>(null);
 
   const { x = "label", y = "value", color } = config.mapping;
+  const horizontal = config.style?.horizontal ?? false;
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -37,7 +38,7 @@ export default function BarChartWidget({ config, data }: WidgetProps) {
     const backgroundColors = color
       ? data.map((row) => {
           try {
-            return getBackendColor(String(resolveField(row, color))).alpha(0.7).string();
+            return getValueColor(String(resolveField(row, color))).alpha(0.7).string();
           } catch {
             return "rgba(59,130,246,0.7)";
           }
@@ -47,7 +48,7 @@ export default function BarChartWidget({ config, data }: WidgetProps) {
     const borderColors = color
       ? data.map((row) => {
           try {
-            return getBackendColor(String(resolveField(row, color))).string();
+            return getValueColor(String(resolveField(row, color))).string();
           } catch {
             return "rgb(59,130,246)";
           }
@@ -69,13 +70,16 @@ export default function BarChartWidget({ config, data }: WidgetProps) {
         ],
       },
       options: {
+        indexAxis: horizontal ? "y" : "x",
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
           legend: { display: !!color },
         },
         scales: {
-          y: { beginAtZero: true },
+          ...(horizontal
+            ? { x: { beginAtZero: true } }
+            : { y: { beginAtZero: true } }),
         },
       },
     });
@@ -83,7 +87,7 @@ export default function BarChartWidget({ config, data }: WidgetProps) {
     return () => {
       chartRef.current?.destroy();
     };
-  }, [data, x, y, color, config.title]);
+  }, [data, x, y, color, horizontal, config.title]);
 
   if (data.length === 0) {
     return (

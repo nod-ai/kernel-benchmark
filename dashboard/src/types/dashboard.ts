@@ -43,6 +43,18 @@ export interface FilterRule {
   value: any; // static value, or "$global.<filterId>" for linked global filter
 }
 
+export type FormatPreset = "decimal" | "percentage" | "scientific" | "template" | "fraction";
+
+export interface FractionValue {
+  _fraction: true;
+  numerator: string;
+  denominator: string;
+}
+
+export function isFractionValue(v: unknown): v is FractionValue {
+  return v != null && typeof v === "object" && (v as any)._fraction === true;
+}
+
 export type Transform =
   | { type: "filter"; rules: FilterRule[] }
   | { type: "group_by"; fields: string[] }
@@ -55,7 +67,17 @@ export type Transform =
   | { type: "compute"; expression: string; as: string }
   | { type: "pivot"; keyField: string; valueField: string }
   | { type: "sort"; field: string; direction: "asc" | "desc" }
-  | { type: "limit"; count: number };
+  | { type: "limit"; count: number }
+  | {
+      type: "format";
+      field: string;
+      as: string;
+      preset: FormatPreset;
+      template?: string;
+      decimalPlaces?: number;
+      numerator?: string;
+      denominator?: string;
+    };
 
 export interface DataSourceConfig {
   type: DataSourceType;
@@ -77,6 +99,7 @@ export interface WidgetStyleConfig {
   showLegend?: boolean;
   showGrid?: boolean;
   colorScheme?: string;
+  horizontal?: boolean;
 }
 
 export interface WidgetConfig {

@@ -10,7 +10,7 @@ import {
 } from "chart.js";
 import type { WidgetProps } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
-import { getBackendColor } from "../utils/color";
+import { getValueColor } from "../utils/color";
 
 Chart.register(ScatterController, LinearScale, PointElement, Tooltip, Legend, Title);
 
@@ -69,7 +69,7 @@ export default function ScatterPlotWidget({ config, data }: WidgetProps) {
     return [...seriesMap.entries()].map(([name, points], i) => {
       let c: string;
       try {
-        c = getBackendColor(name).alpha(0.6).string();
+        c = getValueColor(name).alpha(0.6).string();
       } catch {
         c = FALLBACK_COLORS[i % FALLBACK_COLORS.length];
       }

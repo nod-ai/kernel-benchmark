@@ -3,6 +3,8 @@ import type {
   FilterRule,
   FilterOperator,
   AggregateFunction,
+  FormatPreset,
+  FractionValue,
   GlobalFilterConfig,
 } from "../types/dashboard";
 import { evaluateExpression } from "./formula";
@@ -129,8 +131,10 @@ function computeAggregate(
     case "max":
       return Math.max(...values);
     case "geo_mean": {
-      const product = values.reduce((a, b) => a * Math.max(b, 0), 1);
-      return Math.pow(product, 1 / values.length);
+      const positive = values.filter((v) => v > 0);
+      if (positive.length === 0) return 0;
+      const logSum = positive.reduce((a, b) => a + Math.log(b), 0);
+      return Math.exp(logSum / positive.length);
     }
     case "count_where":
       return values.filter((v) => v > 0).length;
@@ -195,6 +199,50 @@ export function applyPivot(data: Row[], keyField: string, valueField: string): R
     result[`${key}_${valueField}`] = resolveField(row, valueField);
   }
   return [result];
+}
+
+export function applyFormat(
+  data: Row[],
+  field: string,
+  as: string,
+  preset: FormatPreset,
+  template?: string,
+  decimalPlaces: number = 2,
+  numerator?: string,
+  denominator?: string
+): Row[] {
+  return data.map((row) => {
+    let formatted: string | FractionValue;
+    switch (preset) {
+      case "fraction": {
+        const num = numerator ? resolveField(row, numerator) : undefined;
+        const den = denominator ? resolveField(row, denominator) : undefined;
+        formatted = {
+          _fraction: true,
+          numerator: num != null ? String(num) : "—",
+          denominator: den != null ? String(den) : "—",
+        };
+        break;
+      }
+      case "percentage":
+        formatted = (Number(resolveField(row, field)) * 100).toFixed(decimalPlaces) + "%";
+        break;
+      case "scientific":
+        formatted = Number(resolveField(row, field)).toExponential(decimalPlaces);
+        break;
+      case "template":
+        formatted = (template || "").replace(/\{(\w[\w.]*)\}/g, (_, key) => {
+          const v = resolveField(row, key);
+          return v != null ? String(v) : "";
+        });
+        break;
+      case "decimal":
+      default:
+        formatted = Number(resolveField(row, field)).toFixed(decimalPlaces);
+        break;
+    }
+    return { ...row, [as]: formatted };
+  });
 }
 
 /**
@@ -299,6 +347,10 @@ export function executePipeline(
 
       case "limit":
         current = applyLimit(current, t.count);
+        break;
+
+      case "format":
+        current = applyFormat(current, t.field, t.as, t.preset, t.template, t.decimalPlaces, t.numerator, t.denominator);
         break;
     }
   }

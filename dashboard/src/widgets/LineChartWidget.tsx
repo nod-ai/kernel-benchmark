@@ -12,7 +12,7 @@ import {
 } from "chart.js";
 import type { WidgetProps } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
-import { getBackendColor } from "../utils/color";
+import { getValueColor } from "../utils/color";
 
 Chart.register(
   LineController,
@@ -78,7 +78,7 @@ export default function LineChartWidget({ config, data }: WidgetProps) {
     const ds = [...seriesMap.entries()].map(([seriesName, pointMap], i) => {
       let lineColor: string;
       try {
-        lineColor = getBackendColor(seriesName).string();
+        lineColor = getValueColor(seriesName).string();
       } catch {
         lineColor = FALLBACK_COLORS[i % FALLBACK_COLORS.length];
       }

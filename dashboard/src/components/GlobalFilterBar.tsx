@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Filter, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import type { GlobalFilterConfig, GlobalFilterType } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
+import { getValueColor } from "../utils/color";
 
 interface GlobalFilterBarProps {
   filters: GlobalFilterConfig[];
@@ -12,6 +13,8 @@ interface GlobalFilterBarProps {
   onAddFilter?: (filter: GlobalFilterConfig) => void;
   onUpdateFilter?: (filter: GlobalFilterConfig) => void;
   onDeleteFilter?: (filterId: string) => void;
+  /** Fields currently used as mapping.color in one or more widgets */
+  colorByFields?: Set<string>;
 }
 
 const FILTER_TYPE_LABELS: Record<GlobalFilterType, string> = {
@@ -20,6 +23,42 @@ const FILTER_TYPE_LABELS: Record<GlobalFilterType, string> = {
   range: "Numeric range",
   date_range: "Date range",
 };
+
+function chipStyle(
+  isActive: boolean,
+  colorField: boolean,
+): string {
+  if (!colorField) {
+    return isActive
+      ? "bg-blue-600 text-white border-blue-600"
+      : "bg-white text-gray-600 border-gray-300 hover:border-gray-400";
+  }
+  if (isActive) {
+    return "text-white border-transparent";
+  }
+  return "border-gray-200 hover:border-gray-300";
+}
+
+function chipInlineStyle(
+  isActive: boolean,
+  colorField: boolean,
+  optionValue: string,
+): React.CSSProperties | undefined {
+  if (!colorField) return undefined;
+  try {
+    const c = getValueColor(optionValue);
+    if (isActive) {
+      return { backgroundColor: c.alpha(0.85).string(), borderColor: c.alpha(0.9).string() };
+    }
+    return {
+      backgroundColor: c.alpha(0.1).string(),
+      borderColor: c.alpha(0.3).string(),
+      color: c.darken(0.3).string(),
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 export default function GlobalFilterBar({
   filters,
@@ -30,6 +69,7 @@ export default function GlobalFilterBar({
   onAddFilter,
   onUpdateFilter,
   onDeleteFilter,
+  colorByFields,
 }: GlobalFilterBarProps) {
   const [editingFilterId, setEditingFilterId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -99,6 +139,7 @@ export default function GlobalFilterBar({
                 value={values[f.id]}
                 rawData={rawData}
                 onChange={(val) => onChange(f.id, val)}
+                isColorCoded={colorByFields?.has(f.field) ?? false}
               />
               {isEditing && (
                 <div className="flex gap-0.5 ml-1 mt-0.5 flex-shrink-0">
@@ -232,9 +273,10 @@ interface GlobalFilterInputProps {
   value: any;
   rawData: Record<string, any>[];
   onChange: (value: any) => void;
+  isColorCoded?: boolean;
 }
 
-function GlobalFilterInput({ filter, value, rawData, onChange }: GlobalFilterInputProps) {
+function GlobalFilterInput({ filter, value, rawData, onChange, isColorCoded = false }: GlobalFilterInputProps) {
   const options = useMemo(() => {
     if (filter.type === "date_range" || filter.type === "range") return [];
     const vals = rawData.map((row) => resolveField(row, filter.field));
@@ -249,19 +291,19 @@ function GlobalFilterInput({ filter, value, rawData, onChange }: GlobalFilterInp
           {filter.label}:
         </span>
         <div className="flex gap-1.5 flex-wrap">
-          {options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => onChange(opt)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                selected === opt
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+          {options.map((opt) => {
+            const active = selected === opt;
+            return (
+              <button
+                key={opt}
+                onClick={() => onChange(opt)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${chipStyle(active, isColorCoded)}`}
+                style={chipInlineStyle(active, isColorCoded, opt)}
+              >
+                {opt}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -283,19 +325,19 @@ function GlobalFilterInput({ filter, value, rawData, onChange }: GlobalFilterInp
           {filter.label}:
         </span>
         <div className="flex gap-1.5 flex-wrap">
-          {options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => toggle(opt)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                selected.includes(opt)
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+          {options.map((opt) => {
+            const active = selected.includes(opt);
+            return (
+              <button
+                key={opt}
+                onClick={() => toggle(opt)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${chipStyle(active, isColorCoded)}`}
+                style={chipInlineStyle(active, isColorCoded, opt)}
+              >
+                {opt}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
