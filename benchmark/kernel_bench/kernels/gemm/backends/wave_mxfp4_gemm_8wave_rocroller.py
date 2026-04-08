@@ -8,10 +8,9 @@ Compiles wave kernels to assembly via benchmark_mxfp4_8wave.py, integrates
 into hipBLASLt, and benchmarks with hipblaslt-bench.
 """
 
-from typing import override, Optional, List, Tuple
+from typing import override, Optional
 import subprocess
 from kernel_bench.tuning.hyperparam import IntegerBounds
-from kernel_bench.config.base import OpConfig
 import csv
 import os
 import tempfile
@@ -199,12 +198,31 @@ class WaveMxfp4Gemm8WaveRocrollerBenchmark(KernelBenchmark):
         return True
 
     @classmethod
-    def expand_configs(cls, tag: str, config: OpConfig) -> List[Tuple[str, OpConfig]]:
-        # Only one macrotile for 8-wave; keep tag format consistent
-        return [(f"{tag}__mt0", config)]
+    def expand_configs(cls, tag, config):
+        """Yield one entry per macrotile whose flipped tile evenly divides the shape.
+
+        Integration uses --flip-macrotiles, so hipBLASLt sees (MT_N, MT_M, MT_K)
+        and requires M % MT_N == 0 and N % MT_M == 0 and K % MT_K == 0.
+        """
+        entries = []
+        for i, mt in enumerate(_MACROTILES):
+            mt_m_hip, mt_n_hip, mt_k_hip = mt[1], mt[0], mt[2]
+            if (config.M % mt_m_hip == 0
+                    and config.N % mt_n_hip == 0
+                    and config.K % mt_k_hip == 0):
+                entries.append((f"{tag}__mt{i}", config))
+        return entries if entries else []
+
+    def _select_macrotile(self):
+        """Read macrotile index encoded in tag suffix __mt<i>."""
+        try:
+            idx = int(self.tag.rsplit("__mt", 1)[-1])
+            return _MACROTILES[idx]
+        except (ValueError, IndexError):
+            return _MACROTILES[0]
 
     def setup_parameters(self):
-        mt = _MACROTILES[0]
+        mt = self._select_macrotile()
         self.add_param("BLOCK_M", IntegerBounds(mt[0], mt[0]), initial_value=mt[0])
         self.add_param("BLOCK_N", IntegerBounds(mt[1], mt[1]), initial_value=mt[1])
         self.add_param("BLOCK_K", IntegerBounds(mt[2], mt[2]), initial_value=mt[2])
@@ -277,11 +295,11 @@ def _parse_kernel_source(stdout: str, stderr: str) -> str | None:
     for line in stderr.splitlines():
         s = line.strip()
         if s.startswith("[KERNEL_SOURCE]"):
-            for token in s.split():
-                if token.startswith("source="):
-                    src = token.split("=", 1)[1].lower()
-                    if src in ("wave", "aiter", "rocroller"):
-                        return src
+            parts = s.split()
+            if len(parts) >= 2:
+                src = parts[1].lower()
+                if src in ("wave", "aiter", "rocroller"):
+                    return src
     # Fallback: symbol name in stdout contains backend identifier
     for line in stdout.splitlines():
         s = line.strip()

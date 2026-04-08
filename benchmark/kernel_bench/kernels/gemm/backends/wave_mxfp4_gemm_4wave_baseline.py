@@ -8,26 +8,13 @@ pre-existing kernel library as the aiter baseline.
 Wave installation comes from iree-org/wave @ develop (Sanket's branch).
 """
 
-from typing import override, Optional, List, Tuple
+from typing import override, Optional
 import subprocess
 import os
 
 from kernel_bench.core.template import KernelBenchmark
-from kernel_bench.tuning.hyperparam import IntegerBounds
-from kernel_bench.config.base import OpConfig
 from .hipblaslt_gemm import parse_hipblaslt_us
 from ..gemm_utils import GemmConfig
-
-_MACROTILES = [
-    (256, 224, 256),
-    (256, 192, 256),
-    (192, 224, 256),
-    (256, 160, 256),
-    (224, 224, 256),
-    (192, 192, 256),
-    (224, 192, 256),
-    (224, 160, 256),
-]
 
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
 HIPBLASLT_DIR = f"{ROCM_LIBRARIES_DIR}/projects/hipblaslt"
@@ -72,28 +59,8 @@ class WaveMxfp4Gemm4WaveBaselineBenchmark(KernelBenchmark):
             return False
         return True
 
-    @classmethod
-    def expand_configs(cls, tag: str, config: OpConfig) -> List[Tuple[str, OpConfig]]:
-        """Yield one entry per macrotile that evenly divides this problem shape."""
-        entries = []
-        for i, mt in enumerate(_MACROTILES):
-            if config.M % mt[0] == 0 and config.N % mt[1] == 0:
-                entries.append((f"{tag}__mt{i}", config))
-        return entries if entries else [(f"{tag}__mt0", config)]
-
-    def _select_macrotile(self):
-        """Read macrotile index encoded in tag suffix __mt<i>."""
-        try:
-            idx = int(self.tag.rsplit("__mt", 1)[-1])
-            return _MACROTILES[idx]
-        except (ValueError, IndexError):
-            return _MACROTILES[0]
-
     def setup_parameters(self):
-        mt = self._select_macrotile()
-        self.add_param("BLOCK_M", IntegerBounds(mt[0], mt[0]), initial_value=mt[0])
-        self.add_param("BLOCK_N", IntegerBounds(mt[1], mt[1]), initial_value=mt[1])
-        self.add_param("BLOCK_K", IntegerBounds(mt[2], mt[2]), initial_value=mt[2])
+        pass
 
     @override
     def run_bench(self, device, num_iterations=1, timeout=None):

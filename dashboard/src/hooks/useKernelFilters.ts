@@ -10,6 +10,7 @@ export interface FilterState {
   tags: string[];
   variants: string[];
   macrotiles: string[];
+  kernelSources: string[];
 }
 
 // Available options for each filter
@@ -21,6 +22,7 @@ export interface AvailableFilterOptions {
   tags: string[];
   variants: string[];
   macrotiles: string[];
+  kernelSources: string[];
 }
 
 // Filter configuration type
@@ -80,6 +82,15 @@ function getUniqueMacrotiles(kernels: Kernel[], filters: FilterState): string[] 
     })
     .filter((t): t is string => t !== null);
   return Array.from(new Set(tiles)).sort();
+}
+
+function getUniqueKernelSources(kernels: Kernel[], filters: FilterState): string[] {
+  const filteredKernels = kernels.filter(
+    (k) => k.kernelType === filters.kernelType && k.machine === filters.machine
+  );
+  return Array.from(
+    new Set(filteredKernels.map((k) => k.kernelSource).filter((s): s is string => !!s))
+  ).sort();
 }
 
 function getUniqueMacrotileForKernel(k: Kernel): string | null {
@@ -157,6 +168,13 @@ function getFilterConfigs(
       getOptions: getUniqueMacrotiles,
       condition: (filters, kernels) => getUniqueMacrotiles(kernels, filters).length > 0,
     },
+    {
+      key: "kernelSources",
+      type: "multi",
+      title: "Source",
+      getOptions: getUniqueKernelSources,
+      condition: (filters, kernels) => getUniqueKernelSources(kernels, filters).length > 0,
+    },
   ];
 }
 
@@ -214,6 +232,7 @@ function initializeFilters(
       tags: [],
       variants: [],
       macrotiles: [],
+      kernelSources: [],
     };
     const kernelTypeOptions =
       filterConfigs[0]?.getOptions([], emptyFilters) ?? [];
@@ -239,6 +258,7 @@ function initializeFilters(
     tags: [],
     variants: [],
     macrotiles: [],
+    kernelSources: [],
   };
 
   // Set initial values for all filters
@@ -285,6 +305,7 @@ export function useKernelFilters(kernels: Kernel[]) {
       tags: filterConfigs[4].getOptions(successKernels, filters),
       variants: filterConfigs[5].getOptions(successKernels, filters),
       macrotiles: filterConfigs[6].getOptions(successKernels, filters),
+      kernelSources: filterConfigs[7].getOptions(successKernels, filters),
     }),
     [successKernels, filters, filterConfigs]
   );
@@ -297,6 +318,10 @@ export function useKernelFilters(kernels: Kernel[]) {
         filters.macrotiles.length === 0 ||
         macrotile === null ||
         filters.macrotiles.includes(macrotile);
+      const kernelSourceMatch =
+        filters.kernelSources.length === 0 ||
+        !k.kernelSource ||
+        filters.kernelSources.includes(k.kernelSource);
       return (
         filters.backends.includes(k.backend) &&
         filters.dtypes.includes(k.dtype) &&
@@ -307,7 +332,8 @@ export function useKernelFilters(kernels: Kernel[]) {
           filters.variants.includes(
             k.shape.transpose || k.shape.tA + k.shape.tB
           )) &&
-        macrotileMatch
+        macrotileMatch &&
+        kernelSourceMatch
       );
     });
   }, [successKernels, filters]);

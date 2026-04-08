@@ -95,7 +95,7 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
         if kernel_type not in grouped[machine]:
             grouped[machine][kernel_type] = {}
         if backend not in grouped[machine][kernel_type]:
-            grouped[machine][kernel_type][backend] = {"_all": [], "byMacrotile": {}}
+            grouped[machine][kernel_type][backend] = {"_all": [], "byMacrotile": {}, "byKernelSource": {}}
 
         grouped[machine][kernel_type][backend]["_all"].append(kernel)
 
@@ -105,6 +105,13 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
             if macrotile not in by_mt:
                 by_mt[macrotile] = []
             by_mt[macrotile].append(kernel)
+
+        kernel_source = kernel.get("kernelSource")
+        if kernel_source:
+            by_ks = grouped[machine][kernel_type][backend]["byKernelSource"]
+            if kernel_source not in by_ks:
+                by_ks[kernel_source] = []
+            by_ks[kernel_source].append(kernel)
 
     # Calculate statistics for each group
     stats = {}
@@ -121,6 +128,10 @@ def compute_performance_statistics(kernels: List[Dict]) -> Dict[str, Any]:
                 backend_stats["byMacrotile"] = {
                     mt: _compute_stats_for_list(mt_kernels)
                     for mt, mt_kernels in data["byMacrotile"].items()
+                }
+                backend_stats["byKernelSource"] = {
+                    ks: _compute_stats_for_list(ks_kernels)
+                    for ks, ks_kernels in data["byKernelSource"].items()
                 }
                 stats[machine][kernel_type][backend] = backend_stats
 

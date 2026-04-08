@@ -254,6 +254,7 @@ export interface TrackerPerformancePoint {
   }>;
   backendSpecs?: BackendSpec[]; // Backend specifications with commit hashes
   availableMacrotiles?: string[]; // e.g. ["256x192x256", "256x224x256"]
+  availableKernelSources?: string[]; // e.g. ["wave", "aiter", "rocroller"]
 }
 
 export interface Tracker {
