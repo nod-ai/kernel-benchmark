@@ -45,6 +45,8 @@ export default function TrackerDashboardSection({
   const [aggregation, setAggregation] = useState<"avg" | "geomean">("avg");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [selectedMacrotile, setSelectedMacrotile] = useState<string>("");
+  const [selectedKernelSource, setSelectedKernelSource] = useState<string>("");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -63,6 +65,20 @@ export default function TrackerDashboardSection({
           ),
         ]);
         setRuns(runsData);
+
+        // Fetch performance timeline
+        const params = new URLSearchParams();
+        if (startDate) params.append("start_date", startDate);
+        if (endDate) params.append("end_date", endDate);
+        if (selectedMacrotile) params.append("macrotile", selectedMacrotile);
+        if (selectedKernelSource) params.append("kernel_source", selectedKernelSource);
+
+        const timelineResponse = await fetch(
+          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance${
+            params.toString() ? `?${params.toString()}` : ""
+          }`
+        );
+        const timelineData = await timelineResponse.json();
         setTimeline(timelineData);
       } catch (error) {
         console.error("Failed to fetch tracker data:", error);
@@ -72,7 +88,7 @@ export default function TrackerDashboardSection({
     };
 
     fetchData();
-  }, [trackerId, startDate, endDate]);
+  }, [trackerId, startDate, endDate, selectedMacrotile, selectedKernelSource]);
 
   // Sync selectedRunId with the current selectedRunBlobName
   useEffect(() => {
@@ -112,6 +128,23 @@ export default function TrackerDashboardSection({
       Object.keys(point.backends).forEach((backend) => backendSet.add(backend));
     });
     return Array.from(backendSet).sort();
+  }, [timeline]);
+
+  // Get available macrotiles and kernel sources from timeline
+  const availableMacrotiles = useMemo(() => {
+    const set = new Set<string>();
+    timeline.forEach((point) => {
+      point.availableMacrotiles?.forEach((m) => set.add(m));
+    });
+    return Array.from(set).sort();
+  }, [timeline]);
+
+  const availableKernelSources = useMemo(() => {
+    const set = new Set<string>();
+    timeline.forEach((point) => {
+      point.availableKernelSources?.forEach((s) => set.add(s));
+    });
+    return Array.from(set).sort();
   }, [timeline]);
 
   // Create/update chart when data changes
@@ -306,7 +339,7 @@ export default function TrackerDashboardSection({
             <h3 className="font-medium text-gray-700">Chart Settings</h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <div className="flex flex-col gap-2">
               <label className="font-medium text-gray-600 text-sm">
                 Metric:
@@ -358,6 +391,48 @@ export default function TrackerDashboardSection({
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
+
+            {availableMacrotiles.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-600 text-sm">
+                  Macrotile:
+                </label>
+                <select
+                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  value={selectedMacrotile}
+                  onChange={(e) => {
+                    setSelectedMacrotile(e.target.value);
+                    if (e.target.value) setSelectedKernelSource("");
+                  }}
+                >
+                  <option value="">All Macrotiles</option>
+                  {availableMacrotiles.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {availableKernelSources.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <label className="font-medium text-gray-600 text-sm">
+                  Source:
+                </label>
+                <select
+                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  value={selectedKernelSource}
+                  onChange={(e) => {
+                    setSelectedKernelSource(e.target.value);
+                    if (e.target.value) setSelectedMacrotile("");
+                  }}
+                >
+                  <option value="">All Sources</option>
+                  {availableKernelSources.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 

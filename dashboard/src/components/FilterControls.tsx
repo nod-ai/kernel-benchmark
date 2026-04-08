@@ -509,6 +509,9 @@ export function DashboardFilterControls({
       case "macrotiles":
         options = availableOptions.macrotiles;
         break;
+      case "kernelSources":
+        options = availableOptions.kernelSources;
+        break;
       default:
         options = [];
     }

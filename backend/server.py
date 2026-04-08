@@ -1391,10 +1391,12 @@ def get_tracker_performance_timeline(tracker_id):
     try:
         start_date = request.args.get("start_date")
         end_date = request.args.get("end_date")
-        
+        macrotile = request.args.get("macrotile")  # e.g. "256x192x256"
+        kernel_source = request.args.get("kernel_source")  # e.g. "wave", "aiter", "rocroller"
+
         # Query BenchmarkRunStats for this tracker
         stats = BenchmarkRunStatsDb.query(f"trackerId eq '{tracker_id}'")
-        
+
         # Filter by date range if provided
         if start_date:
             start_dt = datetime.fromisoformat(start_date)
@@ -1402,34 +1404,84 @@ def get_tracker_performance_timeline(tracker_id):
         if end_date:
             end_dt = datetime.fromisoformat(end_date)
             stats = [s for s in stats if s.timestamp <= end_dt]
-        
+
         # Sort by timestamp
         stats.sort(key=lambda s: s.timestamp)
-        
+
         # Transform data for frontend consumption
         timeline = []
         for stat in stats:
-            # Extract backend performance from stat.performance dict
-            # Format: performance[machine][kernel_type][backend] = {avg_tflops, geomean_tflops, ...}
             backends_data = {}
+            available_macrotiles = set()
+            available_kernel_sources = set()
             for machine_data in stat.performance.values():
                 for kernel_type_data in machine_data.values():
                     for backend, metrics in kernel_type_data.items():
+                        for mt in metrics.get("byMacrotile", {}).keys():
+                            available_macrotiles.add(mt)
+                        for ks in metrics.get("byKernelSource", {}).keys():
+                            available_kernel_sources.add(ks)
+
                         if backend not in backends_data:
-                            backends_data[backend] = metrics
-            
+                            if macrotile and macrotile in metrics.get("byMacrotile", {}):
+                                backends_data[backend] = metrics["byMacrotile"][macrotile]
+                            elif kernel_source and kernel_source in metrics.get("byKernelSource", {}):
+                                backends_data[backend] = metrics["byKernelSource"][kernel_source]
+                            else:
+                                backends_data[backend] = {
+                                    k: v for k, v in metrics.items()
+                                    if k not in ("byMacrotile", "byKernelSource")
+                                }
+
             timeline.append({
                 "timestamp": stat.timestamp.isoformat(),
                 "runId": stat.runId,
                 "backends": backends_data,
-                "backendSpecs": stat.backendSpecs if stat.backendSpecs else None
+                "backendSpecs": stat.backendSpecs if stat.backendSpecs else None,
+                "availableMacrotiles": sorted(available_macrotiles),
+                "availableKernelSources": sorted(available_kernel_sources),
             })
-        
+
         return jsonify(timeline)
     except Exception as e:
         logger.error(f"Error getting tracker performance timeline for {tracker_id}: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to get tracker performance timeline: {str(e)}"}), 500
+
+
+@app.route("/api/runs/<run_id>/recompute-stats", methods=["POST"])
+def recompute_run_stats(run_id):
+    """Recompute BenchmarkRunStats for a run using the current statistics code."""
+    try:
+        run = WorkflowRunDb.find_by_id(run_id)
+        if not run:
+            return jsonify({"error": f"Run {run_id} not found"}), 404
+
+        kernels = get_artifact_parser(RunType.BENCHMARK).load_data(run.blobName)
+        if not kernels:
+            return jsonify({"error": "Failed to load artifact data"}), 500
+
+        from backend.perf.statistics import compute_performance_statistics
+        performance = compute_performance_statistics(kernels)
+
+        existing = BenchmarkRunStatsDb.query(f"runId eq '{run_id}'")
+        if existing:
+            BenchmarkRunStatsDb.update_by_id(existing[0]._id, {"performance": performance})
+            return jsonify({"message": f"Recomputed stats for run {run_id}", "statsId": existing[0]._id})
+        else:
+            stats = BenchmarkRunStats(
+                _id=str(uuid4()),
+                runId=run_id,
+                timestamp=datetime.now(timezone.utc),
+                machine=run.machine or "unknown",
+                performance=performance,
+            )
+            BenchmarkRunStatsDb.upsert(stats)
+            return jsonify({"message": f"Created stats for run {run_id}", "statsId": stats._id})
+    except Exception as e:
+        logger.error(f"Failed to recompute stats for run {run_id}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/triggers", methods=["GET"])
