@@ -12,14 +12,9 @@ from .hipblaslt_gemm import parse_hipblaslt_us
 from ..gemm_utils import GemmConfig
 
 _MACROTILES = [
-    (256, 224, 256),
     (256, 192, 256),
-    (192, 224, 256),
-    (256, 160, 256),
-    (224, 224, 256),
-    (192, 192, 256),
     (224, 192, 256),
-    (224, 160, 256),
+    (192, 192, 256),
 ]
 
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
@@ -187,12 +182,19 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
 
     @classmethod
     def expand_configs(cls, tag, config):
-        """Yield one entry per macrotile that fits this problem shape."""
+        """Yield one entry per macrotile whose flipped tile evenly divides the shape.
+
+        Integration uses --flip-macrotiles, so hipBLASLt sees (MT_N, MT_M, MT_K)
+        and requires M % MT_N == 0 and N % MT_M == 0 and K % MT_K == 0.
+        """
         entries = []
         for i, mt in enumerate(_MACROTILES):
-            if config.M >= mt[0] and config.N >= mt[1]:
+            mt_m_hip, mt_n_hip, mt_k_hip = mt[1], mt[0], mt[2]
+            if (config.M % mt_m_hip == 0
+                    and config.N % mt_n_hip == 0
+                    and config.K % mt_k_hip == 0):
                 entries.append((f"{tag}__mt{i}", config))
-        return entries if entries else [(f"{tag}__mt0", config)]
+        return entries if entries else []
 
     def _select_macrotile(self):
         """Read macrotile index encoded in tag suffix __mt<i>."""
