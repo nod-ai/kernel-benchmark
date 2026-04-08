@@ -12,9 +12,15 @@ from .hipblaslt_gemm import parse_hipblaslt_us
 from ..gemm_utils import GemmConfig
 
 _MACROTILES = [
+    (256, 224, 256),
     (256, 192, 256),
-    (224, 192, 256),
+    (192, 224, 256),
+    (256, 160, 256),
+    (224, 224, 256),
     (192, 192, 256),
+    (224, 192, 256),
+    (224, 160, 256),
+    (128, 512, 256),
 ]
 
 ROCM_LIBRARIES_DIR = "/workspace/rocm-libraries"
