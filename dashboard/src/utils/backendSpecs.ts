@@ -50,9 +50,13 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     name: "Wave 4-wave (baseline)",
     backend: "wave",
     backendParam: "wave_4wave_baseline",
-    remoteRepository: "panditsa/wave",
-    branch: "4waveasm-256x192x256",
+    remoteRepository: "iree-org/wave",
+    branch: "main",
     parentSpecId: "wave-default",
+    buildMeta: {
+      rocmLibrariesRepo: "ROCm/rocm-libraries",
+      rocmLibrariesBranch: "develop",
+    },
   },
   {
     id: "wave-4wave-rocroller",
@@ -62,6 +66,10 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     remoteRepository: "panditsa/wave",
     branch: "4waveasm-256x192x256",
     parentSpecId: "wave-default",
+    buildMeta: {
+      rocmLibrariesRepo: "suryajasper/rocm-libraries",
+      rocmLibrariesBranch: "wave-mxfp4-testing",
+    },
   },
   {
     id: "wave-8wave-rocroller",
