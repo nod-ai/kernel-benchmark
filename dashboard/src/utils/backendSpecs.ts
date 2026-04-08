@@ -86,6 +86,10 @@ export const VARIANT_BACKEND_SPECS: BackendSpec[] = [
     remoteRepository: "panditsa/wave",
     branch: "reduce_reg_pres",
     parentSpecId: "wave-default",
+    buildMeta: {
+      rocmLibrariesRepo: "suryajasper/rocm-libraries",
+      rocmLibrariesBranch: "wave-mxfp4-testing",
+    },
   },
   {
     id: "wave-8wave-rocroller",

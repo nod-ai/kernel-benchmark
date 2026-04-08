@@ -75,6 +75,10 @@ def _generate_default_backend_specs(backends: list[str]) -> list[dict]:
             "remoteRepository": "iree-org/wave",
             "branch": "main",
             "isDefault": False,
+            "buildMeta": {
+                "rocmLibrariesRepo": "suryajasper/rocm-libraries",
+                "rocmLibrariesBranch": "wave-mxfp4-testing",
+            },
         },
         "wave_4wave_baseline": {
             "id": "wave-4wave-baseline",
