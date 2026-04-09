@@ -309,6 +309,7 @@ export default function CsvDownloadModal({
   }, []);
 
   // ---- Drag-and-drop reorder ----
+  // overIdx is an *insertion gap* index: 0 = before first item, N = after last.
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, idx: number) => {
@@ -323,29 +324,34 @@ export default function CsvDownloadModal({
     (e: React.DragEvent, idx: number) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
-      setOverIdx(idx);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      setOverIdx(e.clientY > midY ? idx + 1 : idx);
     },
     []
   );
 
   const handleDrop = useCallback(
-    (e: React.DragEvent, dropIdx: number) => {
+    (e: React.DragEvent) => {
       e.preventDefault();
-      if (dragIdx === null || dragIdx === dropIdx) {
+      if (dragIdx === null || overIdx === null) {
         setDragIdx(null);
         setOverIdx(null);
         return;
       }
-      setSelectedColumns((prev) => {
-        const next = [...prev];
-        const [moved] = next.splice(dragIdx, 1);
-        next.splice(dropIdx, 0, moved);
-        return next;
-      });
+      const insertAt = dragIdx < overIdx ? overIdx - 1 : overIdx;
+      if (insertAt !== dragIdx) {
+        setSelectedColumns((prev) => {
+          const next = [...prev];
+          const [moved] = next.splice(dragIdx, 1);
+          next.splice(insertAt, 0, moved);
+          return next;
+        });
+      }
       setDragIdx(null);
       setOverIdx(null);
     },
-    [dragIdx]
+    [dragIdx, overIdx]
   );
 
   const handleDragEnd = useCallback(() => {
@@ -474,43 +480,57 @@ export default function CsvDownloadModal({
                   Select columns from the tree
                 </div>
               ) : (
-                selectedColumns.map((col, idx) => (
-                  <div
-                    key={col.path}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, idx)}
-                    onDragOver={(e) => handleDragOver(e, idx)}
-                    onDrop={(e) => handleDrop(e, idx)}
-                    onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded-md transition-all ${
-                      dragIdx === idx
-                        ? "opacity-40"
-                        : overIdx === idx && dragIdx !== null
-                          ? "border-t-2 border-blue-400"
-                          : ""
-                    } ${dragIdx === null ? "hover:bg-gray-50" : ""}`}
-                  >
-                    <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab flex-shrink-0" />
-                    <span
-                      className="text-xs text-gray-400 truncate w-28 flex-shrink-0"
-                      title={col.path}
+                selectedColumns.map((col, idx) => {
+                  const isLast = idx === selectedColumns.length - 1;
+                  const showTop =
+                    dragIdx !== null && dragIdx !== idx && overIdx === idx;
+                  const showBottom =
+                    dragIdx !== null &&
+                    dragIdx !== idx &&
+                    isLast &&
+                    overIdx === idx + 1;
+                  return (
+                    <div
+                      key={col.path}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center gap-2 py-1.5 px-2 rounded-md transition-all ${
+                        dragIdx === idx
+                          ? "opacity-40"
+                          : showTop
+                            ? "border-t-2 border-blue-400"
+                            : showBottom
+                              ? "border-b-2 border-blue-400"
+                              : ""
+                      } ${dragIdx === null ? "hover:bg-gray-50" : ""}`}
                     >
-                      {col.path}
-                    </span>
-                    <input
-                      type="text"
-                      value={col.renameTo}
-                      onChange={(e) => handleRename(col.path, e.target.value)}
-                      className="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-white"
-                    />
-                    <button
-                      onClick={() => handleRemove(col.path)}
-                      className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded flex-shrink-0 transition-colors"
-                    >
-                      <XIcon className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
+                      <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab flex-shrink-0" />
+                      <span
+                        className="text-xs text-gray-400 truncate w-28 flex-shrink-0"
+                        title={col.path}
+                      >
+                        {col.path}
+                      </span>
+                      <input
+                        type="text"
+                        value={col.renameTo}
+                        onChange={(e) =>
+                          handleRename(col.path, e.target.value)
+                        }
+                        className="flex-1 min-w-0 px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-white"
+                      />
+                      <button
+                        onClick={() => handleRemove(col.path)}
+                        className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded flex-shrink-0 transition-colors"
+                      >
+                        <XIcon className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
