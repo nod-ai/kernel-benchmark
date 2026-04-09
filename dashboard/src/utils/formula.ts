@@ -58,22 +58,19 @@ export function validateExpression(expression: string): string | null {
   }
 }
 
+const KEYWORDS = new Set(["and", "or", "not", "true", "false", "PI", "E"]);
+
 export function evaluateExpression(
   expression: string,
   row: Record<string, any>
 ): number {
   try {
     const expr = parser.parse(expression);
-    const rawScope = buildScope(row);
-    const scope = new Proxy(rawScope, {
-      get(target, prop, receiver) {
-        if (typeof prop === "string" && !(prop in target)) return 0;
-        return Reflect.get(target, prop, receiver);
-      },
-      has() {
-        return true;
-      },
-    });
+    const scope = buildScope(row);
+    const identifiers = expression.match(/[a-zA-Z_]\w*/g) ?? [];
+    for (const id of identifiers) {
+      if (!KEYWORDS.has(id) && !(id in scope)) scope[id] = 0;
+    }
     const result = expr.evaluate(scope);
     return typeof result === "number" ? result : Number(result) || 0;
   } catch {
