@@ -23,6 +23,8 @@ from functools import wraps
 import jwt
 from datetime import datetime, timezone, timedelta
 import os
+import re
+import glob
 from werkzeug.security import check_password_hash
 from dotenv import load_dotenv
 
@@ -278,19 +280,26 @@ def get_runs():
                 if item["run"] and item["run"].hasArtifact == has_artifact_bool
             ]
 
-        # Completed filter - check run.completed
+        # Completed filter - a run is considered completed if either
+        # run.completed is True OR run.status == "completed" (handles cases
+        # where the webhook missed updating the completed boolean)
+        def _is_run_completed(item):
+            run = item["run"]
+            if not run:
+                return False
+            return run.completed or run.status == "completed"
+
         if completed_only is not None:
             completed_only_bool = completed_only.lower() == "true"
             if completed_only_bool:
                 filtered_items = [
                     item for item in filtered_items
-                    if item["run"] and item["run"].completed
+                    if _is_run_completed(item)
                 ]
             else:
-                # Ongoing means either no run yet or run not completed
                 filtered_items = [
                     item for item in filtered_items
-                    if not item["run"] or not item["run"].completed
+                    if not _is_run_completed(item)
                 ]
 
         # Step 5: Sort by trigger.timestamp (most recent first)
@@ -313,11 +322,11 @@ def get_runs():
         
         ongoing_count = sum(
             1 for item in items_for_counts
-            if not item["run"] or not item["run"].completed
+            if not _is_run_completed(item)
         )
         completed_count = sum(
             1 for item in items_for_counts
-            if item["run"] and item["run"].completed
+            if _is_run_completed(item)
         )
 
         # Step 6: Paginate
@@ -370,7 +379,16 @@ def delete_run(run_id):
                 logger.info(f"Deleted blob artifact: {run.blobName}")
             except Exception as blob_error:
                 logger.warning(f"Failed to delete blob {run.blobName}: {blob_error}")
-                # Continue with database deletion even if blob deletion fails
+
+            # Clean up profiling blobs
+            try:
+                directory_client.rm(f"{run.blobName}_profiling_manifest")
+            except Exception:
+                pass
+            try:
+                directory_client.rmdir(f"{run.blobName}_profiling")
+            except Exception:
+                pass
 
         # Delete the corresponding trigger if it exists
         if run.triggerId:
@@ -402,6 +420,115 @@ def get_artifact_by_run_id(blob_name):
         return jsonify(new_kernels)
     else:
         return "Failed to gather artifact data", 500
+
+
+@app.route("/profiling/<run_id>/manifest")
+def get_profiling_manifest(run_id):
+    """Return the rocprof profiling manifest for a benchmark run.
+
+    Accepts either a database run _id or a blobName.
+    """
+    try:
+        all_stats = BenchmarkRunStatsDb.query(f"runId eq '{run_id}'")
+        if not all_stats:
+            runs = WorkflowRunDb.find_all({"blobName": run_id})
+            if runs:
+                all_stats = BenchmarkRunStatsDb.query(f"runId eq '{runs[0]._id}'")
+        if not all_stats:
+            return jsonify({"error": "No stats found for this run"}), 404
+
+        manifest = all_stats[0].profilingManifest
+        if not manifest:
+            return jsonify({"error": "No profiling data for this run"}), 404
+
+        return jsonify(manifest)
+    except Exception as e:
+        logger.error(f"Error fetching profiling manifest for run {run_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/profiling/<blob_name>/dump/<dump_key>")
+def get_profiling_dump(blob_name, dump_key):
+    """Return rocprof trace data for a single kernel profiling dump.
+
+    Downloads the dump directory from blob storage, parses its contents
+    (stats CSVs, code.json, wave JSONs), and returns a RocprofTraceResponse.
+    """
+    import tempfile
+    import shutil
+
+    profiling_blob_path = f"{blob_name}_profiling/{dump_key}"
+    tmp_dir = tempfile.mkdtemp()
+
+    try:
+        directory_client.download(profiling_blob_path, tmp_dir)
+
+        dump_dir = os.path.join(tmp_dir, dump_key)
+        if not os.path.isdir(dump_dir):
+            dump_dir = tmp_dir
+
+        dispatches = _parse_trace_dispatches(dump_dir)
+        return jsonify({
+            "kernelName": dump_key,
+            "dispatches": dispatches,
+        })
+    except Exception as e:
+        logger.error(f"Error fetching profiling dump {dump_key}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _parse_trace_dispatches(dump_dir):
+    """Parse rocprof trace dispatches from a local directory."""
+    dispatches = []
+
+    stats_files = sorted(glob.glob(os.path.join(dump_dir, "stats_*.csv")))
+    for stats_path in stats_files:
+        match = re.search(r"_dispatch_(\d+)\.csv$", os.path.basename(stats_path))
+        if not match:
+            continue
+        dispatch_id = match.group(1)
+
+        dispatch_folder = None
+        for name in os.listdir(dump_dir):
+            folder_path = os.path.join(dump_dir, name)
+            if os.path.isdir(folder_path) and f"_dispatch_{dispatch_id}" in name:
+                dispatch_folder = folder_path
+                break
+        if not dispatch_folder:
+            continue
+
+        code_json_path = os.path.join(dispatch_folder, "code.json")
+        if not os.path.exists(code_json_path):
+            continue
+
+        with open(stats_path, "r", encoding="utf-8") as f:
+            stats_content = f.read()
+        with open(code_json_path, "r", encoding="utf-8") as f:
+            code_json = f.read()
+
+        wave_pattern = re.compile(r"^se\d+_sm\d+_sl\d+_wv\d+\.json$")
+        waves = []
+        for fname in sorted(os.listdir(dispatch_folder)):
+            if wave_pattern.match(fname):
+                wave_path = os.path.join(dispatch_folder, fname)
+                with open(wave_path, "r", encoding="utf-8") as f:
+                    wave_content = f.read()
+                wave_name = fname.replace(".json", "")
+                waves.append({"name": wave_name, "content": wave_content})
+
+        dispatches.append({
+            "id": dispatch_id,
+            "statsContent": stats_content,
+            "codeJson": code_json,
+            "waves": waves,
+        })
+
+    return dispatches
+
+
 
 
 @app.route("/workflow/pr/trigger", methods=["POST"])
@@ -1397,6 +1524,167 @@ def get_run_trigger(run_id):
         logger.error(f"Error getting trigger for run {run_id}: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": f"Failed to get trigger: {str(e)}"}), 500
+
+
+###############################################################################
+# Dashboard Configs
+###############################################################################
+
+
+@app.route("/api/dashboards", methods=["GET"])
+def list_dashboards():
+    """List all saved dashboard configurations (summary only)."""
+    try:
+        configs = DashboardConfigDb.find_all()
+        summaries = [
+            {
+                "_id": c._id,
+                "name": c.name,
+                "slug": c.slug,
+                "updatedAt": c.updatedAt,
+            }
+            for c in configs
+        ]
+        summaries.sort(key=lambda s: s["updatedAt"], reverse=True)
+        return jsonify(summaries)
+    except Exception as e:
+        logger.error(f"Error listing dashboards: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<slug>", methods=["GET"])
+def get_dashboard(slug):
+    """Get a full dashboard configuration by slug."""
+    try:
+        results = DashboardConfigDb.query(f"slug eq '{slug}'")
+        if not results:
+            return jsonify({"error": "Dashboard not found"}), 404
+        return jsonify(asdict(results[0]))
+    except Exception as e:
+        logger.error(f"Error getting dashboard '{slug}': {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards", methods=["POST"])
+@token_required
+def create_dashboard():
+    """Create a new dashboard configuration."""
+    try:
+        data = request.get_json()
+        if not data or "name" not in data:
+            return jsonify({"error": "name is required"}), 400
+
+        slug = data.get("slug", data["name"].lower().replace(" ", "-"))
+
+        existing = DashboardConfigDb.query(f"slug eq '{slug}'")
+        if existing:
+            return jsonify({"error": f"Dashboard with slug '{slug}' already exists"}), 409
+
+        now = datetime.now(timezone.utc).isoformat()
+        config = DashboardConfig(
+            _id=str(uuid4()),
+            name=data["name"],
+            slug=slug,
+            createdAt=now,
+            updatedAt=now,
+            layout=data.get("layout", []),
+            widgets=data.get("widgets", []),
+            globalFilters=data.get("globalFilters", []),
+            csvExportConfig=data.get("csvExportConfig"),
+        )
+        DashboardConfigDb.upsert(config)
+        return jsonify(asdict(config)), 201
+    except Exception as e:
+        logger.error(f"Error creating dashboard: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>", methods=["PUT"])
+@token_required
+def update_dashboard(dashboard_id):
+    """Update an existing dashboard configuration."""
+    try:
+        existing = DashboardConfigDb.find_by_id(dashboard_id)
+        if not existing:
+            return jsonify({"error": "Dashboard not found"}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        new_slug = data.get("slug", existing.slug)
+        if new_slug != existing.slug:
+            conflicts = DashboardConfigDb.query(f"slug eq '{new_slug}'")
+            if conflicts:
+                return jsonify({"error": f"Slug '{new_slug}' is already taken"}), 409
+
+        updated = DashboardConfig(
+            _id=dashboard_id,
+            name=data.get("name", existing.name),
+            slug=new_slug,
+            createdAt=existing.createdAt,
+            updatedAt=datetime.now(timezone.utc).isoformat(),
+            layout=data.get("layout", existing.layout),
+            widgets=data.get("widgets", existing.widgets),
+            globalFilters=data.get("globalFilters", existing.globalFilters),
+            csvExportConfig=data.get("csvExportConfig", existing.csvExportConfig),
+        )
+        DashboardConfigDb.upsert(updated)
+        return jsonify(asdict(updated))
+    except Exception as e:
+        logger.error(f"Error updating dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>", methods=["DELETE"])
+@token_required
+def delete_dashboard(dashboard_id):
+    """Delete a dashboard configuration."""
+    try:
+        existing = DashboardConfigDb.find_by_id(dashboard_id)
+        if not existing:
+            return jsonify({"error": "Dashboard not found"}), 404
+        DashboardConfigDb.delete_by_id(dashboard_id)
+        return jsonify({"message": "Dashboard deleted"})
+    except Exception as e:
+        logger.error(f"Error deleting dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>/clone", methods=["POST"])
+@token_required
+def clone_dashboard(dashboard_id):
+    """Clone an existing dashboard configuration."""
+    try:
+        source = DashboardConfigDb.find_by_id(dashboard_id)
+        if not source:
+            return jsonify({"error": "Source dashboard not found"}), 404
+
+        data = request.get_json() or {}
+        new_name = data.get("name", f"{source.name} (Copy)")
+        new_slug = data.get("slug", f"{source.slug}-copy")
+
+        existing = DashboardConfigDb.query(f"slug eq '{new_slug}'")
+        if existing:
+            new_slug = f"{new_slug}-{str(uuid4())[:8]}"
+
+        now = datetime.now(timezone.utc).isoformat()
+        clone = DashboardConfig(
+            _id=str(uuid4()),
+            name=new_name,
+            slug=new_slug,
+            createdAt=now,
+            updatedAt=now,
+            layout=source.layout,
+            widgets=source.widgets,
+            globalFilters=source.globalFilters,
+            csvExportConfig=source.csvExportConfig,
+        )
+        DashboardConfigDb.upsert(clone)
+        return jsonify(asdict(clone)), 201
+    except Exception as e:
+        logger.error(f"Error cloning dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 def serve_backend(port=3000):

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { GitBranch, Loader2 } from "lucide-react";
+import { fetchBranches } from "../../../utils/github";
 
 interface BranchSelectorProps {
   branch: string;
@@ -24,18 +25,11 @@ export default function BranchSelector({
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/branches`
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      const branchList: string[] = await response.json();
+      const branchList = await fetchBranches();
       setBranches(branchList);
     } catch (err) {
       console.error("Failed to load branches:", err);
       setError("Failed to load branches");
-      // Set a default branch list if fetch fails
       setBranches(["main", "develop/dashboard-restoration"]);
     } finally {
       setIsLoading(false);

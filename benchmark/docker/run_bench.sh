@@ -150,6 +150,12 @@ if [ -d results/json ]; then
     cp -r results/json/* /data/results/ 2>/dev/null || true
 fi
 
+# Collect rocprof profiling data (dump dir is created by PathConfig.default())
+python3 -m kernel_bench.cli.collect_profiling \
+    --dump-dir dump \
+    --output-dir /data/results/profiling \
+    || echo 'Warning: Profiling data collection returned non-zero (may have no dumps)'
+
 echo 'Benchmark completed successfully!'
 "
 

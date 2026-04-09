@@ -8,10 +8,12 @@ const palette = iwanthue(100, {
 });
 let paletteIndex = 0;
 
-const backendColors: Record<string, string> = {};
+const valueColors: Record<string, string> = {};
 
-export function getBackendColor(backend: string): ColorInstance {
-  if (!backendColors[backend]) backendColors[backend] = palette[paletteIndex++];
-  const colorStr = backendColors[backend];
-  return Color(colorStr);
+export function getValueColor(value: string): ColorInstance {
+  if (!valueColors[value]) valueColors[value] = palette[paletteIndex++];
+  return Color(valueColors[value]);
 }
+
+/** @deprecated Use getValueColor instead */
+export const getBackendColor = getValueColor;

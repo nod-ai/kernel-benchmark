@@ -13,6 +13,7 @@ import {
 } from "../../utils/utils";
 import { useKernelFilters } from "../../hooks/useKernelFilters";
 import { useKernelDims } from "../../contexts/KernelTypesContext";
+import { fetchTrackerPerformanceTimeline } from "../../utils/github";
 
 interface DashboardPerformanceSectionProps {
   kernels: Kernel[];
@@ -54,10 +55,7 @@ export default function DashboardPerformanceSection({
       if (!trackerId) return;
 
       try {
-        const response = await fetch(
-          `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/trackers/${trackerId}/performance`,
-        );
-        const timeline = await response.json();
+        const timeline = await fetchTrackerPerformanceTimeline(trackerId);
 
         if (timeline.length > 0) {
           // Find the latest point that has backendSpecs, fallback to last point

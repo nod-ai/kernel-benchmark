@@ -13,7 +13,8 @@ import {
 } from "chart.js";
 import zoomPlugin from "chartjs-plugin-zoom";
 import type { Kernel } from "../../types";
-import { getBackendColor } from "../../utils/color";
+import { getValueColor } from "../../utils/color";
+import { findDumpKeyForKernel } from "../../utils/rocprof";
 
 Chart.register(
   ScatterController,
@@ -56,12 +57,16 @@ interface RooflinePlotProps {
   kernels: Kernel[];
   selectedKernel?: Kernel;
   setSelected: (kernelId: string | null) => void;
+  groupByField?: string;
+  profilingManifest?: Record<string, any> | null;
 }
 
 export default function RooflinePlot({
   kernels,
   setSelected,
   selectedKernel,
+  groupByField = "backend",
+  profilingManifest,
 }: RooflinePlotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -71,42 +76,46 @@ export default function RooflinePlot({
     if (chartRef.current) chartRef.current.destroy();
 
     const grouped = kernels.reduce<
-      Record<string, { x: number; y: number; id: string; name: string }[]>
+      Record<string, { x: number; y: number; id: string; name: string; backend: string }[]>
     >((acc, kernel) => {
-      if (!acc[kernel.backend]) acc[kernel.backend] = [];
-      acc[kernel.backend].push({
+      const groupKey = String((kernel as any)[groupByField] ?? kernel.backend);
+      if (!acc[groupKey]) acc[groupKey] = [];
+      acc[groupKey].push({
         x: kernel.arithmeticIntensity,
         y: kernel.tflops,
         id: kernel.id,
         name: kernel.name,
+        backend: kernel.backend,
       });
       return acc;
     }, {});
 
-    const datasets = Object.entries(grouped).map(([backend, points]) => ({
-      label: backend,
+    const datasets = Object.entries(grouped).map(([groupValue, points]) => ({
+      label: groupValue,
       data: points.filter((point) => point.id !== selectedKernel?.id),
-      borderColor: getBackendColor(backend).string(),
+      borderColor: getValueColor(groupValue).string(),
       backgroundColor: selectedKernel
         ? "rgba(200, 200, 200, 0.3)"
-        : getBackendColor(backend).string(),
+        : getValueColor(groupValue).string(),
       showLine: false,
       pointRadius: 5,
     }));
 
     if (selectedKernel) {
+      const selGroup = String((selectedKernel as any)[groupByField] ?? selectedKernel.backend);
       datasets.push({
-        label: selectedKernel.backend,
+        label: selGroup,
         data: [
           {
             x: selectedKernel.arithmeticIntensity,
             y: selectedKernel.tflops,
             id: selectedKernel.id,
             name: selectedKernel.name,
+            backend: selectedKernel.backend,
           },
         ],
-        borderColor: getBackendColor(selectedKernel.backend).string(),
-        backgroundColor: getBackendColor(selectedKernel.backend).string(),
+        borderColor: getValueColor(selGroup).string(),
+        backgroundColor: getValueColor(selGroup).string(),
         showLine: false,
         pointRadius: 5,
       });
@@ -133,7 +142,7 @@ export default function RooflinePlot({
     datasets.push({
       label: "Memory Bound",
       // type: "line",
-      data: xRoofline.map((x, i) => ({ x, y: yMemory[i], id: "", name: "" })),
+      data: xRoofline.map((x, i) => ({ x, y: yMemory[i], id: "", name: "", backend: "" })),
       borderColor: "#d62728", // red
       showLine: true,
       backgroundColor: "#d62728",
@@ -146,7 +155,7 @@ export default function RooflinePlot({
     datasets.push({
       label: "Compute Bound",
       // type: "line",
-      data: xRoofline.map((x, i) => ({ x, y: yCompute[i], id: "", name: "" })),
+      data: xRoofline.map((x, i) => ({ x, y: yCompute[i], id: "", name: "", backend: "" })),
       borderColor: "#2ca02c", // green
       showLine: true,
       backgroundColor: "#2ca02c",
@@ -185,7 +194,11 @@ export default function RooflinePlot({
             callbacks: {
               label: (ctx) => {
                 const point = ctx.raw as any;
-                return `${point.name}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
+                const base = `${point.name}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
+                if (profilingManifest && point.name && findDumpKeyForKernel(profilingManifest, point.name, point.backend)) {
+                  return `${base}  ⚡ rocprof`;
+                }
+                return base;
               },
             },
           },
@@ -223,7 +236,7 @@ export default function RooflinePlot({
         },
       },
     });
-  }, [kernels, selectedKernel]);
+  }, [kernels, selectedKernel, groupByField, profilingManifest]);
 
   return (
     <div className="relative w-full h-[600px]">

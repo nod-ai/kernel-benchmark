@@ -15,6 +15,8 @@ Built with **React 19**, **TypeScript**, and **Vite**, the dashboard offers a re
 - **Routing**: React Router v7
 - **Icons**: Lucide React
 - **Data Processing**: PapaParse (CSV), NumPy-style operations
+- **Dashboard Layouts**: react-grid-layout v2 (drag-and-drop widget grids)
+- **Formula Engine**: safe-expr-eval (user-defined computed fields)
 
 ## Features
 
@@ -44,6 +46,53 @@ Built with **React 19**, **TypeScript**, and **Vite**, the dashboard offers a re
 - Focus on top-performing kernels
 - Filter outliers for cleaner comparisons
 - Adjustable percentile thresholds
+
+### 🧩 Modular Dashboard System
+
+The dashboard includes a fully customizable widget-based view alongside the classic fixed layout. Users can build their own dashboards by adding, configuring, and arranging widgets on a drag-and-drop grid.
+
+**Widget Types:**
+- **Pie Chart** -- segment/value breakdown (e.g., kernel pass/fail rates)
+- **Bar Chart** -- categorical comparisons (e.g., TFLOPs by backend)
+- **Line Chart** -- time-series or sequential data with multi-series support
+- **Scatter Plot** -- two-variable correlation with optional color, size, and label dimensions
+- **Roofline** -- hardware roofline analysis
+- **Stat Card** -- single-number KPIs (e.g., total kernel count, average TFLOPs)
+- **Table** -- tabular data with configurable columns
+- **Bell Curve** -- performance distribution analysis
+
+**Data Pipeline:**
+
+Each widget defines a transform pipeline that processes raw data client-side. Transforms are applied in sequence:
+
+| Transform | Purpose |
+|-----------|---------|
+| `filter` | Keep rows matching field/operator/value rules |
+| `group_by` | Group rows by one or more fields |
+| `aggregate` | Reduce groups via `count`, `sum`, `avg`, `min`, `max`, `geo_mean`, `count_where` |
+| `compute` | Add a calculated field using a math expression (powered by `safe-expr-eval`) |
+| `pivot` | Flatten grouped rows into a single row with key-prefixed columns (for cross-group ratios) |
+| `sort` | Order rows by a field |
+| `limit` | Cap the number of output rows |
+
+**Global Filters:**
+
+Dashboard-level filters (single-select, multi-select, range, date range) are auto-applied to all widgets before their transform pipelines run. Individual widgets can opt out via a toggle in the widget editor. Filters can be created, edited, and deleted inline when in edit mode.
+
+**Inline Validation:**
+
+The widget configuration modal provides real-time validation:
+- Field names are checked against available data fields (amber warning for unknowns)
+- Compute expressions are parsed live (green checkmark or red error message)
+- Each widget type shows only its relevant data mapping fields
+
+**Persistence:**
+
+Dashboard configurations are saved to the backend (Azure Table Storage) and keyed by context:
+- Tracker dashboards: saved per tracker (slug `tracker-{dashboardName}`)
+- Run dashboards: shared default (slug `__default__`)
+
+On page load, the saved config is fetched; if none exists, the built-in default is used.
 
 ### 🎯 Kernel Management
 
@@ -94,7 +143,8 @@ dashboard/
 │   ├── main.tsx              # Application entry point
 │   ├── types.ts              # TypeScript type definitions
 │   ├── pages/                # Main application pages
-│   │   ├── Dashboard.tsx     # Performance visualization
+│   │   ├── Dashboard.tsx     # Performance visualization (classic + modular)
+│   │   ├── CustomDashboard.tsx # Saved custom dashboard viewer
 │   │   ├── Tuning.tsx        # Kernel tuning interface
 │   │   ├── History.tsx       # Benchmark run history
 │   │   └── AddKernels.tsx    # Kernel configuration
@@ -117,19 +167,41 @@ dashboard/
 │   │   ├── KernelTypes/      # Kernel type management
 │   │   │   ├── KernelTypeDisplay.tsx
 │   │   │   └── KernelTypeForm.tsx
+│   │   ├── DashboardRenderer.tsx   # Modular dashboard grid + edit chrome
+│   │   ├── GlobalFilterBar.tsx     # Dashboard-level filter bar (view + CRUD)
+│   │   ├── DashboardEditor/        # Widget editing components
+│   │   │   ├── EditToolbar.tsx     # Edit / Save / Discard toolbar
+│   │   │   ├── WidgetCatalog.tsx   # "Add widget" type picker
+│   │   │   └── WidgetConfigModal.tsx # Widget configuration modal
 │   │   └── Modals/           # Modal dialogs
 │   │       ├── TuningConfirmationModal.tsx
 │   │       ├── BenchmarkConfirmationModal.tsx
 │   │       ├── DeleteKernelsModal.tsx
 │   │       └── EditKernelsModal.tsx
+│   ├── widgets/              # Modular dashboard widget system
+│   │   ├── registry.ts       # Maps WidgetType → React component
+│   │   ├── defaults.ts       # Built-in default dashboard config
+│   │   ├── WidgetRenderer.tsx # Pipeline execution + widget dispatch
+│   │   ├── PieChartWidget.tsx
+│   │   ├── BarChartWidget.tsx
+│   │   ├── LineChartWidget.tsx
+│   │   ├── ScatterPlotWidget.tsx
+│   │   ├── RooflineWidget.tsx
+│   │   ├── StatCardWidget.tsx
+│   │   ├── TableWidget.tsx
+│   │   └── BellCurveWidget.tsx
 │   ├── utils/                # Utility functions
-│   │   ├── github.ts         # Backend API calls
-│   │   ├── csv.ts            # CSV parsing
+│   │   ├── github.ts         # Centralized backend API calls
+│   │   ├── csv.ts            # Artifact data loading
+│   │   ├── pipeline.ts       # Widget data transform pipeline
+│   │   ├── formula.ts        # Expression parser (safe-expr-eval)
 │   │   ├── utils.ts          # General utilities
 │   │   ├── color.ts          # Color generation
 │   │   └── kernelTypes.ts    # Kernel type utilities
 │   ├── hooks/                # Custom React hooks
-│   │   └── useKernelFilters.ts
+│   │   ├── useKernelFilters.ts
+│   │   ├── useDashboardConfig.ts # Load/save dashboard configs
+│   │   └── useGlobalFilters.ts   # Global filter value init
 │   ├── contexts/             # React contexts
 │   │   ├── AuthContext.tsx   # Authentication state
 │   │   └── useModal.ts       # Modal management
@@ -144,21 +216,33 @@ dashboard/
 
 ## Pages
 
-### 🏠 Dashboard (`/dashboard/:runId`)
+### 🏠 Dashboard (`/dashboard/:runId`, `/dashboard/tracker/:name`)
 
-**Purpose**: Visualize and compare kernel performance for a specific benchmark run.
+**Purpose**: Visualize and compare kernel performance for a specific benchmark run or tracker.
 
-**Key Features:**
+The page offers two switchable views:
+
+**Classic View** -- Fixed layout with curated visualizations:
 - **Roofline Plot**: Performance vs arithmetic intensity
 - **Backend Comparison**: Bar/bell chart comparisons
 - **Kernel Details**: Click any point to see detailed specs
 - **Same-Shape Analysis**: Compare implementations of identical problems
 - **Filters**: Narrow down by type, dtype, backend, tags
 
+**Modular View** -- User-customizable widget grid:
+- Drag-and-drop layout editing via `react-grid-layout`
+- Add/remove/configure widgets from a catalog of 8 types
+- Define per-widget transform pipelines (filter → group → aggregate → compute → pivot → sort → limit)
+- Dashboard-level global filters auto-applied to all widgets
+- Inline validation for field names and computed expressions
+- Configs persist per context (tracker dashboards save independently)
+- `safe-expr-eval` formula engine for user-defined computed fields
+
 **Use Cases:**
 - Identify performance bottlenecks
 - Compare backend efficiency
-- Find optimal kernels for problem sizes
+- Build custom KPI views per tracker
+- Compute cross-backend ratios (via pivot + compute transforms)
 - Validate regression fixes
 
 ### 🎯 Tuning (`/tune`)
@@ -306,35 +390,55 @@ The dashboard communicates with the backend via REST API:
 
 ### Key API Functions
 
+All backend communication is centralized in `src/utils/github.ts` through an `apiFetch` wrapper that automatically attaches the auth token and emits an `auth-required` event on 401 responses.
+
 ```typescript
-// Fetch kernel configurations
+// Kernel data
 const kernels = await fetchKernels();
+const runData = await fetchArtifact(runId);
 
-// Fetch benchmark run data
-const runData = await fetchData(runId);
-
-// Trigger tuning workflow
+// Benchmarking
+await triggerBenchWorkflow(pr, config);
 await triggerTuningWorkflow(kernelIds);
 
-// Add new kernels
+// Kernel management
 await addKernels(kernelConfigs);
-
-// Update kernels in batch
 await updateKernels(partialUpdates);
-```
 
-All API calls are in `src/utils/github.ts`.
+// Dashboard configs
+const config = await fetchDashboard("tracker-my-tracker");
+const saved = await saveDashboard(config); // creates or updates based on _id
+const all = await listDashboards();
+
+// Trackers
+const tracker = await fetchTrackerByDashboardName("my-tracker");
+const runs = await fetchTrackerRuns(trackerId);
+const timeline = await fetchTrackerPerformanceTimeline(trackerId, startDate, endDate);
+```
 
 ## Data Flow
 
-### Dashboard Page
+### Dashboard Page (Classic View)
 
-1. **Load Run Data**: Fetch CSV artifact for specific run
+1. **Load Run Data**: Fetch artifact for specific run
 2. **Parse Results**: Extract kernel metrics (TFLOPs, runtime, etc.)
 3. **Apply Filters**: User selects type, dtype, backend filters
 4. **Compute Common Kernels**: Find kernels present across all backends
 5. **Generate Visualizations**: Render roofline and comparison plots
 6. **Handle Interactions**: Click to select, zoom to explore
+
+### Dashboard Page (Modular View)
+
+1. **Determine Context**: Derive config slug from URL (tracker or default)
+2. **Load Config**: Fetch saved `DashboardConfig` from backend; fall back to built-in default
+3. **Load Run Data**: Fetch kernel artifact for the active run
+4. **Initialize Global Filters**: Populate filter defaults from data (unique values per field)
+5. **Render Widgets**: For each widget in the config:
+   - Apply auto-generated global filter rules (unless widget opts out)
+   - Execute the widget's transform pipeline (`executePipeline`)
+   - Pass transformed data + mapping to the registered widget component
+6. **Edit Mode**: Toggle editing to drag/resize widgets, configure transforms, manage filters
+7. **Save**: Persist the modified `DashboardConfig` to the backend (keyed by slug)
 
 ### Tuning Page
 
@@ -387,6 +491,8 @@ Components handle:
 
 Custom hooks encapsulate:
 - Filter state management (`useKernelFilters`)
+- Dashboard config CRUD (`useDashboardConfig`, `useDashboardList`)
+- Global filter value initialization (`useGlobalFilters`)
 - Modal visibility (`useModal`)
 - Authentication state (`useAuth`)
 
@@ -605,20 +711,22 @@ export default function YourComponent({
 
 ### Adding a New API Call
 
+All API calls must go through the centralized `apiFetch` wrapper in `src/utils/github.ts`, which handles auth tokens and 401 detection automatically:
+
 ```typescript
 // src/utils/github.ts
 export async function yourApiCall(param: string): Promise<DataType> {
-  const response = await fetch(`${API_URL}/your-endpoint`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const response = await apiFetch("/your-endpoint", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ param }),
-    credentials: 'include', // For auth cookies
   });
-  
+
   if (!response.ok) {
-    throw new Error(`API call failed: ${response.statusText}`);
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP error! Status: ${response.status}`);
   }
-  
+
   return response.json();
 }
 ```

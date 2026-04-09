@@ -7,8 +7,8 @@ import React, {
   useCallback,
 } from "react";
 import PasswordModal from "../components/PasswordModal";
+import { authLogin, authVerify } from "../utils/github";
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_SERVER_URL;
 const TOKEN_KEY = "auth_token";
 
 interface AuthContextType {
@@ -43,10 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/verify`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      const data = await authVerify(token);
       if (data.authenticated) {
         setIsAuthenticated(true);
       } else {
@@ -66,16 +63,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const login = useCallback(async (password: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-
-      if (!response.ok) return false;
-
-      const data = await response.json();
-      if (data.token) {
+      const data = await authLogin(password);
+      if (data?.token) {
         localStorage.setItem(TOKEN_KEY, data.token);
         setIsAuthenticated(true);
         return true;
