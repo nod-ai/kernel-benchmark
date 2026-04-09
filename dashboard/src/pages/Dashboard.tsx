@@ -154,6 +154,7 @@ export default function Dashboard() {
             onGlobalFilterChange={handleGlobalFilterChange}
             onConfigChange={setModularConfig}
             onSave={handleModularSave}
+            isTrackerDashboard={isTrackerDashboard}
           />
         )}
         

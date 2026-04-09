@@ -130,6 +130,11 @@ export interface GlobalFilterConfig {
   defaultValue?: any;
 }
 
+export interface CsvExportColumn {
+  path: string;
+  renameTo: string;
+}
+
 export interface DashboardConfig {
   _id: string;
   name: string;
@@ -139,6 +144,7 @@ export interface DashboardConfig {
   layout: WidgetLayout[];
   widgets: WidgetConfig[];
   globalFilters: GlobalFilterConfig[];
+  csvExportConfig?: { columns: CsvExportColumn[] };
 }
 
 export interface DashboardSummary {

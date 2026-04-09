@@ -182,6 +182,7 @@ class DashboardConfig:
     layout: list  # WidgetLayout[] as JSON
     widgets: list  # WidgetConfig[] as JSON
     globalFilters: list  # GlobalFilterConfig[] as JSON
+    csvExportConfig: Optional[dict] = None  # { columns: [{ path, renameTo }] }
 
 
 DashboardConfigDb = create_repository(DashboardConfig, "dashboardconfigs")

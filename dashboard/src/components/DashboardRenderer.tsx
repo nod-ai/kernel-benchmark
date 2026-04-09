@@ -14,12 +14,14 @@ import type {
   WidgetConfig,
   WidgetType,
   GlobalFilterConfig,
+  CsvExportColumn,
 } from "../types/dashboard";
 import WidgetRenderer from "../widgets/WidgetRenderer";
 import GlobalFilterBar from "./GlobalFilterBar";
 import EditToolbar from "./DashboardEditor/EditToolbar";
 import WidgetCatalog from "./DashboardEditor/WidgetCatalog";
 import WidgetConfigModal from "./DashboardEditor/WidgetConfigModal";
+import CsvDownloadModal from "./Modals/CsvDownloadModal";
 import { useAuth } from "../contexts/AuthContext";
 
 interface DashboardRendererProps {
@@ -29,6 +31,7 @@ interface DashboardRendererProps {
   onGlobalFilterChange: (filterId: string, value: any) => void;
   onConfigChange?: (config: DashboardConfig) => void;
   onSave?: (config: DashboardConfig) => Promise<void> | void;
+  isTrackerDashboard?: boolean;
 }
 
 function toRGLLayout(layout: WidgetLayout[]): LayoutItem[] {
@@ -71,6 +74,7 @@ export default function DashboardRenderer({
   onGlobalFilterChange,
   onConfigChange,
   onSave,
+  isTrackerDashboard = false,
 }: DashboardRendererProps) {
   const { isAuthenticated, requestAuth } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -78,6 +82,7 @@ export default function DashboardRenderer({
   const [showCatalog, setShowCatalog] = useState(false);
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | null>(null);
   const [pendingWidget, setPendingWidget] = useState<WidgetConfig | null>(null);
+  const [showCsvModal, setShowCsvModal] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -234,6 +239,17 @@ export default function DashboardRenderer({
     [mutateConfig]
   );
 
+  const handleSaveCsvConfig = useCallback(
+    async (columns: CsvExportColumn[]) => {
+      const updated = { ...config, csvExportConfig: { columns } };
+      onConfigChange?.(updated);
+      if (onSave) {
+        await onSave(updated);
+      }
+    },
+    [config, onConfigChange, onSave]
+  );
+
   return (
     <div
       className={`flex flex-col gap-4 transition-all ${
@@ -269,6 +285,7 @@ export default function DashboardRenderer({
         onAddWidget={() => setShowCatalog(true)}
         onSave={handleSave}
         onDiscard={handleDiscard}
+        onDownloadCsv={() => setShowCsvModal(true)}
         hasUnsavedChanges={hasChanges}
       />
 
@@ -353,6 +370,15 @@ export default function DashboardRenderer({
           rawData={rawData}
           onSave={handleSaveWidget}
           onCancel={handleCancelWidgetEdit}
+        />
+      )}
+      {showCsvModal && (
+        <CsvDownloadModal
+          data={rawData}
+          onClose={() => setShowCsvModal(false)}
+          isTrackerDashboard={isTrackerDashboard}
+          savedCsvConfig={config.csvExportConfig?.columns ?? null}
+          onSaveCsvConfig={handleSaveCsvConfig}
         />
       )}
     </div>

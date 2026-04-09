@@ -1584,6 +1584,7 @@ def create_dashboard():
             layout=data.get("layout", []),
             widgets=data.get("widgets", []),
             globalFilters=data.get("globalFilters", []),
+            csvExportConfig=data.get("csvExportConfig"),
         )
         DashboardConfigDb.upsert(config)
         return jsonify(asdict(config)), 201
@@ -1620,6 +1621,7 @@ def update_dashboard(dashboard_id):
             layout=data.get("layout", existing.layout),
             widgets=data.get("widgets", existing.widgets),
             globalFilters=data.get("globalFilters", existing.globalFilters),
+            csvExportConfig=data.get("csvExportConfig", existing.csvExportConfig),
         )
         DashboardConfigDb.upsert(updated)
         return jsonify(asdict(updated))
@@ -1670,6 +1672,7 @@ def clone_dashboard(dashboard_id):
             layout=source.layout,
             widgets=source.widgets,
             globalFilters=source.globalFilters,
+            csvExportConfig=source.csvExportConfig,
         )
         DashboardConfigDb.upsert(clone)
         return jsonify(asdict(clone)), 201

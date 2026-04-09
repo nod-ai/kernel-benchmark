@@ -1,4 +1,4 @@
-import { Plus, Save, X, Pencil, GripVertical, Lock } from "lucide-react";
+import { Plus, Save, X, Pencil, GripVertical, Lock, Download } from "lucide-react";
 
 interface EditToolbarProps {
   isEditing: boolean;
@@ -9,6 +9,7 @@ interface EditToolbarProps {
   onAddWidget: () => void;
   onSave: () => void;
   onDiscard: () => void;
+  onDownloadCsv: () => void;
   hasUnsavedChanges: boolean;
 }
 
@@ -21,29 +22,37 @@ export default function EditToolbar({
   onAddWidget,
   onSave,
   onDiscard,
+  onDownloadCsv,
   hasUnsavedChanges,
 }: EditToolbarProps) {
   if (!isEditing) {
-    if (!isAuthenticated) {
-      return (
-        <button
-          onClick={onRequestAuth}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-400 border border-gray-200 hover:border-gray-300 hover:text-gray-500 transition-colors"
-        >
-          <Lock className="w-3.5 h-3.5" />
-          View only — Authenticate to edit
-        </button>
-      );
-    }
-
     return (
-      <button
-        onClick={onToggleEdit}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 transition-colors"
-      >
-        <Pencil className="w-3.5 h-3.5" />
-        Edit Dashboard
-      </button>
+      <div className="flex items-center gap-2">
+        {!isAuthenticated ? (
+          <button
+            onClick={onRequestAuth}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-400 border border-gray-200 hover:border-gray-300 hover:text-gray-500 transition-colors"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            View only — Authenticate to edit
+          </button>
+        ) : (
+          <button
+            onClick={onToggleEdit}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit Dashboard
+          </button>
+        )}
+        <button
+          onClick={onDownloadCsv}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 border border-gray-300 hover:border-gray-400 hover:bg-gray-50 transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Download as CSV
+        </button>
+      </div>
     );
   }
 

@@ -64,7 +64,16 @@ export function evaluateExpression(
 ): number {
   try {
     const expr = parser.parse(expression);
-    const scope = buildScope(row);
+    const rawScope = buildScope(row);
+    const scope = new Proxy(rawScope, {
+      get(target, prop, receiver) {
+        if (typeof prop === "string" && !(prop in target)) return 0;
+        return Reflect.get(target, prop, receiver);
+      },
+      has() {
+        return true;
+      },
+    });
     const result = expr.evaluate(scope);
     return typeof result === "number" ? result : Number(result) || 0;
   } catch {
