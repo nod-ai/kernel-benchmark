@@ -428,6 +428,34 @@ export function processInstructionData(
 
 // ─── Top-level dispatch analysis ────────────────────────────────────────────
 
+// ─── Manifest lookup ────────────────────────────────────────────────────────
+
+/**
+ * Profiling manifest format: `{ backend: { kernelName: dumpDir, ... }, ... }`
+ *
+ * Look up whether a kernel has rocprof profiling data and return the dump
+ * directory name (used as the dump_key in the `/profiling/.../dump/` API).
+ */
+export function findDumpKeyForKernel(
+  manifest: Record<string, Record<string, string>> | null | undefined,
+  kernelName: string,
+  backend?: string
+): string | null {
+  if (!manifest || !kernelName) return null;
+
+  if (backend) {
+    return manifest[backend]?.[kernelName] ?? null;
+  }
+
+  for (const backendMap of Object.values(manifest)) {
+    if (backendMap && typeof backendMap === "object" && kernelName in backendMap) {
+      return backendMap[kernelName];
+    }
+  }
+
+  return null;
+}
+
 export function analyzeDispatch(raw: RocprofDispatchRaw): DispatchResult {
   const statsData = parseStatsCSV(raw.statsContent);
   const waveCount = raw.waves.length;

@@ -199,6 +199,18 @@ export default function WidgetConfigModal({
               onChange={(v) => update({ style: { ...config.style, horizontal: v } })}
             />
           )}
+
+          {/* Rocprof integration toggle (roofline, scatter, table) */}
+          {(config.type === "roofline" ||
+            config.type === "scatter_plot" ||
+            config.type === "table") && (
+            <ToggleRow
+              label="ROCprof integration"
+              description="Show profiling indicators for kernels that have rocprof trace data. Click to navigate to the kernel trace viewer."
+              value={config.rocprofEnabled ?? false}
+              onChange={(v) => update({ rocprofEnabled: v })}
+            />
+          )}
         </div>
 
         {/* Footer */}

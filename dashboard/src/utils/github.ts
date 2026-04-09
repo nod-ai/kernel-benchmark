@@ -590,16 +590,30 @@ export async function fetchArtifact(runId: string): Promise<Kernel[]> {
   return response.json();
 }
 
-// Rocprof trace data
+// Rocprof profiling data
 
 import type { RocprofTraceResponse } from "./rocprof";
 
-export async function fetchRocprofTrace(
-  runId: string,
-  kernelName: string
+export type ProfilingManifest = Record<string, any>;
+
+export async function fetchProfilingManifest(
+  runIdOrBlobName: string
+): Promise<ProfilingManifest> {
+  const response = await apiFetch(
+    `/profiling/${encodeURIComponent(runIdOrBlobName)}/manifest`
+  );
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchRocprofDump(
+  blobName: string,
+  dumpKey: string
 ): Promise<RocprofTraceResponse> {
   const response = await apiFetch(
-    `/api/trace/${encodeURIComponent(runId)}/${encodeURIComponent(kernelName)}`
+    `/profiling/${encodeURIComponent(blobName)}/dump/${encodeURIComponent(dumpKey)}`
   );
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);

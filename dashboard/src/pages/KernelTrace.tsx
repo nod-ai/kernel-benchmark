@@ -9,7 +9,7 @@ import {
   PerformanceSummary,
   TimeseriesSection,
 } from "../components/KernelTrace";
-import { fetchRocprofTrace } from "../utils/github";
+import { fetchRocprofDump } from "../utils/github";
 import {
   analyzeDispatch,
   type DispatchResult,
@@ -17,9 +17,10 @@ import {
 } from "../utils/rocprof";
 
 export default function KernelTrace() {
-  const { runId } = useParams<{ runId: string }>();
+  const { runId: blobName } = useParams<{ runId: string }>();
   const [searchParams] = useSearchParams();
   const kernelName = searchParams.get("kernel") || "";
+  const dumpKey = searchParams.get("dumpKey") || "";
   const navigate = useNavigate();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -30,8 +31,8 @@ export default function KernelTrace() {
   const [selectedTab, setSelectedTab] = useState<TimeseriesKey>("mfmaPair");
 
   const fetchAndProcess = useCallback(async () => {
-    if (!runId || !kernelName) {
-      setError("Missing run ID or kernel name");
+    if (!blobName || !dumpKey) {
+      setError("Missing blob name or dump key");
       setIsLoading(false);
       return;
     }
@@ -40,7 +41,7 @@ export default function KernelTrace() {
       setIsLoading(true);
       setError(null);
 
-      const traceData = await fetchRocprofTrace(runId, kernelName);
+      const traceData = await fetchRocprofDump(blobName, dumpKey);
       const results = traceData.dispatches.map(analyzeDispatch);
       const withWaves = results.filter((d) => d.waves.length > 0);
 
@@ -60,7 +61,7 @@ export default function KernelTrace() {
     } finally {
       setIsLoading(false);
     }
-  }, [runId, kernelName]);
+  }, [blobName, dumpKey]);
 
   useEffect(() => {
     fetchAndProcess();
@@ -98,8 +99,8 @@ export default function KernelTrace() {
             </h1>
             <p className="text-sm text-gray-500">
               ROCprof trace analysis
-              {runId && (
-                <span className="ml-1 text-gray-400">· Run: {runId}</span>
+              {blobName && (
+                <span className="ml-1 text-gray-400">· Run: {blobName}</span>
               )}
             </p>
           </div>

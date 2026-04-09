@@ -112,6 +112,8 @@ export interface WidgetConfig {
   localFilters?: FilterRule[];
   /** When true, global filters are NOT auto-applied; the widget manages its own filtering. */
   disableGlobalFilters?: boolean;
+  /** When true, the widget shows rocprof profiling indicators and click-to-trace navigation. */
+  rocprofEnabled?: boolean;
 }
 
 export interface WidgetLayout {
@@ -160,6 +162,8 @@ export interface WidgetProps {
   globalFilterValues: Record<string, any>;
   onFilterChange?: (filterId: string, value: any) => void;
   isEditing?: boolean;
+  profilingManifest?: Record<string, any> | null;
+  blobName?: string | null;
 }
 
 export const WIDGET_TYPE_META: Record<

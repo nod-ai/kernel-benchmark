@@ -1,18 +1,45 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import type { WidgetProps } from "../types/dashboard";
 import type { Kernel } from "../types";
 import RooflinePlot from "../components/Plots/RooflinePlot";
+import { findDumpKeyForKernel } from "../utils/rocprof";
+import RocprofTooltip from "../components/RocprofTooltip";
 
-/**
- * Widget wrapper around the existing RooflinePlot.
- *
- * Expected pipeline output: an array of Kernel objects (or rows containing
- * the fields RooflinePlot needs: id, backend, tflops, arithmeticIntensity).
- */
-export default function RooflineWidget({ config, data }: WidgetProps) {
+export default function RooflineWidget({
+  config,
+  data,
+  profilingManifest,
+  blobName,
+}: WidgetProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const kernels = data as unknown as Kernel[];
   const selectedKernel = kernels.find((k) => k.id === selectedId);
+  const navigate = useNavigate();
+
+  const selectedDumpKey = useMemo(() => {
+    if (!selectedKernel || !profilingManifest) return null;
+    return findDumpKeyForKernel(profilingManifest, selectedKernel.name, selectedKernel.backend);
+  }, [selectedKernel, profilingManifest]);
+
+  const handleKernelClick = useCallback(
+    (kernelId: string | null) => {
+      if (!kernelId) {
+        setSelectedId(null);
+        return;
+      }
+
+      if (selectedId === kernelId && selectedDumpKey && blobName) {
+        navigate(
+          `/trace/${encodeURIComponent(blobName)}?dumpKey=${encodeURIComponent(selectedDumpKey)}&kernel=${encodeURIComponent(selectedKernel!.name)}`
+        );
+        return;
+      }
+
+      setSelectedId(kernelId);
+    },
+    [selectedId, selectedDumpKey, blobName, selectedKernel, navigate]
+  );
 
   if (kernels.length === 0) {
     return (
@@ -23,11 +50,21 @@ export default function RooflineWidget({ config, data }: WidgetProps) {
   }
 
   return (
-    <RooflinePlot
-      kernels={kernels}
-      setSelected={setSelectedId}
-      selectedKernel={selectedKernel}
-      groupByField={config.mapping.color || "backend"}
-    />
+    <div className="relative h-full">
+      <RooflinePlot
+        kernels={kernels}
+        setSelected={handleKernelClick}
+        selectedKernel={selectedKernel}
+        groupByField={config.mapping.color || "backend"}
+        profilingManifest={profilingManifest}
+      />
+      {selectedKernel && profilingManifest && (
+        <RocprofTooltip
+          kernelName={selectedKernel.name}
+          dumpKey={selectedDumpKey}
+          blobName={blobName}
+        />
+      )}
+    </div>
   );
 }

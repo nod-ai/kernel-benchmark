@@ -14,6 +14,7 @@ import {
 import zoomPlugin from "chartjs-plugin-zoom";
 import type { Kernel } from "../../types";
 import { getValueColor } from "../../utils/color";
+import { findDumpKeyForKernel } from "../../utils/rocprof";
 
 Chart.register(
   ScatterController,
@@ -57,6 +58,7 @@ interface RooflinePlotProps {
   selectedKernel?: Kernel;
   setSelected: (kernelId: string | null) => void;
   groupByField?: string;
+  profilingManifest?: Record<string, any> | null;
 }
 
 export default function RooflinePlot({
@@ -64,6 +66,7 @@ export default function RooflinePlot({
   setSelected,
   selectedKernel,
   groupByField = "backend",
+  profilingManifest,
 }: RooflinePlotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
@@ -73,7 +76,7 @@ export default function RooflinePlot({
     if (chartRef.current) chartRef.current.destroy();
 
     const grouped = kernels.reduce<
-      Record<string, { x: number; y: number; id: string; name: string }[]>
+      Record<string, { x: number; y: number; id: string; name: string; backend: string }[]>
     >((acc, kernel) => {
       const groupKey = String((kernel as any)[groupByField] ?? kernel.backend);
       if (!acc[groupKey]) acc[groupKey] = [];
@@ -82,6 +85,7 @@ export default function RooflinePlot({
         y: kernel.tflops,
         id: kernel.id,
         name: kernel.name,
+        backend: kernel.backend,
       });
       return acc;
     }, {});
@@ -107,6 +111,7 @@ export default function RooflinePlot({
             y: selectedKernel.tflops,
             id: selectedKernel.id,
             name: selectedKernel.name,
+            backend: selectedKernel.backend,
           },
         ],
         borderColor: getValueColor(selGroup).string(),
@@ -137,7 +142,7 @@ export default function RooflinePlot({
     datasets.push({
       label: "Memory Bound",
       // type: "line",
-      data: xRoofline.map((x, i) => ({ x, y: yMemory[i], id: "", name: "" })),
+      data: xRoofline.map((x, i) => ({ x, y: yMemory[i], id: "", name: "", backend: "" })),
       borderColor: "#d62728", // red
       showLine: true,
       backgroundColor: "#d62728",
@@ -150,7 +155,7 @@ export default function RooflinePlot({
     datasets.push({
       label: "Compute Bound",
       // type: "line",
-      data: xRoofline.map((x, i) => ({ x, y: yCompute[i], id: "", name: "" })),
+      data: xRoofline.map((x, i) => ({ x, y: yCompute[i], id: "", name: "", backend: "" })),
       borderColor: "#2ca02c", // green
       showLine: true,
       backgroundColor: "#2ca02c",
@@ -189,7 +194,11 @@ export default function RooflinePlot({
             callbacks: {
               label: (ctx) => {
                 const point = ctx.raw as any;
-                return `${point.name}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
+                const base = `${point.name}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`;
+                if (profilingManifest && point.name && findDumpKeyForKernel(profilingManifest, point.name, point.backend)) {
+                  return `${base}  ⚡ rocprof`;
+                }
+                return base;
               },
             },
           },
@@ -227,7 +236,7 @@ export default function RooflinePlot({
         },
       },
     });
-  }, [kernels, selectedKernel, groupByField]);
+  }, [kernels, selectedKernel, groupByField, profilingManifest]);
 
   return (
     <div className="relative w-full h-[600px]">

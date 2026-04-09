@@ -1,17 +1,19 @@
 import { useState, useMemo } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ChevronUp, ChevronDown, Activity } from "lucide-react";
 import type { WidgetProps } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
+import { findDumpKeyForKernel } from "../utils/rocprof";
 
-/**
- * Sortable data table.
- *
- * Columns are auto-detected from the first row's keys, or can be
- * restricted via mapping: set mapping.x to a comma-separated column list.
- */
-export default function TableWidget({ config, data }: WidgetProps) {
+export default function TableWidget({
+  config,
+  data,
+  profilingManifest,
+  blobName,
+}: WidgetProps) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const navigate = useNavigate();
 
   const columns = useMemo(() => {
     if (config.mapping.x) return config.mapping.x.split(",").map((s) => s.trim());
@@ -44,6 +46,19 @@ export default function TableWidget({ config, data }: WidgetProps) {
     }
   };
 
+  const hasRocprof = !!profilingManifest;
+
+  const handleTraceClick = (row: Record<string, any>) => {
+    const name = String(row.name || "");
+    if (!name || !blobName || !profilingManifest) return;
+    const dumpKey = findDumpKeyForKernel(profilingManifest, name, row.backend);
+    if (dumpKey) {
+      navigate(
+        `/trace/${encodeURIComponent(blobName)}?dumpKey=${encodeURIComponent(dumpKey)}&kernel=${encodeURIComponent(name)}`
+      );
+    }
+  };
+
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -57,6 +72,11 @@ export default function TableWidget({ config, data }: WidgetProps) {
       <table className="w-full text-sm text-left">
         <thead className="sticky top-0 bg-gray-50 text-gray-600">
           <tr>
+            {hasRocprof && (
+              <th className="px-2 py-2 font-medium whitespace-nowrap w-8">
+                <Activity className="w-3.5 h-3.5 text-gray-400" />
+              </th>
+            )}
             {columns.map((col) => (
               <th
                 key={col}
@@ -77,26 +97,50 @@ export default function TableWidget({ config, data }: WidgetProps) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((row, i) => (
-            <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
-              {columns.map((col) => {
-                const val = resolveField(row, col);
-                const display =
-                  val == null
-                    ? ""
-                    : typeof val === "number"
-                      ? val % 1 === 0
-                        ? val.toLocaleString()
-                        : val.toFixed(3)
-                      : String(val);
-                return (
-                  <td key={col} className="px-3 py-2 whitespace-nowrap text-gray-700">
-                    {display}
+          {sorted.map((row, i) => {
+            const kernelName = String(row.name || "");
+            const dumpKey = hasRocprof
+              ? findDumpKeyForKernel(profilingManifest!, kernelName, row.backend)
+              : null;
+
+            return (
+              <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+                {hasRocprof && (
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {dumpKey ? (
+                      <button
+                        onClick={() => handleTraceClick(row)}
+                        className="text-emerald-600 hover:text-emerald-700 transition-colors"
+                        title="View kernel trace"
+                      >
+                        <Activity className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <span className="text-gray-200">
+                        <Activity className="w-3.5 h-3.5" />
+                      </span>
+                    )}
                   </td>
-                );
-              })}
-            </tr>
-          ))}
+                )}
+                {columns.map((col) => {
+                  const val = resolveField(row, col);
+                  const display =
+                    val == null
+                      ? ""
+                      : typeof val === "number"
+                        ? val % 1 === 0
+                          ? val.toLocaleString()
+                          : val.toFixed(3)
+                        : String(val);
+                  return (
+                    <td key={col} className="px-3 py-2 whitespace-nowrap text-gray-700">
+                      {display}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

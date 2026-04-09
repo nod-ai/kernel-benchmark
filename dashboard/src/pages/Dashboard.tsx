@@ -13,6 +13,8 @@ import {
   fetchTrackerRuns,
   fetchDashboard,
   saveDashboard,
+  fetchProfilingManifest,
+  type ProfilingManifest,
 } from "../utils/github";
 
 function deriveConfigSlug(pathname: string): string {
@@ -32,6 +34,7 @@ export default function Dashboard() {
 
   const [modularConfig, setModularConfig] = useState<DashboardConfig>(DEFAULT_MODULAR_CONFIG);
   const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
+  const [profilingManifest, setProfilingManifest] = useState<ProfilingManifest | null>(null);
 
   const location = useLocation();
   const configSlug = useMemo(() => deriveConfigSlug(location.pathname), [location.pathname]);
@@ -87,6 +90,9 @@ export default function Dashboard() {
   useEffect(() => {
     if (selectedRunBlobName) {
       fetchData(selectedRunBlobName).then(setKernels);
+      fetchProfilingManifest(selectedRunBlobName)
+        .then(setProfilingManifest)
+        .catch(() => setProfilingManifest(null));
     }
   }, [selectedRunBlobName]);
 
@@ -155,6 +161,8 @@ export default function Dashboard() {
             onConfigChange={setModularConfig}
             onSave={handleModularSave}
             isTrackerDashboard={isTrackerDashboard}
+            profilingManifest={profilingManifest}
+            blobName={selectedRunBlobName}
           />
         )}
         

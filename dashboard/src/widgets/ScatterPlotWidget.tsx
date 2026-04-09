@@ -1,4 +1,5 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Chart,
   ScatterController,
@@ -11,6 +12,8 @@ import {
 import type { WidgetProps } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
 import { getValueColor } from "../utils/color";
+import { findDumpKeyForKernel } from "../utils/rocprof";
+import RocprofTooltip from "../components/RocprofTooltip";
 
 Chart.register(ScatterController, LinearScale, PointElement, Tooltip, Legend, Title);
 
@@ -22,18 +25,16 @@ const FALLBACK_COLORS = [
   "rgb(139,92,246)",
 ];
 
-/**
- * General-purpose scatter plot.
- *
- * mapping.x     -> x-axis numeric field
- * mapping.y     -> y-axis numeric field
- * mapping.color -> optional field for grouping into coloured series
- * mapping.size  -> optional field for point radius
- * mapping.label -> optional field for tooltip label
- */
-export default function ScatterPlotWidget({ config, data }: WidgetProps) {
+export default function ScatterPlotWidget({
+  config,
+  data,
+  profilingManifest,
+  blobName,
+}: WidgetProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
+  const [selectedRow, setSelectedRow] = useState<Record<string, any> | null>(null);
+  const navigate = useNavigate();
 
   const { x = "x", y = "y", color, size, label } = config.mapping;
 
@@ -82,6 +83,30 @@ export default function ScatterPlotWidget({ config, data }: WidgetProps) {
     });
   }, [data, x, y, color, size, config.title]);
 
+  const selectedDumpKey = useMemo(() => {
+    if (!selectedRow || !profilingManifest) return null;
+    const name = selectedRow.name || (label ? resolveField(selectedRow, label) : null);
+    return name ? findDumpKeyForKernel(profilingManifest, String(name), selectedRow.backend) : null;
+  }, [selectedRow, profilingManifest, label]);
+
+  const handlePointClick = useCallback(
+    (rowIndex: number) => {
+      const row = data[rowIndex];
+      if (!row) return;
+
+      if (selectedRow === row && selectedDumpKey && blobName) {
+        const name = row.name || (label ? resolveField(row, label) : "");
+        navigate(
+          `/trace/${encodeURIComponent(blobName)}?dumpKey=${encodeURIComponent(selectedDumpKey)}&kernel=${encodeURIComponent(String(name))}`
+        );
+        return;
+      }
+
+      setSelectedRow(row);
+    },
+    [selectedRow, selectedDumpKey, blobName, data, label, navigate]
+  );
+
   useEffect(() => {
     if (!canvasRef.current) return;
     chartRef.current?.destroy();
@@ -106,10 +131,24 @@ export default function ScatterPlotWidget({ config, data }: WidgetProps) {
                 const lbl = label && row ? String(resolveField(row, label)) : "";
                 const xv = ctx.parsed.x.toFixed(2);
                 const yv = ctx.parsed.y.toFixed(2);
-                return lbl ? `${lbl}: (${xv}, ${yv})` : `(${xv}, ${yv})`;
+                const base = lbl ? `${lbl}: (${xv}, ${yv})` : `(${xv}, ${yv})`;
+                if (profilingManifest && row) {
+                  const name = row.name || (label ? String(resolveField(row, label)) : "");
+                  if (name && findDumpKeyForKernel(profilingManifest, name, row.backend)) {
+                    return `${base}  ⚡ rocprof`;
+                  }
+                }
+                return base;
               },
             },
           },
+        },
+        onClick: (_, elements) => {
+          if (elements.length > 0 && profilingManifest) {
+            handlePointClick(elements[0].index);
+          } else {
+            setSelectedRow(null);
+          }
         },
       },
     });
@@ -117,7 +156,7 @@ export default function ScatterPlotWidget({ config, data }: WidgetProps) {
     return () => {
       chartRef.current?.destroy();
     };
-  }, [datasets, x, y, label, data]);
+  }, [datasets, x, y, label, data, profilingManifest, handlePointClick]);
 
   if (data.length === 0) {
     return (
@@ -127,9 +166,20 @@ export default function ScatterPlotWidget({ config, data }: WidgetProps) {
     );
   }
 
+  const selectedName = selectedRow
+    ? String(selectedRow.name || (label ? resolveField(selectedRow, label) : ""))
+    : "";
+
   return (
     <div className="relative h-full w-full">
       <canvas ref={canvasRef} />
+      {selectedRow && profilingManifest && selectedName && (
+        <RocprofTooltip
+          kernelName={selectedName}
+          dumpKey={selectedDumpKey}
+          blobName={blobName}
+        />
+      )}
     </div>
   );
 }

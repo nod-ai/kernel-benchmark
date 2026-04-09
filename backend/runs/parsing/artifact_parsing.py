@@ -32,15 +32,15 @@ class RunArtifactParser(ABC):
 
         try:
             parsed_data = self._parse_from_local_path(local_path)
-            _remove_local_path(local_path)
             return parsed_data
         except Exception as e:
             logger.error(
                 f"Failed to load artifact data: \n"
                 "".join(traceback.format_exception(e))
             )
-            _remove_local_path(local_path)
             return None
+        finally:
+            _remove_local_path(local_path)
 
     def parse_and_save_artifact(
         self, gh_artifact: Artifact, run: WorkflowRunState
@@ -55,7 +55,6 @@ class RunArtifactParser(ABC):
                 raise RuntimeError("Failed to save artifact")
 
             logger.debug(f"Successfully saved data for artifact_{gh_artifact.id}")
-            _remove_local_path(local_path)
             return True, artifact_data
 
         except Exception as e:
@@ -63,8 +62,10 @@ class RunArtifactParser(ABC):
                 f"Failed to save parsed artifact data: \n"
                 "".join(traceback.format_exception(e))
             )
-            _remove_local_path(local_path)
             return False, artifact_data
+
+        finally:
+            _remove_local_path(local_path)
 
     def parse_artifact(self, gh_artifact: Artifact) -> Tuple[Any, Path]:
         local_path = download_artifact(
@@ -95,7 +96,10 @@ class RunArtifactParser(ABC):
 
 
 def _remove_local_path(local_path: Path):
-    if local_path.is_dir():
-        shutil.rmtree(local_path)
-    else:
-        os.remove(local_path)
+    try:
+        if local_path.is_dir():
+            shutil.rmtree(local_path, ignore_errors=True)
+        elif local_path.exists():
+            os.remove(local_path)
+    except Exception as e:
+        logger.warning(f"Could not fully clean up {local_path}: {e}")

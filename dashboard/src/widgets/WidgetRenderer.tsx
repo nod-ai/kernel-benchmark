@@ -10,6 +10,8 @@ interface WidgetRendererProps {
   globalFilterValues: Record<string, any>;
   onFilterChange?: (filterId: string, value: any) => void;
   isEditing?: boolean;
+  profilingManifest?: Record<string, any> | null;
+  blobName?: string | null;
 }
 
 export default function WidgetRenderer({
@@ -19,6 +21,8 @@ export default function WidgetRenderer({
   globalFilterValues,
   onFilterChange,
   isEditing = false,
+  profilingManifest,
+  blobName,
 }: WidgetRendererProps) {
   const autoRules = useMemo(
     () =>
@@ -55,6 +59,8 @@ export default function WidgetRenderer({
     globalFilterValues,
     onFilterChange,
     isEditing,
+    profilingManifest: config.rocprofEnabled ? profilingManifest : undefined,
+    blobName: config.rocprofEnabled ? blobName : undefined,
   };
 
   return (

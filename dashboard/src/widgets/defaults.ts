@@ -27,6 +27,7 @@ export const DEFAULT_MODULAR_CONFIG: DashboardConfig = {
         ],
       },
       mapping: { color: "backend" },
+      rocprofEnabled: true,
     },
     {
       id: "geomean-tflops-backend",
@@ -93,6 +94,7 @@ export const DEFAULT_MODULAR_CONFIG: DashboardConfig = {
         ],
       },
       mapping: { x: "name,backend,tflops,meanMicroseconds,ok" },
+      rocprofEnabled: true,
     },
   ],
   globalFilters: [

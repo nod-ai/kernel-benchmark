@@ -32,6 +32,8 @@ interface DashboardRendererProps {
   onConfigChange?: (config: DashboardConfig) => void;
   onSave?: (config: DashboardConfig) => Promise<void> | void;
   isTrackerDashboard?: boolean;
+  profilingManifest?: Record<string, any> | null;
+  blobName?: string | null;
 }
 
 function toRGLLayout(layout: WidgetLayout[]): LayoutItem[] {
@@ -75,6 +77,8 @@ export default function DashboardRenderer({
   onConfigChange,
   onSave,
   isTrackerDashboard = false,
+  profilingManifest,
+  blobName,
 }: DashboardRendererProps) {
   const { isAuthenticated, requestAuth } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -351,6 +355,8 @@ export default function DashboardRenderer({
                 globalFilterValues={globalFilterValues}
                 onFilterChange={onGlobalFilterChange}
                 isEditing={isEditing}
+                profilingManifest={profilingManifest}
+                blobName={blobName}
               />
             </div>
           ))}
