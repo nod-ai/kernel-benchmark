@@ -7,6 +7,8 @@ import type { KernelInputData } from "../../utils/kernelTypes";
 interface UserFriendlyKernelFormProps {
   kernelType: KernelTypeDefinition;
   onSubmit: (kernels: KernelInputData[]) => void;
+  onChange?: (kernels: KernelInputData[]) => void;
+  hideSubmit?: boolean;
 }
 
 const createEmptyKernel = (
@@ -65,6 +67,8 @@ const validateKernel = (
 export default function UserFriendlyKernelForm({
   kernelType,
   onSubmit,
+  onChange,
+  hideSubmit = false,
 }: UserFriendlyKernelFormProps) {
   const [kernels, setKernels] = useState<KernelInputData[]>([
     createEmptyKernel(kernelType),
@@ -92,9 +96,12 @@ export default function UserFriendlyKernelForm({
 
     if (hasChanges) {
       setKernels(validatedKernels);
+      onChange?.(validatedKernels);
+    } else {
+      onChange?.(kernels);
     }
   }, [
-    kernels.map((k) => JSON.stringify(k.values)).join(","),
+    kernels.map((k) => JSON.stringify(k.values) + k.tag).join(","),
     kernelType.attributes,
   ]);
 
@@ -297,42 +304,44 @@ export default function UserFriendlyKernelForm({
       </div>
 
       {/* Submit Section */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {allKernelsValid ? (
-              <div className="flex items-center gap-2 text-green-700">
-                <div className="p-1 bg-green-100 rounded-full">
-                  <Check className="w-4 h-4" />
-                </div>
-                <span className="font-medium">
-                  All kernels are valid and ready to submit
-                </span>
-              </div>
-            ) : (
-              <div className="text-gray-600">
-                <span>Please fix validation errors before submitting.</span>
-                {validKernelCount > 0 && (
-                  <span className="ml-1 font-medium text-green-600">
-                    {validKernelCount} kernel(s) will be added.
+      {!hideSubmit && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {allKernelsValid ? (
+                <div className="flex items-center gap-2 text-green-700">
+                  <div className="p-1 bg-green-100 rounded-full">
+                    <Check className="w-4 h-4" />
+                  </div>
+                  <span className="font-medium">
+                    All kernels are valid and ready to submit
                   </span>
-                )}
-              </div>
-            )}
-          </div>
+                </div>
+              ) : (
+                <div className="text-gray-600">
+                  <span>Please fix validation errors before submitting.</span>
+                  {validKernelCount > 0 && (
+                    <span className="ml-1 font-medium text-green-600">
+                      {validKernelCount} kernel(s) will be added.
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={validKernelCount === 0}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-sm transition-all duration-200"
-          >
-            <Check className="w-4 h-4" />
-            <span>
-              Add {validKernelCount} Kernel{validKernelCount !== 1 ? "s" : ""}
-            </span>
-          </button>
+            <button
+              onClick={handleSubmit}
+              disabled={validKernelCount === 0}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-sm transition-all duration-200"
+            >
+              <Check className="w-4 h-4" />
+              <span>
+                Add {validKernelCount} Kernel{validKernelCount !== 1 ? "s" : ""}
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import React from "react";
-import { Home, History, Plus, Zap, Lock, ListChecks, CalendarDays } from "lucide-react";
+import { Home, History, Zap, Lock, ListChecks, CalendarDays } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { twMerge } from "tailwind-merge";
 import { useAuth } from "../contexts/AuthContext";
 
-export type PageName = "dashboard" | "history" | "runs" | "new" | "kernels" | "tracking";
+export type PageName = "dashboard" | "history" | "runs" | "kernels" | "tracking";
 
 interface NavbarProps {
   activePage: PageName;
@@ -47,12 +47,6 @@ const navItems: NavItemProps[] = [
     label: "History",
     requireAuth: true,
     icon: <History className="w-4 h-4" />,
-  },
-  {
-    name: "new",
-    label: "New",
-    requireAuth: true,
-    icon: <Plus className="w-4 h-4" />,
   },
 ];
 

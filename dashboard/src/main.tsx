@@ -12,7 +12,6 @@ import { KernelTypesProvider } from "./contexts/KernelTypesContext";
 import Dashboard from "./pages/Dashboard";
 import CustomDashboard from "./pages/CustomDashboard";
 import History from "./pages/History";
-import AddKernels from "./pages/AddKernels";
 import Tuning from "./pages/Tuning";
 import Runs from "./pages/Runs";
 import Tracking from "./pages/Tracking";
@@ -30,7 +29,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/dashboard/:runId" element={<Dashboard />} />
           <Route path="/history" element={<History />} />
           <Route path="/runs" element={<Runs />} />
-          <Route path="/new" element={<AddKernels />} />
+          <Route path="/new" element={<Navigate to="/kernels" replace />} />
           <Route path="/kernels" element={<Tuning />} />
           <Route path="/tracking" element={<Tracking />} />
           <Route

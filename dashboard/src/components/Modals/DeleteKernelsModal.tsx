@@ -8,6 +8,7 @@ interface DeleteKernelsModalProps {
   onConfirm: () => void;
   kernelCount: number;
   isLoading?: boolean;
+  tagName?: string;
 }
 
 export default function DeleteKernelsModal({
@@ -16,6 +17,7 @@ export default function DeleteKernelsModal({
   onConfirm,
   kernelCount,
   isLoading = false,
+  tagName,
 }: DeleteKernelsModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">
@@ -36,6 +38,9 @@ export default function DeleteKernelsModal({
             <strong>
               {kernelCount} kernel{kernelCount !== 1 ? "s" : ""}
             </strong>
+            {tagName ? (
+              <> in tag "<strong>{tagName}</strong>"</>
+            ) : null}
             ?
           </p>
 
