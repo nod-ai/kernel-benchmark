@@ -210,6 +210,15 @@ class WaveMxfp4Gemm4WaveRocrollerBenchmark(KernelBenchmark):
         except (ValueError, IndexError):
             return _MACROTILES[0]
 
+    def get_bench_result(self, runtime_us, ok, error_msg=None, kernel_source=None):
+        """Strip internal __mt<i> suffix from tag before storing result."""
+        original_tag = self.tag
+        if "__mt" in self.tag:
+            self.tag = self.tag.rsplit("__mt", 1)[0]
+        result = super().get_bench_result(runtime_us, ok, error_msg=error_msg, kernel_source=kernel_source)
+        self.tag = original_tag
+        return result
+
     def setup_parameters(self):
         mt = self._select_macrotile()
         self.add_param("BLOCK_M", IntegerBounds(mt[0], mt[0]), initial_value=mt[0])
