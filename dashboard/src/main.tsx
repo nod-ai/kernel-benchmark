@@ -16,6 +16,7 @@ import Tuning from "./pages/Tuning";
 import Runs from "./pages/Runs";
 import Tracking from "./pages/Tracking";
 import KernelTrace from "./pages/KernelTrace";
+import Home from "./pages/Home";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -24,6 +25,7 @@ createRoot(document.getElementById("root")!).render(
         <KernelTypesProvider>
           <Routes>
           <Route path="/trace/:runId" element={<KernelTrace />} />
+          <Route path="/dashboard" element={<Home />} />
           <Route path="/dashboard/config/:slug" element={<CustomDashboard />} />
           <Route path="/dashboard/tracker/:dashboardName" element={<Dashboard />} />
           <Route path="/dashboard/:runId" element={<Dashboard />} />
@@ -34,7 +36,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/tracking" element={<Tracking />} />
           <Route
             path="*"
-            element={<Navigate to="/dashboard/baseline" replace />}
+            element={<Navigate to="/dashboard" replace />}
           />
         </Routes>
         </KernelTypesProvider>

@@ -34,6 +34,9 @@ interface DashboardRendererProps {
   isTrackerDashboard?: boolean;
   profilingManifest?: Record<string, any> | null;
   blobName?: string | null;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+  showPin?: boolean;
 }
 
 function toRGLLayout(layout: WidgetLayout[]): LayoutItem[] {
@@ -79,6 +82,9 @@ export default function DashboardRenderer({
   isTrackerDashboard = false,
   profilingManifest,
   blobName,
+  isPinned = false,
+  onTogglePin,
+  showPin = false,
 }: DashboardRendererProps) {
   const { isAuthenticated, requestAuth } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -291,6 +297,9 @@ export default function DashboardRenderer({
         onDiscard={handleDiscard}
         onDownloadCsv={() => setShowCsvModal(true)}
         hasUnsavedChanges={hasChanges}
+        isPinned={isPinned}
+        onTogglePin={onTogglePin}
+        showPin={showPin}
       />
 
       {/* Global filters */}

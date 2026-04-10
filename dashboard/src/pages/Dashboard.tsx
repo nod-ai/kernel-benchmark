@@ -14,6 +14,8 @@ import {
   fetchDashboard,
   saveDashboard,
   fetchProfilingManifest,
+  toggleDashboardPin,
+  toggleTrackerPin,
   type ProfilingManifest,
 } from "../utils/github";
 
@@ -35,6 +37,7 @@ export default function Dashboard() {
   const [modularConfig, setModularConfig] = useState<DashboardConfig>(DEFAULT_MODULAR_CONFIG);
   const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
   const [profilingManifest, setProfilingManifest] = useState<ProfilingManifest | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
 
   const location = useLocation();
   const configSlug = useMemo(() => deriveConfigSlug(location.pathname), [location.pathname]);
@@ -43,14 +46,22 @@ export default function Dashboard() {
   useEffect(() => {
     setGlobalFilterValues({});
     fetchDashboard(configSlug)
-      .then((saved) => setModularConfig(saved))
+      .then((saved) => {
+        setModularConfig(saved);
+        if (!isTrackerDashboard) {
+          setIsPinned(!!saved.pinned);
+        }
+      })
       .catch(() => {
         setModularConfig({
           ...DEFAULT_MODULAR_CONFIG,
           slug: configSlug,
         });
+        if (!isTrackerDashboard) {
+          setIsPinned(false);
+        }
       });
-  }, [configSlug]);
+  }, [configSlug, isTrackerDashboard]);
 
   // Detect dashboard type from URL and load initial data
   useEffect(() => {
@@ -64,6 +75,7 @@ export default function Dashboard() {
         try {
           const trackerData = await fetchTrackerByDashboardName(dashboardName!);
           setTracker(trackerData as unknown as Tracker);
+          setIsPinned(!!(trackerData as any).pinned);
           
           const runsData = await fetchTrackerRuns(trackerData._id!);
           
@@ -133,6 +145,27 @@ export default function Dashboard() {
     }
   }, [configSlug]);
 
+  const handleTogglePin = useCallback(async () => {
+    try {
+      if (isTrackerDashboard && tracker) {
+        await toggleTrackerPin(tracker._id);
+        setIsPinned((prev) => !prev);
+      } else {
+        let configId = modularConfig._id;
+        if (configId.startsWith("__")) {
+          const toSave = { ...modularConfig, slug: configSlug };
+          const saved = await saveDashboard(toSave);
+          configId = saved._id;
+          setModularConfig((prev) => ({ ...prev, _id: saved._id, slug: saved.slug }));
+        }
+        const updated = await toggleDashboardPin(configId);
+        setIsPinned(!!updated.pinned);
+      }
+    } catch (err) {
+      console.error("Failed to toggle pin:", err);
+    }
+  }, [isTrackerDashboard, tracker, modularConfig, configSlug]);
+
   return (
     <PageContainer activePage="dashboard" isLoading={isLoading}>
       <div className="flex flex-col gap-6">
@@ -163,6 +196,9 @@ export default function Dashboard() {
             isTrackerDashboard={isTrackerDashboard}
             profilingManifest={profilingManifest}
             blobName={selectedRunBlobName}
+            isPinned={isPinned}
+            onTogglePin={handleTogglePin}
+            showPin
           />
         )}
         

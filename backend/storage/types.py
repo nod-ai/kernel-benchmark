@@ -162,6 +162,7 @@ class Tracker:
     backendSpecs: Optional[list[dict[str, Any]]] = (
         None  # Backend specifications with full metadata
     )
+    pinned: bool = False
 
 
 @dataclass
@@ -183,6 +184,7 @@ class DashboardConfig:
     widgets: list  # WidgetConfig[] as JSON
     globalFilters: list  # GlobalFilterConfig[] as JSON
     csvExportConfig: Optional[dict] = None  # { columns: [{ path, renameTo }] }
+    pinned: bool = False
 
 
 DashboardConfigDb = create_repository(DashboardConfig, "dashboardconfigs")

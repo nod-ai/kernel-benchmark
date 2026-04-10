@@ -434,6 +434,7 @@ export interface TrackerData {
   branch: string;
   isActive?: boolean;
   createdAt?: string;
+  pinned?: boolean;
 }
 
 export async function fetchTrackers(): Promise<TrackerData[]> {
@@ -683,4 +684,27 @@ export async function saveDashboard(
     return createDashboard(config);
   }
   return updateDashboard(config._id, config);
+}
+
+export async function toggleDashboardPin(
+  dashboardId: string,
+): Promise<DashboardConfig> {
+  const response = await apiFetch(`/api/dashboards/${dashboardId}/pin`, {
+    method: "PATCH",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to toggle pin (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function toggleTrackerPin(trackerId: string): Promise<void> {
+  const response = await apiFetch(`/api/trackers/${trackerId}/pin`, {
+    method: "PATCH",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to toggle pin (${response.status})`);
+  }
 }

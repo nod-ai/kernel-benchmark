@@ -7,7 +7,7 @@ import PageContainer from "../components/PageContainer";
 import DashboardRenderer from "../components/DashboardRenderer";
 import { useDashboardConfig } from "../hooks/useDashboardConfig";
 import { initGlobalFilterValues } from "../hooks/useGlobalFilters";
-import { updateDashboard } from "../utils/github";
+import { updateDashboard, toggleDashboardPin } from "../utils/github";
 
 /**
  * Renders a saved custom dashboard loaded by slug from the backend.
@@ -20,6 +20,11 @@ export default function CustomDashboard() {
   const [kernels, setKernels] = useState<Kernel[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
+  const [isPinned, setIsPinned] = useState(false);
+
+  useEffect(() => {
+    if (config) setIsPinned(!!config.pinned);
+  }, [config]);
 
   // For now, custom dashboards operate on the "baseline" artifact
   // TODO: allow the dashboard config to specify its data source artifact
@@ -63,6 +68,16 @@ export default function CustomDashboard() {
     []
   );
 
+  const handleTogglePin = useCallback(async () => {
+    if (!config) return;
+    try {
+      const updated = await toggleDashboardPin(config._id);
+      setIsPinned(!!updated.pinned);
+    } catch (err) {
+      console.error("Failed to toggle pin:", err);
+    }
+  }, [config]);
+
   const isLoading = configLoading || dataLoading;
 
   return (
@@ -80,6 +95,9 @@ export default function CustomDashboard() {
           onGlobalFilterChange={handleGlobalFilterChange}
           onConfigChange={setConfig}
           onSave={handleSave}
+          isPinned={isPinned}
+          onTogglePin={handleTogglePin}
+          showPin
         />
       )}
       {!isLoading && !error && kernels.length === 0 && (
