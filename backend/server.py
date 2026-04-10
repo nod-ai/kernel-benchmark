@@ -1542,6 +1542,7 @@ def list_dashboards():
                 "name": c.name,
                 "slug": c.slug,
                 "updatedAt": c.updatedAt,
+                "pinned": getattr(c, "pinned", False),
             }
             for c in configs
         ]
@@ -1628,6 +1629,7 @@ def update_dashboard(dashboard_id):
             widgets=data.get("widgets", existing.widgets),
             globalFilters=data.get("globalFilters", existing.globalFilters),
             csvExportConfig=data.get("csvExportConfig", existing.csvExportConfig),
+            pinned=data.get("pinned", getattr(existing, "pinned", False)),
         )
         DashboardConfigDb.upsert(updated)
         return jsonify(asdict(updated))
@@ -1684,6 +1686,52 @@ def clone_dashboard(dashboard_id):
         return jsonify(asdict(clone)), 201
     except Exception as e:
         logger.error(f"Error cloning dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboards/<dashboard_id>/pin", methods=["PATCH"])
+@token_required
+def toggle_dashboard_pin(dashboard_id):
+    """Toggle the pinned state of a dashboard configuration."""
+    try:
+        existing = DashboardConfigDb.find_by_id(dashboard_id)
+        if not existing:
+            return jsonify({"error": "Dashboard not found"}), 404
+
+        current_pinned = getattr(existing, "pinned", False)
+        updated = DashboardConfig(
+            _id=existing._id,
+            name=existing.name,
+            slug=existing.slug,
+            createdAt=existing.createdAt,
+            updatedAt=existing.updatedAt,
+            layout=existing.layout,
+            widgets=existing.widgets,
+            globalFilters=existing.globalFilters,
+            csvExportConfig=existing.csvExportConfig,
+            pinned=not current_pinned,
+        )
+        DashboardConfigDb.upsert(updated)
+        return jsonify(asdict(updated))
+    except Exception as e:
+        logger.error(f"Error toggling pin for dashboard {dashboard_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/trackers/<tracker_id>/pin", methods=["PATCH"])
+@token_required
+def toggle_tracker_pin(tracker_id):
+    """Toggle the pinned state of a tracker."""
+    try:
+        tracker = TrackerDb.find_by_id(tracker_id)
+        if not tracker:
+            return jsonify({"error": "Tracker not found"}), 404
+
+        tracker.pinned = not getattr(tracker, "pinned", False)
+        TrackerDb.upsert(tracker)
+        return jsonify(asdict(tracker))
+    except Exception as e:
+        logger.error(f"Error toggling pin for tracker {tracker_id}: {e}")
         return jsonify({"error": str(e)}), 500
 
 

@@ -1,4 +1,4 @@
-import { Plus, Save, X, Pencil, GripVertical, Lock, Download } from "lucide-react";
+import { Plus, Save, X, Pencil, GripVertical, Lock, Download, Pin, PinOff } from "lucide-react";
 
 interface EditToolbarProps {
   isEditing: boolean;
@@ -11,6 +11,9 @@ interface EditToolbarProps {
   onDiscard: () => void;
   onDownloadCsv: () => void;
   hasUnsavedChanges: boolean;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+  showPin?: boolean;
 }
 
 export default function EditToolbar({
@@ -24,6 +27,9 @@ export default function EditToolbar({
   onDiscard,
   onDownloadCsv,
   hasUnsavedChanges,
+  isPinned = false,
+  onTogglePin,
+  showPin = false,
 }: EditToolbarProps) {
   if (!isEditing) {
     return (
@@ -52,6 +58,24 @@ export default function EditToolbar({
           <Download className="w-3.5 h-3.5" />
           Download as CSV
         </button>
+        {showPin && onTogglePin && (
+          <button
+            onClick={onTogglePin}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+              isPinned
+                ? "text-blue-600 border-blue-300 bg-blue-50 hover:bg-blue-100 hover:border-blue-400"
+                : "text-gray-600 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+            }`}
+            title={isPinned ? "Unpin from home" : "Pin to home"}
+          >
+            {isPinned ? (
+              <PinOff className="w-3.5 h-3.5" />
+            ) : (
+              <Pin className="w-3.5 h-3.5" />
+            )}
+            {isPinned ? "Unpin" : "Pin to Home"}
+          </button>
+        )}
       </div>
     );
   }

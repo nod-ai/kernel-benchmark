@@ -257,7 +257,7 @@ export default function AddKernels() {
   };
 
   return (
-    <PageContainer activePage="new">
+    <PageContainer activePage="kernels">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header Section */}
         <div className="text-center">

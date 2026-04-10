@@ -11,7 +11,7 @@ interface PageContainerProps {
   requireAuth?: boolean;
 }
 
-const authPages: PageName[] = ["history", "runs", "new", "kernels", "tracking"];
+const authPages: PageName[] = ["history", "runs", "kernels", "tracking"];
 
 export default function PageContainer({
   activePage,

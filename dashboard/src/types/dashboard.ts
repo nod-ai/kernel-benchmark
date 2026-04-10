@@ -147,6 +147,7 @@ export interface DashboardConfig {
   widgets: WidgetConfig[];
   globalFilters: GlobalFilterConfig[];
   csvExportConfig?: { columns: CsvExportColumn[] };
+  pinned?: boolean;
 }
 
 export interface DashboardSummary {
@@ -154,6 +155,7 @@ export interface DashboardSummary {
   name: string;
   slug: string;
   updatedAt: string;
+  pinned?: boolean;
 }
 
 export interface WidgetProps {

@@ -23,7 +23,7 @@ const TOKEN_KEY = "auth_token";
  */
 export async function apiFetch(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<Response> {
   const token = localStorage.getItem(TOKEN_KEY);
   const headers: Record<string, string> = {
@@ -117,7 +117,7 @@ export async function fetchTuningResults() {
 
   for (let kernelName of Object.keys(tuningResults)) {
     tuningResults[kernelName].sort(
-      (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
     );
   }
 
@@ -164,7 +164,7 @@ export async function rebase() {
 
 export async function triggerBenchWorkflow(
   pullRequest: RepoPullRequest,
-  config: BenchmarkRuntimeConfig
+  config: BenchmarkRuntimeConfig,
 ) {
   const response = await apiFetch("/workflow/pr/trigger", {
     method: "POST",
@@ -225,7 +225,7 @@ export async function fetchKernelTypes(): Promise<KernelTypeDefinition[]> {
 }
 
 export async function addKernelType(
-  kernelType: KernelTypeDefinition
+  kernelType: KernelTypeDefinition,
 ): Promise<KernelTypeDefinition> {
   const response = await apiFetch("/kernel_types", {
     method: "POST",
@@ -236,7 +236,7 @@ export async function addKernelType(
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 
@@ -245,7 +245,7 @@ export async function addKernelType(
 
 export async function updateKernelType(
   kernelTypeId: string,
-  updates: Partial<Omit<KernelTypeDefinition, "_id">>
+  updates: Partial<Omit<KernelTypeDefinition, "_id">>,
 ): Promise<KernelTypeDefinition> {
   const response = await apiFetch(`/kernel_types/${kernelTypeId}`, {
     method: "PUT",
@@ -256,7 +256,7 @@ export async function updateKernelType(
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 
@@ -271,7 +271,7 @@ export async function deleteKernelType(kernelTypeId: string): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 }
@@ -279,7 +279,7 @@ export async function deleteKernelType(kernelTypeId: string): Promise<void> {
 // Kernel Management Functions
 
 export async function addKernels(
-  kernelConfigs: Omit<KernelConfig, "_id">[]
+  kernelConfigs: Omit<KernelConfig, "_id">[],
 ): Promise<KernelConfig[]> {
   const response = await apiFetch("/kernels", {
     method: "POST",
@@ -290,7 +290,7 @@ export async function addKernels(
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 
@@ -298,7 +298,7 @@ export async function addKernels(
 }
 
 export async function updateKernels(
-  kernelUpdates: Partial<KernelConfig>[]
+  kernelUpdates: Partial<KernelConfig>[],
 ): Promise<KernelConfig[]> {
   const response = await apiFetch("/kernels/batch", {
     method: "PUT",
@@ -309,7 +309,7 @@ export async function updateKernels(
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 
@@ -326,7 +326,7 @@ export async function deleteKernels(kernelIds: string[]): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 }
@@ -352,7 +352,7 @@ export interface FetchRunsResponse {
 }
 
 export async function fetchAllRuns(
-  params: FetchRunsParams = {}
+  params: FetchRunsParams = {},
 ): Promise<FetchRunsResponse> {
   const queryParams = new URLSearchParams();
   if (params.page) queryParams.append("page", params.page.toString());
@@ -404,7 +404,7 @@ export async function deleteRun(runId: string): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 }
@@ -434,6 +434,7 @@ export interface TrackerData {
   branch: string;
   isActive?: boolean;
   createdAt?: string;
+  pinned?: boolean;
 }
 
 export async function fetchTrackers(): Promise<TrackerData[]> {
@@ -445,7 +446,7 @@ export async function fetchTrackers(): Promise<TrackerData[]> {
 }
 
 export async function createTracker(
-  tracker: TrackerData
+  tracker: TrackerData,
 ): Promise<TrackerData> {
   const response = await apiFetch("/api/trackers", {
     method: "POST",
@@ -456,7 +457,7 @@ export async function createTracker(
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 
@@ -465,7 +466,7 @@ export async function createTracker(
 
 export async function updateTracker(
   trackerId: string,
-  tracker: Partial<TrackerData>
+  tracker: Partial<TrackerData>,
 ): Promise<TrackerData> {
   const response = await apiFetch(`/api/trackers/${trackerId}`, {
     method: "PUT",
@@ -476,7 +477,7 @@ export async function updateTracker(
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 
@@ -491,7 +492,7 @@ export async function deleteTracker(trackerId: string): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 }
@@ -505,17 +506,15 @@ export async function triggerTrackerRun(trackerId: string): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      errorData.error || `HTTP error! Status: ${response.status}`
+      errorData.error || `HTTP error! Status: ${response.status}`,
     );
   }
 }
 
 export async function fetchTrackerByDashboardName(
-  dashboardName: string
+  dashboardName: string,
 ): Promise<TrackerData> {
-  const response = await apiFetch(
-    `/api/trackers/dashboard/${dashboardName}`
-  );
+  const response = await apiFetch(`/api/trackers/dashboard/${dashboardName}`);
   if (!response.ok) {
     throw new Error("Tracker not found");
   }
@@ -533,7 +532,7 @@ export async function fetchTrackerRuns(trackerId: string): Promise<any[]> {
 export async function fetchTrackerPerformanceTimeline(
   trackerId: string,
   startDate?: string,
-  endDate?: string
+  endDate?: string,
 ): Promise<any[]> {
   const params = new URLSearchParams();
   if (startDate) params.append("start_date", startDate);
@@ -541,7 +540,7 @@ export async function fetchTrackerPerformanceTimeline(
 
   const qs = params.toString();
   const response = await apiFetch(
-    `/api/trackers/${trackerId}/performance${qs ? `?${qs}` : ""}`
+    `/api/trackers/${trackerId}/performance${qs ? `?${qs}` : ""}`,
   );
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
@@ -560,7 +559,7 @@ export async function fetchBranches(): Promise<string[]> {
 // Auth
 
 export async function authLogin(
-  password: string
+  password: string,
 ): Promise<{ token: string } | null> {
   const response = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
@@ -572,7 +571,7 @@ export async function authLogin(
 }
 
 export async function authVerify(
-  token: string
+  token: string,
 ): Promise<{ authenticated: boolean }> {
   const response = await fetch(`${API_URL}/auth/verify`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -597,10 +596,10 @@ import type { RocprofTraceResponse } from "./rocprof";
 export type ProfilingManifest = Record<string, any>;
 
 export async function fetchProfilingManifest(
-  runIdOrBlobName: string
+  runIdOrBlobName: string,
 ): Promise<ProfilingManifest> {
   const response = await apiFetch(
-    `/profiling/${encodeURIComponent(runIdOrBlobName)}/manifest`
+    `/profiling/${encodeURIComponent(runIdOrBlobName)}/manifest`,
   );
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
@@ -610,10 +609,10 @@ export async function fetchProfilingManifest(
 
 export async function fetchRocprofDump(
   blobName: string,
-  dumpKey: string
+  dumpKey: string,
 ): Promise<RocprofTraceResponse> {
   const response = await apiFetch(
-    `/profiling/${encodeURIComponent(blobName)}/dump/${encodeURIComponent(dumpKey)}`
+    `/profiling/${encodeURIComponent(blobName)}/dump/${encodeURIComponent(dumpKey)}`,
   );
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
@@ -640,7 +639,7 @@ export async function fetchDashboard(slug: string): Promise<DashboardConfig> {
 }
 
 export async function createDashboard(
-  config: Partial<DashboardConfig>
+  config: Partial<DashboardConfig>,
 ): Promise<DashboardConfig> {
   const response = await apiFetch("/api/dashboards", {
     method: "POST",
@@ -649,14 +648,16 @@ export async function createDashboard(
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to create dashboard (${response.status})`);
+    throw new Error(
+      data.error || `Failed to create dashboard (${response.status})`,
+    );
   }
   return response.json();
 }
 
 export async function updateDashboard(
   dashboardId: string,
-  config: DashboardConfig
+  config: DashboardConfig,
 ): Promise<DashboardConfig> {
   const response = await apiFetch(`/api/dashboards/${dashboardId}`, {
     method: "PUT",
@@ -665,7 +666,9 @@ export async function updateDashboard(
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to save dashboard (${response.status})`);
+    throw new Error(
+      data.error || `Failed to save dashboard (${response.status})`,
+    );
   }
   return response.json();
 }
@@ -675,10 +678,33 @@ export async function updateDashboard(
  * Returns the saved config (with the real `_id` after creation).
  */
 export async function saveDashboard(
-  config: DashboardConfig
+  config: DashboardConfig,
 ): Promise<DashboardConfig> {
   if (config._id.startsWith("__")) {
     return createDashboard(config);
   }
   return updateDashboard(config._id, config);
+}
+
+export async function toggleDashboardPin(
+  dashboardId: string,
+): Promise<DashboardConfig> {
+  const response = await apiFetch(`/api/dashboards/${dashboardId}/pin`, {
+    method: "PATCH",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to toggle pin (${response.status})`);
+  }
+  return response.json();
+}
+
+export async function toggleTrackerPin(trackerId: string): Promise<void> {
+  const response = await apiFetch(`/api/trackers/${trackerId}/pin`, {
+    method: "PATCH",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to toggle pin (${response.status})`);
+  }
 }

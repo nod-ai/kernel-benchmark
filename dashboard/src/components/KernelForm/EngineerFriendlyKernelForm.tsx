@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Upload, Check, AlertTriangle, Download, FileText } from "lucide-react";
 import { validateAttributeValue } from "./AttributeInput";
 import type { KernelTypeDefinition } from "../../types";
@@ -7,6 +7,8 @@ import type { KernelInputData } from "../../utils/kernelTypes";
 interface EngineerFriendlyKernelFormProps {
   kernelType: KernelTypeDefinition;
   onSubmit: (kernels: KernelInputData[]) => void;
+  onChange?: (kernels: KernelInputData[]) => void;
+  hideSubmit?: boolean;
 }
 
 interface ParsedRow {
@@ -65,6 +67,8 @@ const convertValue = (
 export default function EngineerFriendlyKernelForm({
   kernelType,
   onSubmit,
+  onChange,
+  hideSubmit = false,
 }: EngineerFriendlyKernelFormProps) {
   const [inputText, setInputText] = useState<string>("");
 
@@ -181,6 +185,19 @@ export default function EngineerFriendlyKernelForm({
 
     return { rows, errors };
   }, [inputText, kernelType]);
+
+  useEffect(() => {
+    if (!onChange) return;
+    const validRows = parsedData.rows.filter((row) => row.errors.length === 0);
+    const kernels: KernelInputData[] = validRows.map((row, index) => ({
+      id: `kernel-${Date.now()}-${index}`,
+      values: row.values,
+      tag: row.tag,
+      isValid: true,
+      errors: {},
+    }));
+    onChange(kernels);
+  }, [parsedData]);
 
   const downloadTemplate = () => {
     const blob = new Blob([exampleCSV], { type: "text/csv" });
@@ -355,44 +372,46 @@ export default function EngineerFriendlyKernelForm({
       )}
 
       {/* Submit Section */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {validKernelCount > 0 ? (
-              <div className="flex items-center gap-2 text-green-700">
-                <div className="p-1 bg-green-100 rounded-full">
-                  <Check className="w-4 h-4" />
+      {!hideSubmit && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {validKernelCount > 0 ? (
+                <div className="flex items-center gap-2 text-green-700">
+                  <div className="p-1 bg-green-100 rounded-full">
+                    <Check className="w-4 h-4" />
+                  </div>
+                  <span className="font-medium">
+                    {validKernelCount} kernel{validKernelCount !== 1 ? "s" : ""}{" "}
+                    ready to import
+                  </span>
                 </div>
-                <span className="font-medium">
-                  {validKernelCount} kernel{validKernelCount !== 1 ? "s" : ""}{" "}
-                  ready to import
-                </span>
-              </div>
-            ) : inputText.trim() ? (
-              <div className="flex items-center gap-2 text-red-600">
-                <AlertTriangle className="w-4 h-4" />
-                <span>Please fix validation errors before importing</span>
-              </div>
-            ) : (
-              <div className="text-gray-600">
-                <span>Paste CSV data above to get started</span>
-              </div>
-            )}
-          </div>
+              ) : inputText.trim() ? (
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Please fix validation errors before importing</span>
+                </div>
+              ) : (
+                <div className="text-gray-600">
+                  <span>Paste CSV data above to get started</span>
+                </div>
+              )}
+            </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={validKernelCount === 0}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-sm transition-all duration-200"
-          >
-            <Upload className="w-4 h-4" />
-            <span>
-              Import {validKernelCount} Kernel
-              {validKernelCount !== 1 ? "s" : ""}
-            </span>
-          </button>
+            <button
+              onClick={handleSubmit}
+              disabled={validKernelCount === 0}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-sm transition-all duration-200"
+            >
+              <Upload className="w-4 h-4" />
+              <span>
+                Import {validKernelCount} Kernel
+                {validKernelCount !== 1 ? "s" : ""}
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
