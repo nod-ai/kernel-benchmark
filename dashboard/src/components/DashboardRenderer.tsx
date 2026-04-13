@@ -34,6 +34,7 @@ interface DashboardRendererProps {
   isTrackerDashboard?: boolean;
   profilingManifest?: Record<string, any> | null;
   blobName?: string | null;
+  latestBackendSpecs?: Record<string, any> | null;
 }
 
 function toRGLLayout(layout: WidgetLayout[]): LayoutItem[] {
@@ -79,6 +80,7 @@ export default function DashboardRenderer({
   isTrackerDashboard = false,
   profilingManifest,
   blobName,
+  latestBackendSpecs,
 }: DashboardRendererProps) {
   const { isAuthenticated, requestAuth } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -305,6 +307,7 @@ export default function DashboardRenderer({
           onUpdateFilter={handleUpdateFilter}
           onDeleteFilter={handleDeleteFilter}
           colorByFields={colorByFields}
+          latestBackendSpecs={latestBackendSpecs}
         />
       )}
 

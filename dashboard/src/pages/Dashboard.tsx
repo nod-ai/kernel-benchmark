@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [selectedRunBlobName, setSelectedRunBlobName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [runBackendSpecs, setRunBackendSpecs] = useState<Record<string, any> | null>(null);
 
   const [modularConfig, setModularConfig] = useState<DashboardConfig>(DEFAULT_MODULAR_CONFIG);
   const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
@@ -81,7 +82,6 @@ export default function Dashboard() {
         const runIdOrBlobName = location.pathname.split('/').pop();
         setSelectedRunBlobName(runIdOrBlobName || null);
 
-        // Fetch run data to get backendSpecs
         if (runIdOrBlobName) {
           try {
             const response = await fetch(
@@ -89,13 +89,9 @@ export default function Dashboard() {
             );
             const data = await response.json();
             const runs = data.runs || [];
-
-            // Find matching run by blobName or ID
-            const item = runs.find((item: any) =>
-              item.run?.blobName === runIdOrBlobName || item.run?._id === runIdOrBlobName
+            const item = runs.find((r: any) =>
+              r.run?.blobName === runIdOrBlobName || r.run?._id === runIdOrBlobName
             );
-
-            // Extract backendSpecs from trigger metadata
             if (item?.trigger?.metadata?.backendSpecs) {
               const specsMap: Record<string, any> = {};
               item.trigger.metadata.backendSpecs.forEach((spec: any) => {
@@ -105,7 +101,7 @@ export default function Dashboard() {
               setRunBackendSpecs(specsMap);
             }
           } catch (error) {
-            console.error("Failed to fetch run data:", error);
+            console.error("Failed to fetch run backend specs:", error);
           }
         }
 
@@ -192,6 +188,7 @@ export default function Dashboard() {
             isTrackerDashboard={isTrackerDashboard}
             profilingManifest={profilingManifest}
             blobName={selectedRunBlobName}
+            latestBackendSpecs={runBackendSpecs}
           />
         )}
         

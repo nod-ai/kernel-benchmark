@@ -13,7 +13,7 @@ import {
 import { Calendar, TrendingUp, Settings } from "lucide-react";
 import type { TrackerPerformancePoint, TrackerRunHistory } from "../../types";
 import { getBackendColor } from "../../utils/color";
-import { fetchTrackerRuns, fetchTrackerPerformanceTimeline } from "../../utils/github";
+import { fetchTrackerRuns } from "../../utils/github";
 
 Chart.register(
   LineController,
@@ -56,14 +56,7 @@ export default function TrackerDashboardSection({
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [runsData, timelineData] = await Promise.all([
-          fetchTrackerRuns(trackerId),
-          fetchTrackerPerformanceTimeline(
-            trackerId,
-            startDate || undefined,
-            endDate || undefined
-          ),
-        ]);
+        const runsData = await fetchTrackerRuns(trackerId);
         setRuns(runsData);
 
         // Fetch performance timeline

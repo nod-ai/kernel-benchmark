@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
-import { Filter, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { useMemo, useState, useRef, useEffect } from "react";
+import { Filter, Plus, Pencil, Trash2, Check, X, Info } from "lucide-react";
 import type { GlobalFilterConfig, GlobalFilterType } from "../types/dashboard";
 import { resolveField } from "../utils/pipeline";
 import { getValueColor } from "../utils/color";
+import { getDefaultBackendSpec } from "../utils/backendSpecs";
 
 interface GlobalFilterBarProps {
   filters: GlobalFilterConfig[];
@@ -15,6 +16,7 @@ interface GlobalFilterBarProps {
   onDeleteFilter?: (filterId: string) => void;
   /** Fields currently used as mapping.color in one or more widgets */
   colorByFields?: Set<string>;
+  latestBackendSpecs?: Record<string, any> | null;
 }
 
 const FILTER_TYPE_LABELS: Record<GlobalFilterType, string> = {
@@ -70,6 +72,7 @@ export default function GlobalFilterBar({
   onUpdateFilter,
   onDeleteFilter,
   colorByFields,
+  latestBackendSpecs,
 }: GlobalFilterBarProps) {
   const [editingFilterId, setEditingFilterId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -140,6 +143,7 @@ export default function GlobalFilterBar({
                 rawData={rawData}
                 onChange={(val) => onChange(f.id, val)}
                 isColorCoded={colorByFields?.has(f.field) ?? false}
+                latestBackendSpecs={f.field === "backend" ? latestBackendSpecs : undefined}
               />
               {isEditing && (
                 <div className="flex gap-0.5 ml-1 mt-0.5 flex-shrink-0">
@@ -274,9 +278,23 @@ interface GlobalFilterInputProps {
   rawData: Record<string, any>[];
   onChange: (value: any) => void;
   isColorCoded?: boolean;
+  latestBackendSpecs?: Record<string, any> | null;
 }
 
-function GlobalFilterInput({ filter, value, rawData, onChange, isColorCoded = false }: GlobalFilterInputProps) {
+function GlobalFilterInput({ filter, value, rawData, onChange, isColorCoded = false, latestBackendSpecs }: GlobalFilterInputProps) {
+  const [expandedBackend, setExpandedBackend] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const isBackendFilter = filter.field === "backend";
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setExpandedBackend(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   const options = useMemo(() => {
     if (filter.type === "date_range" || filter.type === "range") return [];
     const vals = rawData.map((row) => resolveField(row, filter.field));
@@ -320,25 +338,91 @@ function GlobalFilterInput({ filter, value, rawData, onChange, isColorCoded = fa
       }
     };
     return (
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
-          {filter.label}:
-        </span>
-        <div className="flex gap-1.5 flex-wrap">
-          {options.map((opt) => {
-            const active = selected.includes(opt);
-            return (
-              <button
-                key={opt}
-                onClick={() => toggle(opt)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${chipStyle(active, isColorCoded)}`}
-                style={chipInlineStyle(active, isColorCoded, opt)}
-              >
-                {opt}
-              </button>
-            );
-          })}
+      <div className="flex flex-col gap-1.5 flex-shrink-0" ref={isBackendFilter ? dropdownRef : undefined}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
+            {filter.label}:
+          </span>
+          <div className="flex gap-1.5 flex-wrap">
+            {options.map((opt) => {
+              const active = selected.includes(opt);
+              const backendSpec = isBackendFilter
+                ? (latestBackendSpecs?.[opt] || getDefaultBackendSpec(opt))
+                : null;
+              return (
+                <div key={opt} className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => toggle(opt)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${chipStyle(active, isColorCoded)}`}
+                    style={chipInlineStyle(active, isColorCoded, opt)}
+                  >
+                    {opt}
+                  </button>
+                  {isBackendFilter && active && backendSpec && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedBackend(expandedBackend === opt ? null : opt);
+                      }}
+                      className="p-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                      title="Show backend details"
+                    >
+                      <Info className="w-3 h-3 text-gray-600" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
+        {isBackendFilter && expandedBackend && (() => {
+          const backendSpec = latestBackendSpecs?.[expandedBackend] || getDefaultBackendSpec(expandedBackend);
+          if (!backendSpec) return null;
+          return (
+            <div className="ml-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs space-y-1.5">
+              {latestBackendSpecs?.[expandedBackend] && (
+                <div className="mb-2 pb-2 border-b border-gray-300">
+                  <span className="text-blue-600 font-semibold text-xs">✓ From This Run</span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-600 min-w-[80px]">Name:</span>
+                <span className="text-gray-800">{backendSpec.name}</span>
+              </div>
+              {backendSpec.remoteRepository && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">Repository:</span>
+                  <span className="text-gray-800 font-mono text-xs">{backendSpec.remoteRepository}</span>
+                </div>
+              )}
+              {backendSpec.branch && (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">Branch:</span>
+                  <span className="text-gray-800 font-mono text-xs">{backendSpec.branch}</span>
+                </div>
+              )}
+              {backendSpec.commitHash ? (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">Commit:</span>
+                  <a
+                    href={`https://github.com/${backendSpec.remoteRepository}/commit/${backendSpec.commitHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 font-mono text-xs underline"
+                  >
+                    {backendSpec.commitHash.substring(0, 8)}
+                  </a>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <span className="font-semibold text-gray-600 min-w-[80px]">Commit:</span>
+                  <span className="text-gray-500 italic text-xs">Will use latest from branch</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
   }
