@@ -61,6 +61,8 @@ function matchOperator(
     case "lte":
       return fieldValue <= target;
     case "in":
+      // null/undefined field values pass through (field absent on this row)
+      if (fieldValue == null) return true;
       return Array.isArray(target) && target.includes(fieldValue);
     case "not_in":
       return Array.isArray(target) && !target.includes(fieldValue);

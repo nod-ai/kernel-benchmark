@@ -123,8 +123,17 @@ export default function GlobalFilterBar({
       )}
 
       <div className="flex flex-wrap gap-4 items-start">
-        {filters.map((f) =>
-          isEditing && editingFilterId === f.id ? (
+        {filters.map((f) => {
+          // For select-type filters, skip rendering if there are no options in the data (unless editing)
+          const hasOptions =
+            isEditing ||
+            f.type === "range" ||
+            f.type === "date_range" ||
+            rawData.some((row) => row[f.field] != null && row[f.field] !== "");
+
+          if (!hasOptions) return null;
+
+          return isEditing && editingFilterId === f.id ? (
             <FilterForm
               key={f.id}
               initial={f}
@@ -164,8 +173,8 @@ export default function GlobalFilterBar({
                 </div>
               )}
             </div>
-          )
-        )}
+          );
+        })}
         {filters.length === 0 && !showAddForm && (
           <p className="text-xs text-gray-400 italic">
             {isEditing

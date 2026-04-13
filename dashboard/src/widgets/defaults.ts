@@ -122,5 +122,17 @@ export const DEFAULT_MODULAR_CONFIG: DashboardConfig = {
       label: "Tag",
       type: "multi",
     },
+    {
+      id: "gf-macrotile",
+      field: "macrotile",
+      label: "Macrotile",
+      type: "multi",
+    },
+    {
+      id: "gf-kernelSource",
+      field: "kernelSource",
+      label: "Source",
+      type: "multi",
+    },
   ],
 };

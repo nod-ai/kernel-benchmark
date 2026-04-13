@@ -114,7 +114,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (selectedRunBlobName) {
-      fetchData(selectedRunBlobName).then(setKernels);
+      fetchData(selectedRunBlobName).then((data) => {
+        // Flatten macrotile from tuningConfig into a top-level field for global filter use
+        const enriched = data.map((k: any) => {
+          const tc = k.tuningConfig;
+          if (tc?.BLOCK_M != null && tc?.BLOCK_N != null && tc?.BLOCK_K != null) {
+            return { ...k, macrotile: `${tc.BLOCK_M}×${tc.BLOCK_N}×${tc.BLOCK_K}` };
+          }
+          return k;
+        });
+        setKernels(enriched);
+      });
       fetchProfilingManifest(selectedRunBlobName)
         .then(setProfilingManifest)
         .catch(() => setProfilingManifest(null));
