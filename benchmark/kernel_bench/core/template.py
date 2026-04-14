@@ -143,7 +143,7 @@ class KernelBenchmark(ABC):
         """Validate numerical accuracy of kernel before benchmarking"""
         return True
 
-    def get_bench_result(self, runtime_us: float, ok: bool, error_msg: str = None):
+    def get_bench_result(self, runtime_us: float, ok: bool, error_msg: str = None, kernel_source: str = None):
         arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
             self.config, runtime_us if ok else math.inf
         )
@@ -165,6 +165,7 @@ class KernelBenchmark(ABC):
             tflops=round(tflops_per_second, 4),
             ok=ok,
             error_msg=error_msg,
+            kernel_source=kernel_source,
         )
 
     @property
@@ -230,7 +231,7 @@ class IREEKernelBenchmark(KernelBenchmark):
             profiler_dump_path=tt_dump_dir,
             kernel_regex=self.kernel_regex
         )
-        return self.get_bench_result(runtime_us, ok)
+        return self.get_bench_result(runtime_us, ok, kernel_source="wave")
 
     def run_bench(self, device, num_iterations=1, timeout=None):
         mlir_dir = self.path_config.mlir_for(self.kernel_type, self.backend)

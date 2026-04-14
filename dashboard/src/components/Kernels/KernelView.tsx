@@ -191,6 +191,9 @@ export default function KernelView({
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                     Macrotile
                   </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    Source
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -260,6 +263,19 @@ export default function KernelView({
                         {k.tuningConfig?.BLOCK_M != null
                           ? `${k.tuningConfig.BLOCK_M}×${k.tuningConfig.BLOCK_N}×${k.tuningConfig.BLOCK_K}`
                           : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-mono">
+                        {k.kernelSource ? (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            k.kernelSource === "wave"
+                              ? "bg-purple-100 text-purple-800"
+                              : k.kernelSource === "aiter"
+                                ? "bg-orange-100 text-orange-800"
+                                : "bg-gray-100 text-gray-600"
+                          }`}>
+                            {k.kernelSource}
+                          </span>
+                        ) : "—"}
                       </td>
                     </tr>
                   );
