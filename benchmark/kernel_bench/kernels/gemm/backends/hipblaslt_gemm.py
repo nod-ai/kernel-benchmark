@@ -54,6 +54,7 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
             # Parse the output
             mean_time_us = parse_hipblaslt_us(result.stdout)
             hyperparams = parse_hipblaslt_block_sizes(result.stdout)
+            kernel_source = _parse_kernel_source(result.stdout, result.stderr)
 
             if mean_time_us is None:
                 self.logger.error(
@@ -64,9 +65,9 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
                 )
                 return self.get_bench_result(0.0, False)
 
-            result = self.get_bench_result(mean_time_us, True)
-            result.tuning_config = hyperparams
-            return result
+            bench_result = self.get_bench_result(mean_time_us, True, kernel_source=kernel_source)
+            bench_result.tuning_config = hyperparams
+            return bench_result
 
         except subprocess.TimeoutExpired:
             self.logger.error("Benchmark timed out")
@@ -74,6 +75,34 @@ class HipBLASLtGemmBenchmark(KernelBenchmark):
         except Exception as e:
             self.logger.error(f"Error running benchmark: {e}")
             return self.get_bench_result(0.0, False)
+
+
+def _parse_kernel_source(stdout: str, stderr: str) -> str | None:
+    """
+    Determine kernel source from hipblaslt-bench output.
+
+    Primary: parse '[KERNEL_SOURCE] <source>' from stderr.
+    Fallback: infer from 'Loading kernel from cache: <symbol>' in stdout.
+    """
+    for line in stderr.splitlines():
+        s = line.strip()
+        if s.startswith("[KERNEL_SOURCE]"):
+            parts = s.split()
+            if len(parts) >= 2:
+                src = parts[1].lower()
+                if src in ("wave", "aiter", "rocroller"):
+                    return src
+    # Fallback: symbol name in stdout contains backend identifier
+    for line in stdout.splitlines():
+        s = line.strip()
+        if s.startswith("Loading kernel from cache:"):
+            symbol = s.split(":", 1)[1].strip()
+            if "aiter" in symbol:
+                return "aiter"
+            if "rocroller" in symbol.lower():
+                return "rocroller"
+            return "wave"
+    return None
 
 
 def parse_hipblaslt_us(output: str, row_index: Optional[int] = None) -> float:

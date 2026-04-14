@@ -98,7 +98,8 @@ export default function RooflinePlot({
         ? "rgba(200, 200, 200, 0.3)"
         : getValueColor(groupValue).string(),
       showLine: false,
-      pointRadius: 5,
+      pointRadius: 6,
+      pointHitRadius: 12,
     }));
 
     if (selectedKernel) {
@@ -117,7 +118,8 @@ export default function RooflinePlot({
         borderColor: getValueColor(selGroup).string(),
         backgroundColor: getValueColor(selGroup).string(),
         showLine: false,
-        pointRadius: 5,
+        pointRadius: 8,
+        pointHitRadius: 12,
       });
     }
 
@@ -222,7 +224,11 @@ export default function RooflinePlot({
             },
           },
         },
-        onClick: (_, elements) => {
+        onClick: (event, elements) => {
+          // Reset zoom first so clicks always register on correct coordinates
+          if ((chartRef.current as any)?.resetZoom) {
+            (chartRef.current as any).resetZoom();
+          }
           if (elements.length > 0) {
             const datasetIndex = elements[0].datasetIndex;
             const index = elements[0].index;

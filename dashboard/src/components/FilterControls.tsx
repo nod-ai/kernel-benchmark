@@ -220,9 +220,8 @@ export function MultiSelectFilter({
         </span>
         <div className="flex gap-2">
           {options.map((option) => {
-            // Try to get spec from latest run first, then fall back to default
-            const backendSpec = isBackendsFilter 
-              ? ((latestBackendSpecs && latestBackendSpecs[option]) || getDefaultBackendSpec(option))
+            const backendSpec = isBackendsFilter
+              ? (latestBackendSpecs?.[option] || getDefaultBackendSpec(option))
               : null;
             const isSelected = selectedOptions.includes(option);
             
@@ -466,6 +465,7 @@ interface DashboardFilterControlsProps {
   latestBackendSpecs?: Record<string, any>; // Backend specs from latest run indexed by backend name
   isTrackerDashboard?: boolean; // Whether this is a tracker dashboard (vs individual run)
   filterConfigs: FilterDefinition[];
+  kernels?: import("../types").Kernel[];
 }
 
 export function DashboardFilterControls({
@@ -475,12 +475,13 @@ export function DashboardFilterControls({
   latestBackendSpecs,
   isTrackerDashboard = false,
   filterConfigs: filterDefinitions,
+  kernels = [],
 }: DashboardFilterControlsProps) {
   // Build filter configurations dynamically (filter by condition, then map to UI config)
   const filterConfigs: FilterConfig[] = filterDefinitions
     .filter(
       (config: FilterDefinition) =>
-        !config.condition || config.condition(filters)
+        !config.condition || config.condition(filters, kernels)
     )
     .map((config: FilterDefinition) => {
     // Map filter keys to available options keys
@@ -504,6 +505,12 @@ export function DashboardFilterControls({
         break;
       case "variants":
         options = availableOptions.variants;
+        break;
+      case "macrotiles":
+        options = availableOptions.macrotiles;
+        break;
+      case "kernelSources":
+        options = availableOptions.kernelSources;
         break;
       default:
         options = [];

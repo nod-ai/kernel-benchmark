@@ -19,6 +19,11 @@ export interface BackendSpec {
   commitHash?: string; // specific commit, or use latest if not specified
   isDefault?: boolean; // whether this is the default spec for this backend
   parentSpecId?: string; // if this is a variant, reference to the parent spec (inherits repo/branch)
+  benchmarkClass?: string; // Python class name to use for this backend (e.g., "WaveMxfp4Gemm4WaveBenchmark")
+  buildMeta?: {
+    rocmLibrariesRepo?: string; // e.g., "ROCm/rocm-libraries" — overrides default for this spec
+    rocmLibrariesBranch?: string; // e.g., "develop"
+  };
 }
 
 // Runtime configuration for kernels
@@ -40,7 +45,9 @@ export interface Kernel {
   tflops: number;
   shape: Record<string, any>;
   tuningConfig: Record<string, any> | undefined | null;
-  ok: string;
+  ok: boolean;
+  errorMsg?: string;
+  kernelSource?: string; // "wave", "aiter", or null if unknown
 }
 
 export interface KernelConfig {
@@ -251,6 +258,8 @@ export interface TrackerPerformancePoint {
     numKernels: number;
   }>;
   backendSpecs?: BackendSpec[]; // Backend specifications with commit hashes
+  availableMacrotiles?: string[]; // e.g. ["256x192x256", "256x224x256"]
+  availableKernelSources?: string[]; // e.g. ["wave", "aiter", "rocroller"]
 }
 
 export interface Tracker {

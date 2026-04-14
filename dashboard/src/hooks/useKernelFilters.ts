@@ -9,6 +9,8 @@ export interface FilterState {
   dtypes: string[];
   tags: string[];
   variants: string[];
+  macrotiles: string[];
+  kernelSources: string[];
 }
 
 // Available options for each filter
@@ -19,6 +21,8 @@ export interface AvailableFilterOptions {
   dtypes: string[];
   tags: string[];
   variants: string[];
+  macrotiles: string[];
+  kernelSources: string[];
 }
 
 // Filter configuration type
@@ -28,7 +32,7 @@ export interface FilterDefinition {
   title: string;
   getOptions: (kernels: Kernel[], filters: FilterState) => string[];
   cascades?: (keyof FilterState)[];
-  condition?: (filters: FilterState) => boolean; // When to show this filter
+  condition?: (filters: FilterState, kernels: Kernel[]) => boolean; // When to show this filter
 }
 
 // Helper functions to get unique values from filtered kernels
@@ -62,6 +66,39 @@ function getUniqueTags(kernels: Kernel[], filters: FilterState): string[] {
     (k) => k.kernelType === filters.kernelType && k.machine === filters.machine
   );
   return Array.from(new Set(filteredKernels.map((k) => k.tag)));
+}
+
+function getUniqueMacrotiles(kernels: Kernel[], filters: FilterState): string[] {
+  const filteredKernels = kernels.filter(
+    (k) => k.kernelType === filters.kernelType && k.machine === filters.machine
+  );
+  const tiles = filteredKernels
+    .map((k) => {
+      const tc = k.tuningConfig;
+      if (tc?.BLOCK_M != null && tc?.BLOCK_N != null && tc?.BLOCK_K != null) {
+        return `${tc.BLOCK_M}×${tc.BLOCK_N}×${tc.BLOCK_K}`;
+      }
+      return null;
+    })
+    .filter((t): t is string => t !== null);
+  return Array.from(new Set(tiles)).sort();
+}
+
+function getUniqueMacrotileForKernel(k: Kernel): string | null {
+  const tc = k.tuningConfig;
+  if (tc?.BLOCK_M != null && tc?.BLOCK_N != null && tc?.BLOCK_K != null) {
+    return `${tc.BLOCK_M}×${tc.BLOCK_N}×${tc.BLOCK_K}`;
+  }
+  return null;
+}
+
+function getUniqueKernelSources(kernels: Kernel[], filters: FilterState): string[] {
+  const filteredKernels = kernels.filter(
+    (k) => k.kernelType === filters.kernelType && k.machine === filters.machine
+  );
+  return Array.from(
+    new Set(filteredKernels.map((k) => k.kernelSource).filter((s): s is string => !!s))
+  ).sort();
 }
 
 function getUniqueVariants(kernels: Kernel[], filters: FilterState): string[] {
@@ -122,7 +159,21 @@ function getFilterConfigs(
       type: "multi",
       title: "Transpose",
       getOptions: getUniqueVariants,
-      condition: (filters) => filters.kernelType === "gemm",
+      condition: (filters, _kernels) => filters.kernelType === "gemm",
+    },
+    {
+      key: "macrotiles",
+      type: "multi",
+      title: "Macrotile",
+      getOptions: getUniqueMacrotiles,
+      condition: (filters, kernels) => getUniqueMacrotiles(kernels, filters).length > 0,
+    },
+    {
+      key: "kernelSources",
+      type: "multi",
+      title: "Source",
+      getOptions: getUniqueKernelSources,
+      condition: (filters, kernels) => getUniqueKernelSources(kernels, filters).length > 0,
     },
   ];
 }
@@ -180,6 +231,8 @@ function initializeFilters(
       dtypes: [],
       tags: [],
       variants: [],
+      macrotiles: [],
+      kernelSources: [],
     };
     const kernelTypeOptions =
       filterConfigs[0]?.getOptions([], emptyFilters) ?? [];
@@ -190,6 +243,8 @@ function initializeFilters(
       dtypes: [],
       tags: [],
       variants: [],
+      macrotiles: [],
+      kernelSources: [],
     };
   }
 
@@ -203,6 +258,8 @@ function initializeFilters(
     dtypes: [],
     tags: [],
     variants: [],
+    macrotiles: [],
+    kernelSources: [],
   };
 
   // Set initial values for all filters
@@ -225,35 +282,48 @@ export function useKernelFilters(kernels: Kernel[]) {
     []
   );
 
+  // Only use successful kernels for deriving filter options
+  const successKernels = useMemo(() => kernels.filter((k) => k.ok), [kernels]);
+
   const [filters, setFilters] = useState<FilterState>(() =>
-    initializeFilters(kernels, filterConfigs)
+    initializeFilters(successKernels, filterConfigs)
   );
 
   // Update filters when kernels or filter configs change
   useEffect(() => {
-    if (kernels.length > 0) {
-      setFilters(initializeFilters(kernels, filterConfigs));
+    if (successKernels.length > 0) {
+      setFilters(initializeFilters(successKernels, filterConfigs));
     }
-  }, [kernels, filterConfigs]);
+  }, [successKernels, filterConfigs]);
 
   // Compute available options based on current filter state
   const availableOptions: AvailableFilterOptions = useMemo(
     () => ({
-      kernelTypes: filterConfigs[0].getOptions(kernels, filters),
-      machines: filterConfigs[1].getOptions(kernels, filters),
-      backends: filterConfigs[2].getOptions(kernels, filters),
-      dtypes: filterConfigs[3].getOptions(kernels, filters),
-      tags: filterConfigs[4].getOptions(kernels, filters),
-      variants: filterConfigs[5].getOptions(kernels, filters),
+      kernelTypes: filterConfigs[0].getOptions(successKernels, filters),
+      machines: filterConfigs[1].getOptions(successKernels, filters),
+      backends: filterConfigs[2].getOptions(successKernels, filters),
+      dtypes: filterConfigs[3].getOptions(successKernels, filters),
+      tags: filterConfigs[4].getOptions(successKernels, filters),
+      variants: filterConfigs[5].getOptions(successKernels, filters),
+      macrotiles: filterConfigs[6].getOptions(successKernels, filters),
+      kernelSources: filterConfigs[7].getOptions(successKernels, filters),
     }),
-    [kernels, filters, filterConfigs]
+    [successKernels, filters, filterConfigs]
   );
 
   // Filter kernels based on current filter state
   const filteredKernels = useMemo(() => {
-    return kernels.filter((k) => {
+    return successKernels.filter((k) => {
+      const macrotile = getUniqueMacrotileForKernel(k);
+      const macrotileMatch =
+        filters.macrotiles.length === 0 ||
+        macrotile === null ||
+        filters.macrotiles.includes(macrotile);
+      const kernelSourceMatch =
+        filters.kernelSources.length === 0 ||
+        !k.kernelSource ||
+        filters.kernelSources.includes(k.kernelSource);
       return (
-        k.ok &&
         filters.backends.includes(k.backend) &&
         filters.dtypes.includes(k.dtype) &&
         filters.tags.includes(k.tag) &&
@@ -262,15 +332,17 @@ export function useKernelFilters(kernels: Kernel[]) {
         (k.kernelType !== "gemm" ||
           filters.variants.includes(
             k.shape.transpose || k.shape.tA + k.shape.tB
-          ))
+          )) &&
+        macrotileMatch &&
+        kernelSourceMatch
       );
     });
-  }, [kernels, filters]);
+  }, [successKernels, filters]);
 
   // Update function with cascading logic
   const updateFilter = (key: keyof FilterState, value: any) => {
     setFilters((prevFilters) =>
-      computeNewFilterState(prevFilters, key, value, kernels, filterConfigs)
+      computeNewFilterState(prevFilters, key, value, successKernels, filterConfigs)
     );
   };
 

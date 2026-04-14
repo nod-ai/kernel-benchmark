@@ -4,6 +4,8 @@ ARG WAVE_REPO=iree-org/wave
 ARG WAVE_BRANCH=main
 ARG BACKENDS=all
 ARG GPU_ARCH
+ARG ROCM_LIBRARIES_REPO=""
+ARG ROCM_LIBRARIES_BRANCH=""
 
 # ============================================================================
 # Stage 1: Base - System Dependencies
@@ -64,6 +66,8 @@ ARG WAVE_REPO
 ARG WAVE_BRANCH
 ARG BACKENDS
 ARG GPU_ARCH
+ARG ROCM_LIBRARIES_REPO
+ARG ROCM_LIBRARIES_BRANCH
 
 # Copy the repository files
 COPY . /workspace
@@ -106,6 +110,12 @@ RUN SETUP_CMD="bash setup.sh"; \
     fi; \
     if [ -n "$GPU_ARCH" ]; then \
         SETUP_CMD="$SETUP_CMD --gpu-arch $GPU_ARCH"; \
+    fi; \
+    if [ -n "$ROCM_LIBRARIES_REPO" ]; then \
+        SETUP_CMD="$SETUP_CMD --rocm-libraries-repo $ROCM_LIBRARIES_REPO"; \
+    fi; \
+    if [ -n "$ROCM_LIBRARIES_BRANCH" ]; then \
+        SETUP_CMD="$SETUP_CMD --rocm-libraries-branch $ROCM_LIBRARIES_BRANCH"; \
     fi; \
     echo "Running: $SETUP_CMD"; \
     eval "$SETUP_CMD" || echo "Warning: Some backends may have failed to install"

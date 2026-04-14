@@ -14,6 +14,10 @@ WAVE_BRANCH=""
 INSTALL_FROM_SOURCE=false
 BACKENDS="all"  # Default to all backends
 GPU_ARCH="${GPU_ARCH:-}"  # No default, required for hipblaslt/all backends
+ROCM_LIBRARIES_REPO="${ROCM_LIBRARIES_REPO:-}"  # Override for hipBLASLt source
+ROCM_LIBRARIES_BRANCH="${ROCM_LIBRARIES_BRANCH:-}"
+STRICT=false  # If true, exit non-zero when any requested backend fails (e.g. Docker/CI)
+BACKEND_SPECS_FILE=""  # Optional JSON file with per-backend specs (repo/branch overrides)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -34,6 +38,18 @@ while [[ $# -gt 0 ]]; do
             WAVE_BRANCH="$2"
             shift 2
             ;;
+        --rocm-libraries-repo)
+            ROCM_LIBRARIES_REPO="$2"
+            shift 2
+            ;;
+        --rocm-libraries-branch)
+            ROCM_LIBRARIES_BRANCH="$2"
+            shift 2
+            ;;
+        --backend-specs-file)
+            BACKEND_SPECS_FILE="$2"
+            shift 2
+            ;;
         --venv-path)
             VENV_PATH="$2"
             USE_VENV=true
@@ -42,6 +58,10 @@ while [[ $# -gt 0 ]]; do
         --gpu-arch|--gpu_arch)
             GPU_ARCH="$2"
             shift 2
+            ;;
+        --strict)
+            STRICT=true
+            shift
             ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
@@ -56,6 +76,7 @@ while [[ $# -gt 0 ]]; do
             echo "                         installs into the existing Python environment."
             echo "  --gpu-arch ARCH        GPU architecture for hipBLASLt (REQUIRED for hipblaslt/all)"
             echo "                         Examples: gfx950, gfx942, gfx90a, gfx950;gfx942"
+            echo "  --strict               Exit with failure if any backend fails to install"
             echo "  -h, --help             Show this help message"
             echo ""
             echo "Examples:"
@@ -104,15 +125,24 @@ if [[ "$BACKENDS" == "all" ]]; then
 else
     IFS=',' read -ra BACKEND_LIST <<< "$BACKENDS"
     
-    # Always ensure Wave is in the list (required dependency for other backends)
+    # Ensure Wave gets installed when needed. Plain "wave" counts; any backend
+    # named wave_* (e.g. wave_4wave_rocroller) installs Wave inside its own case
+    # so we must not prepend a separate "wave" entry — that runs Wave first and
+    # can fail strict builds even when the user only asked for wave_* (hipBLASLt
+    # then still succeeds, yielding a confusing split summary).
     WAVE_IN_LIST=false
     for backend in "${BACKEND_LIST[@]}"; do
-        if [[ "$backend" == "wave" ]]; then
+        backend_trim=$(echo "$backend" | xargs)
+        if [[ "$backend_trim" == "wave" ]]; then
+            WAVE_IN_LIST=true
+            break
+        fi
+        if [[ "$backend_trim" == wave_* ]]; then
             WAVE_IN_LIST=true
             break
         fi
     done
-    
+
     if [[ "$WAVE_IN_LIST" == "false" ]]; then
         echo "Note: Adding Wave backend (required dependency)"
         BACKEND_LIST=("wave" "${BACKEND_LIST[@]}")
@@ -122,13 +152,13 @@ else
 fi
 echo ""
 
-# Validate GPU_ARCH is provided when hipBLASLt is in the backend list
+# Validate GPU_ARCH is provided when hipBLASLt or rocroller backends are in the list
 REQUIRES_GPU_ARCH=false
 if [[ "$BACKENDS" == "all" ]]; then
     REQUIRES_GPU_ARCH=true
 else
     for backend in "${BACKEND_LIST[@]}"; do
-        if [[ "$backend" == "hipblaslt" ]]; then
+        if [[ "$backend" == "hipblaslt" || "$backend" == *"rocroller"* ]]; then
             REQUIRES_GPU_ARCH=true
             break
         fi
@@ -153,6 +183,29 @@ if [[ -n "$GPU_ARCH" ]]; then
     export GPU_ARCH
     echo "GPU Architecture: $GPU_ARCH"
 fi
+
+# Export rocm-libraries overrides so setup_hipblaslt.sh picks them up
+if [[ -n "$ROCM_LIBRARIES_REPO" ]]; then
+    if [[ "$ROCM_LIBRARIES_REPO" != https://* ]]; then
+        ROCM_LIBRARIES_REPO="https://github.com/${ROCM_LIBRARIES_REPO}.git"
+    fi
+    export ROCM_LIBRARIES_REPO
+    echo "ROCm Libraries repo override: $ROCM_LIBRARIES_REPO"
+fi
+if [[ -n "$ROCM_LIBRARIES_BRANCH" ]]; then
+    export ROCM_LIBRARIES_BRANCH
+    echo "ROCm Libraries branch override: $ROCM_LIBRARIES_BRANCH"
+fi
+
+# Enable WaveASM build for wave rocroller backends (requires LLVM from ROCm)
+for backend in "${BACKEND_LIST[@]}"; do
+    if [[ "$backend" == *"4wave"* || "$backend" == *"8wave"* ]]; then
+        export WAVE_BUILD_WAVEASM=1
+        export WAVE_LLVM_DIR="/opt/rocm/llvm"
+        echo "WaveASM build enabled for wave backend ($backend)"
+        break
+    fi
+done
 
 # Create and activate virtual environment only if requested
 if [[ "$USE_VENV" == "true" ]]; then
@@ -179,6 +232,24 @@ echo ""
 # Track which backends succeeded/failed
 declare -a SUCCESSFUL_BACKENDS=()
 declare -a FAILED_BACKENDS=()
+declare -A WAVE_INSTALLED_DIRS=()  # Map of install_dir -> true (tracks per-variant installations)
+
+# Look up per-backend wave repo from backend specs file
+get_spec_field_for_backend() {
+    local backend="$1"
+    local field="$2"
+    if [[ -n "$BACKEND_SPECS_FILE" && -f "$BACKEND_SPECS_FILE" ]]; then
+        python3 -c "
+import json, sys
+specs = json.load(open('$BACKEND_SPECS_FILE'))
+for s in specs:
+    bp = s.get('backendParam', s.get('backend', ''))
+    if bp == '$backend':
+        print(s.get('$field', ''))
+        break
+" 2>/dev/null
+    fi
+}
 
 # Install each backend
 for backend in "${BACKEND_LIST[@]}"; do
@@ -189,7 +260,145 @@ for backend in "${BACKEND_LIST[@]}"; do
     echo "-----------------------------------"
     
     case "$backend" in
-        wave)
+        wave_4wave_baseline)
+            echo "$backend requires Wave (wave_lang) + hipblaslt from ROCm/rocm-libraries @ develop (aiter baseline, no rocroller)"
+
+            # Determine per-backend wave repo/branch from specs file or defaults
+            BACKEND_WAVE_REPO=$(get_spec_field_for_backend "$backend" "remoteRepository")
+            BACKEND_WAVE_BRANCH=$(get_spec_field_for_backend "$backend" "branch")
+
+            if [[ -z "$BACKEND_WAVE_REPO" ]]; then
+                BACKEND_WAVE_REPO="$WAVE_REPO"
+            fi
+            if [[ -z "$BACKEND_WAVE_BRANCH" ]]; then
+                BACKEND_WAVE_BRANCH="$WAVE_BRANCH"
+            fi
+
+            # Install wave into a per-backend directory
+            WAVE_INSTALL_DIR="wave-${backend}"
+            if [[ -z "${WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]+_}" ]]; then
+                if [[ ! -f "backends/setup_wave.sh" ]]; then
+                    echo "Error: setup_wave.sh not found in backends/"
+                    FAILED_BACKENDS+=("$backend")
+                    continue
+                fi
+                if [[ -n "$BACKEND_WAVE_REPO" && -n "$BACKEND_WAVE_BRANCH" ]]; then
+                    echo "Installing wave for $backend: $BACKEND_WAVE_REPO @ $BACKEND_WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$BACKEND_WAVE_REPO" "$BACKEND_WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                elif [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
+                    echo "Installing wave for $backend: $WAVE_REPO @ $WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                else
+                    echo "Installing wave for $backend (default) -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "" "" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                fi
+                WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]=true
+            else
+                echo "Wave already installed at $WAVE_INSTALL_DIR, skipping"
+            fi
+
+            if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
+                echo "Error: setup_hipblaslt.sh not found in backends/"
+                FAILED_BACKENDS+=("$backend")
+                continue
+            fi
+
+            # Use ROCM_LIBRARIES_REPO/BRANCH from CLI args, defaulting to ROCm/rocm-libraries @ develop
+            BASELINE_ROCM_REPO="${ROCM_LIBRARIES_REPO:-https://github.com/ROCm/rocm-libraries.git}"
+            BASELINE_ROCM_BRANCH="${ROCM_LIBRARIES_BRANCH:-develop}"
+            if ROCM_LIBRARIES_REPO="$BASELINE_ROCM_REPO" \
+               ROCM_LIBRARIES_BRANCH="$BASELINE_ROCM_BRANCH" \
+               bash backends/setup_hipblaslt.sh; then
+                SUCCESSFUL_BACKENDS+=("$backend")
+            else
+                echo "Warning: Failed to install $backend backend"
+                FAILED_BACKENDS+=("$backend")
+            fi
+            ;;
+
+        wave_4wave_rocroller|wave_8wave_rocroller)
+            echo "$backend requires Wave (wave_lang) + hipblaslt with rocroller support"
+
+            # Determine per-backend wave repo/branch from specs file or defaults
+            BACKEND_WAVE_REPO=$(get_spec_field_for_backend "$backend" "remoteRepository")
+            BACKEND_WAVE_BRANCH=$(get_spec_field_for_backend "$backend" "branch")
+
+            # Fall back to CLI args if no spec found
+            if [[ -z "$BACKEND_WAVE_REPO" ]]; then
+                BACKEND_WAVE_REPO="$WAVE_REPO"
+            fi
+            if [[ -z "$BACKEND_WAVE_BRANCH" ]]; then
+                BACKEND_WAVE_BRANCH="$WAVE_BRANCH"
+            fi
+
+            # Install wave into a per-backend directory
+            WAVE_INSTALL_DIR="wave-${backend}"
+            if [[ -z "${WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]+_}" ]]; then
+                if [[ ! -f "backends/setup_wave.sh" ]]; then
+                    echo "Error: setup_wave.sh not found in backends/"
+                    FAILED_BACKENDS+=("$backend")
+                    continue
+                fi
+                if [[ -n "$BACKEND_WAVE_REPO" && -n "$BACKEND_WAVE_BRANCH" ]]; then
+                    echo "Installing wave for $backend: $BACKEND_WAVE_REPO @ $BACKEND_WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$BACKEND_WAVE_REPO" "$BACKEND_WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                elif [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
+                    echo "Installing wave for $backend: $WAVE_REPO @ $WAVE_BRANCH -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                else
+                    echo "Installing wave for $backend (default) -> $WAVE_INSTALL_DIR"
+                    if ! bash backends/setup_wave.sh "" "" "$WAVE_INSTALL_DIR"; then
+                        echo "Warning: Wave install failed for $backend"
+                        FAILED_BACKENDS+=("$backend")
+                        continue
+                    fi
+                fi
+                WAVE_INSTALLED_DIRS[$WAVE_INSTALL_DIR]=true
+            else
+                echo "Wave already installed at $WAVE_INSTALL_DIR, skipping"
+            fi
+
+            if [[ ! -f "backends/setup_hipblaslt.sh" ]]; then
+                echo "Error: setup_hipblaslt.sh not found in backends/"
+                FAILED_BACKENDS+=("$backend")
+                continue
+            fi
+
+            if bash backends/setup_hipblaslt.sh; then
+                SUCCESSFUL_BACKENDS+=("$backend")
+            else
+                echo "Warning: Failed to install $backend backend"
+                FAILED_BACKENDS+=("$backend")
+            fi
+            ;;
+
+        wave*)
+            if [[ -n "${WAVE_INSTALLED_DIRS[wave]+_}" ]]; then
+                echo "Wave already installed at /workspace/wave, skipping reinstall for $backend"
+                SUCCESSFUL_BACKENDS+=("$backend")
+                continue
+            fi
+
             if [[ ! -f "backends/setup_wave.sh" ]]; then
                 echo "Error: setup_wave.sh not found in backends/"
                 FAILED_BACKENDS+=("$backend")
@@ -197,15 +406,17 @@ for backend in "${BACKEND_LIST[@]}"; do
             fi
             
             if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
-                if bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH"; then
+                if bash backends/setup_wave.sh "$WAVE_REPO" "$WAVE_BRANCH" "wave"; then
                     SUCCESSFUL_BACKENDS+=("$backend")
+                    WAVE_INSTALLED_DIRS[wave]=true
                 else
                     echo "Warning: Failed to install $backend backend"
                     FAILED_BACKENDS+=("$backend")
                 fi
             else
-                if bash backends/setup_wave.sh; then
+                if bash backends/setup_wave.sh "" "" "wave"; then
                     SUCCESSFUL_BACKENDS+=("$backend")
+                    WAVE_INSTALLED_DIRS[wave]=true
                 else
                     echo "Warning: Failed to install $backend backend"
                     FAILED_BACKENDS+=("$backend")
@@ -272,10 +483,10 @@ for backend in "${BACKEND_LIST[@]}"; do
                 FAILED_BACKENDS+=("$backend")
             fi
             ;;
-            
+
         *)
             echo "Error: Unknown backend '$backend'"
-            echo "Available backends: wave, torch, triton, iree, hipblaslt"
+            echo "Available backends: wave, torch, triton, iree, hipblaslt, wave_4wave_rocroller, wave_8wave_rocroller"
             FAILED_BACKENDS+=("$backend")
             ;;
     esac
@@ -321,5 +532,9 @@ echo ""
 
 if [[ ${#FAILED_BACKENDS[@]} -gt 0 ]]; then
     echo "Warning: Some backends failed to install. The benchmark suite will automatically skip these backends."
-    exit 0  # Don't fail the entire setup if some backends fail
+    if [[ "$STRICT" == "true" ]]; then
+        echo "Error: --strict was set; failing setup because backends failed: ${FAILED_BACKENDS[*]}"
+        exit 1
+    fi
+    exit 0
 fi

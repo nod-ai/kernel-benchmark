@@ -9,6 +9,8 @@ interface WidgetRendererProps {
   globalFilters: GlobalFilterConfig[];
   globalFilterValues: Record<string, any>;
   onFilterChange?: (filterId: string, value: any) => void;
+  onKernelSelect?: (kernelId: string | null) => void;
+  selectedKernelId?: string | null;
   isEditing?: boolean;
   profilingManifest?: Record<string, any> | null;
   blobName?: string | null;
@@ -20,6 +22,8 @@ export default function WidgetRenderer({
   globalFilters,
   globalFilterValues,
   onFilterChange,
+  onKernelSelect,
+  selectedKernelId,
   isEditing = false,
   profilingManifest,
   blobName,
@@ -58,6 +62,8 @@ export default function WidgetRenderer({
     data: transformedData,
     globalFilterValues,
     onFilterChange,
+    onKernelSelect,
+    selectedKernelId,
     isEditing,
     profilingManifest: config.rocprofEnabled ? profilingManifest : undefined,
     blobName: config.rocprofEnabled ? blobName : undefined,

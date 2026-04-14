@@ -99,6 +99,7 @@ export default function Tracking() {
         dashboardName: config.dashboardName,
         tags: config.kernelSelection.tags || [],
         backends: config.backends,
+        backendSpecs: config.backendSpecs,
         machine: config.machine,
         schedule: config.schedule,
         branch: config.branch,

@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [tracker, setTracker] = useState<Tracker | null>(null);
   const [selectedRunBlobName, setSelectedRunBlobName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [runBackendSpecs, setRunBackendSpecs] = useState<Record<string, any> | null>(null);
 
   const [modularConfig, setModularConfig] = useState<DashboardConfig>(DEFAULT_MODULAR_CONFIG);
   const [globalFilterValues, setGlobalFilterValues] = useState<Record<string, any>>({});
@@ -80,6 +81,30 @@ export default function Dashboard() {
         setIsTrackerDashboard(false);
         const runIdOrBlobName = location.pathname.split('/').pop();
         setSelectedRunBlobName(runIdOrBlobName || null);
+
+        if (runIdOrBlobName) {
+          try {
+            const response = await fetch(
+              `${import.meta.env.VITE_BACKEND_SERVER_URL}/api/runs?page=1&page_size=1000&completed_only=true`
+            );
+            const data = await response.json();
+            const runs = data.runs || [];
+            const item = runs.find((r: any) =>
+              r.run?.blobName === runIdOrBlobName || r.run?._id === runIdOrBlobName
+            );
+            if (item?.trigger?.metadata?.backendSpecs) {
+              const specsMap: Record<string, any> = {};
+              item.trigger.metadata.backendSpecs.forEach((spec: any) => {
+                const key = spec.backendParam || spec.backend;
+                specsMap[key] = spec;
+              });
+              setRunBackendSpecs(specsMap);
+            }
+          } catch (error) {
+            console.error("Failed to fetch run backend specs:", error);
+          }
+        }
+
         setIsLoading(false);
       }
     };
@@ -89,7 +114,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (selectedRunBlobName) {
-      fetchData(selectedRunBlobName).then(setKernels);
+      fetchData(selectedRunBlobName).then((data) => {
+        // Flatten macrotile from tuningConfig into a top-level field for global filter use
+        const enriched = data.map((k: any) => {
+          const tc = k.tuningConfig;
+          if (tc?.BLOCK_M != null && tc?.BLOCK_N != null && tc?.BLOCK_K != null) {
+            return { ...k, macrotile: `${tc.BLOCK_M}×${tc.BLOCK_N}×${tc.BLOCK_K}` };
+          }
+          return k;
+        });
+        setKernels(enriched);
+      });
       fetchProfilingManifest(selectedRunBlobName)
         .then(setProfilingManifest)
         .catch(() => setProfilingManifest(null));
@@ -163,6 +198,7 @@ export default function Dashboard() {
             isTrackerDashboard={isTrackerDashboard}
             profilingManifest={profilingManifest}
             blobName={selectedRunBlobName}
+            latestBackendSpecs={runBackendSpecs}
           />
         )}
         

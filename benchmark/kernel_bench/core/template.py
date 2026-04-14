@@ -143,7 +143,7 @@ class KernelBenchmark(ABC):
         """Validate numerical accuracy of kernel before benchmarking"""
         return True
 
-    def get_bench_result(self, runtime_us: float, ok: bool):
+    def get_bench_result(self, runtime_us: float, ok: bool, error_msg: str = None, kernel_source: str = None):
         arithmetic_intensity, tflops_per_second = get_kernel_perf_stats(
             self.config, runtime_us if ok else math.inf
         )
@@ -164,6 +164,8 @@ class KernelBenchmark(ABC):
             arithmetic_intensity=round(arithmetic_intensity, 4),
             tflops=round(tflops_per_second, 4),
             ok=ok,
+            error_msg=error_msg,
+            kernel_source=kernel_source,
         )
 
     @property
@@ -184,6 +186,13 @@ class KernelBenchmark(ABC):
     def update_parameter_values(self, param_values: dict[str, int]):
         for name, val in param_values.items():
             self.tuning_spec.set_parameter(name, val)
+
+    @classmethod
+    def expand_configs(cls, tag: str, config: OpConfig) -> List[Tuple[str, OpConfig]]:
+        """Expand a single (tag, config) into multiple entries, e.g. one per macrotile.
+        Override in subclasses that need to sweep multiple variants per problem shape.
+        Default: identity (one entry per config)."""
+        return [(tag, config)]
 
     @abstractmethod
     def run_bench(
@@ -222,7 +231,7 @@ class IREEKernelBenchmark(KernelBenchmark):
             profiler_dump_path=tt_dump_dir,
             kernel_regex=self.kernel_regex
         )
-        return self.get_bench_result(runtime_us, ok)
+        return self.get_bench_result(runtime_us, ok, kernel_source="wave")
 
     def run_bench(self, device, num_iterations=1, timeout=None):
         mlir_dir = self.path_config.mlir_for(self.kernel_type, self.backend)

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { WidgetProps } from "../types/dashboard";
 import type { Kernel } from "../types";
@@ -9,12 +9,13 @@ import RocprofTooltip from "../components/RocprofTooltip";
 export default function RooflineWidget({
   config,
   data,
+  onKernelSelect,
+  selectedKernelId,
   profilingManifest,
   blobName,
 }: WidgetProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const kernels = data as unknown as Kernel[];
-  const selectedKernel = kernels.find((k) => k.id === selectedId);
+  const selectedKernel = kernels.find((k) => k.id === selectedKernelId);
   const navigate = useNavigate();
 
   const selectedDumpKey = useMemo(() => {
@@ -25,20 +26,20 @@ export default function RooflineWidget({
   const handleKernelClick = useCallback(
     (kernelId: string | null) => {
       if (!kernelId) {
-        setSelectedId(null);
+        onKernelSelect?.(null);
         return;
       }
 
-      if (selectedId === kernelId && selectedDumpKey && blobName) {
+      if (selectedKernelId === kernelId && selectedDumpKey && blobName) {
         navigate(
           `/trace/${encodeURIComponent(blobName)}?dumpKey=${encodeURIComponent(selectedDumpKey)}&kernel=${encodeURIComponent(selectedKernel!.name)}`
         );
         return;
       }
 
-      setSelectedId(kernelId);
+      onKernelSelect?.(kernelId);
     },
-    [selectedId, selectedDumpKey, blobName, selectedKernel, navigate]
+    [selectedKernelId, selectedDumpKey, blobName, selectedKernel, navigate, onKernelSelect]
   );
 
   if (kernels.length === 0) {

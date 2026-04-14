@@ -161,6 +161,8 @@ export interface WidgetProps {
   data: Record<string, any>[];
   globalFilterValues: Record<string, any>;
   onFilterChange?: (filterId: string, value: any) => void;
+  onKernelSelect?: (kernelId: string | null) => void;
+  selectedKernelId?: string | null;
   isEditing?: boolean;
   profilingManifest?: Record<string, any> | null;
   blobName?: string | null;

@@ -22,7 +22,11 @@ import EditToolbar from "./DashboardEditor/EditToolbar";
 import WidgetCatalog from "./DashboardEditor/WidgetCatalog";
 import WidgetConfigModal from "./DashboardEditor/WidgetConfigModal";
 import CsvDownloadModal from "./Modals/CsvDownloadModal";
+import KernelView from "./Kernels/KernelView";
 import { useAuth } from "../contexts/AuthContext";
+import { useKernelDims } from "../contexts/KernelTypesContext";
+import { getDimensionsForKernelType } from "../utils/utils";
+import type { Kernel } from "../types";
 
 interface DashboardRendererProps {
   config: DashboardConfig;
@@ -34,6 +38,7 @@ interface DashboardRendererProps {
   isTrackerDashboard?: boolean;
   profilingManifest?: Record<string, any> | null;
   blobName?: string | null;
+  latestBackendSpecs?: Record<string, any> | null;
 }
 
 function toRGLLayout(layout: WidgetLayout[]): LayoutItem[] {
@@ -79,8 +84,11 @@ export default function DashboardRenderer({
   isTrackerDashboard = false,
   profilingManifest,
   blobName,
+  latestBackendSpecs,
 }: DashboardRendererProps) {
   const { isAuthenticated, requestAuth } = useAuth();
+  const kernelDims = useKernelDims();
+  const [selectedKernelId, setSelectedKernelId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const configSnapshotRef = useRef<DashboardConfig | null>(null);
   const [showCatalog, setShowCatalog] = useState(false);
@@ -93,6 +101,23 @@ export default function DashboardRenderer({
   const { width, containerRef, mounted } = useContainerWidth();
 
   const rglLayout = useMemo(() => toRGLLayout(config.layout), [config.layout]);
+
+  const allKernels = rawData as unknown as Kernel[];
+  const selectedKernel = useMemo(
+    () => allKernels.find((k) => k.id === selectedKernelId),
+    [allKernels, selectedKernelId]
+  );
+  const sameShapeKernels = useMemo(() => {
+    if (!selectedKernel) return [];
+    const dims = getDimensionsForKernelType(selectedKernel.kernelType, kernelDims, selectedKernel.shape);
+    return allKernels.filter((k) => {
+      if (k.kernelType !== selectedKernel.kernelType) return false;
+      if (k.dtype !== selectedKernel.dtype) return false;
+      return dims.every((dimName) =>
+        dimName === "dtype" ? k.dtype === selectedKernel.dtype : k.shape[dimName] === selectedKernel.shape[dimName]
+      );
+    });
+  }, [allKernels, selectedKernel, kernelDims]);
 
   const colorByFields = useMemo(() => {
     const fields = new Set<string>();
@@ -305,6 +330,7 @@ export default function DashboardRenderer({
           onUpdateFilter={handleUpdateFilter}
           onDeleteFilter={handleDeleteFilter}
           colorByFields={colorByFields}
+          latestBackendSpecs={latestBackendSpecs}
         />
       )}
 
@@ -354,6 +380,8 @@ export default function DashboardRenderer({
                 globalFilters={config.globalFilters}
                 globalFilterValues={globalFilterValues}
                 onFilterChange={onGlobalFilterChange}
+                onKernelSelect={setSelectedKernelId}
+                selectedKernelId={selectedKernelId}
                 isEditing={isEditing}
                 profilingManifest={profilingManifest}
                 blobName={blobName}
@@ -361,6 +389,19 @@ export default function DashboardRenderer({
             </div>
           ))}
         </ResponsiveGridLayout>
+      )}
+
+      {/* Selected Kernel Details */}
+      {selectedKernel && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <KernelView
+            selectedKernel={selectedKernel}
+            sameShapeKernels={sameShapeKernels}
+            kernels={allKernels}
+            setSelected={setSelectedKernelId}
+            dimensions={getDimensionsForKernelType(selectedKernel.kernelType, kernelDims, selectedKernel.shape)}
+          />
+        </div>
       )}
 
       {/* Modals */}

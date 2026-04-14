@@ -74,6 +74,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      - name: Parse Backend Specs
+        id: backend_specs
+        if: ${{ inputs.backend_specs_url }}
+        run: |
+          SPECS=$(curl -sL "${{ inputs.backend_specs_url }}")
+          # Extract wave repo/branch from specs (wave or wave_* backends, e.g. wave_4wave_rocroller)
+          WAVE_REPO=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              b = str(s.get('backend', '')).lower()
+              if (b == 'wave' or b.startswith('wave_')) and s.get('remoteRepository'):
+                  print(s['remoteRepository'])
+                  break
+          " 2>/dev/null || echo "")
+          WAVE_BRANCH=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              b = str(s.get('backend', '')).lower()
+              if (b == 'wave' or b.startswith('wave_')) and s.get('branch'):
+                  print(s['branch'])
+                  break
+          " 2>/dev/null || echo "")
+          # Extract rocm-libraries repo/branch: prefer any spec with buildMeta set,
+          # fall back to rocroller variants for backward compatibility
+          ROCM_LIBRARIES_REPO=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              meta = s.get('buildMeta', {})
+              if meta.get('rocmLibrariesRepo'):
+                  print(meta['rocmLibrariesRepo'])
+                  break
+          " 2>/dev/null || echo "")
+          ROCM_LIBRARIES_BRANCH=$(echo "$SPECS" | python3 -c "
+          import json, sys
+          specs = json.load(sys.stdin)
+          for s in specs:
+              meta = s.get('buildMeta', {})
+              if meta.get('rocmLibrariesBranch'):
+                  print(meta['rocmLibrariesBranch'])
+                  break
+          " 2>/dev/null || echo "")
+          echo "wave_repo=$WAVE_REPO" >> $GITHUB_OUTPUT
+          echo "wave_branch=$WAVE_BRANCH" >> $GITHUB_OUTPUT
+          echo "rocm_libraries_repo=$ROCM_LIBRARIES_REPO" >> $GITHUB_OUTPUT
+          echo "rocm_libraries_branch=$ROCM_LIBRARIES_BRANCH" >> $GITHUB_OUTPUT
+          echo "Parsed wave repo: $WAVE_REPO, branch: $WAVE_BRANCH"
+          echo "Parsed rocm-libraries repo: $ROCM_LIBRARIES_REPO, branch: $ROCM_LIBRARIES_BRANCH"
+
+
       - name: Build Docker Image
         run: |
           cd benchmark
@@ -96,6 +149,7 @@ jobs:
             --kernel-types ${{ inputs.selected_kernel }} \
             --problems-url ${{ inputs.problems_url }} \
             ${{ inputs.tuned_config_url && format('--tuned-configs-url {0}', inputs.tuned_config_url) || '' }} \
+            ${{ inputs.backend_specs_url && format('--backend-specs-url {0}', inputs.backend_specs_url) || '' }} \
             -o $(pwd)/benchmark_results
 
       - name: Upload benchmark results

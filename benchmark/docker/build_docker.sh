@@ -11,6 +11,8 @@ GPU_ARCH=""
 BACKENDS=""
 WAVE_REPO=""
 WAVE_BRANCH=""
+ROCM_LIBRARIES_REPO=""
+ROCM_LIBRARIES_BRANCH=""
 IMAGE_TAG="kernel-bench:latest"
 
 # Parse command line arguments
@@ -32,13 +34,25 @@ while [[ $# -gt 0 ]]; do
             WAVE_BRANCH="$2"
             shift 2
             ;;
+        --rocm-libraries-repo)
+            ROCM_LIBRARIES_REPO="$2"
+            shift 2
+            ;;
+        --rocm-libraries-branch)
+            ROCM_LIBRARIES_BRANCH="$2"
+            shift 2
+            ;;
+        --backend-specs-url)
+            # Accepted but not used at build time (passed for informational purposes)
+            shift 2
+            ;;
         -t)
             IMAGE_TAG="$2"
             shift 2
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 --machine <MACHINE> [--backends <backends>] [--wave-repo <repo>] [--wave-branch <branch>] [-t <tag>]"
+            echo "Usage: $0 --machine <MACHINE> [--backends <backends>] [--wave-repo <repo>] [--wave-branch <branch>] [--rocm-libraries-repo <repo>] [--rocm-libraries-branch <branch>] [-t <tag>]"
             exit 1
             ;;
     esac
@@ -88,6 +102,14 @@ fi
 
 if [ -n "$WAVE_BRANCH" ]; then
     BUILD_CMD="$BUILD_CMD --build-arg WAVE_BRANCH=$WAVE_BRANCH"
+fi
+
+if [ -n "$ROCM_LIBRARIES_REPO" ]; then
+    BUILD_CMD="$BUILD_CMD --build-arg ROCM_LIBRARIES_REPO=$ROCM_LIBRARIES_REPO"
+fi
+
+if [ -n "$ROCM_LIBRARIES_BRANCH" ]; then
+    BUILD_CMD="$BUILD_CMD --build-arg ROCM_LIBRARIES_BRANCH=$ROCM_LIBRARIES_BRANCH"
 fi
 
 BUILD_CMD="$BUILD_CMD -t $IMAGE_TAG -f docker/Dockerfile ."
